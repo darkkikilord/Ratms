@@ -29,7 +29,7 @@ Transform:
   m_GameObject: {fileID: 957023971458948997}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.0617, y: -0.0206, z: -3}
+  m_LocalPosition: {x: 0.0617, y: -0.0206, z: -2}
   m_LocalScale: {x: 0.115433276, y: 0.111303, z: 0.10728}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -104,7 +104,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   damage: 20
   damagePopupPrefab: {fileID: 1590358201824750117, guid: 572ca7b0d4fd09d4db1ae6e178b17642, type: 3}
-  worldCanvas: {fileID: 7847250606418121335, guid: ca9eb6f8cc5f8da4daf56593df9e3490, type: 3}
 --- !u!50 &1966580541974304370
 Rigidbody2D:
   serializedVersion: 5

@@ -1,55 +1,56 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+using UnityEngine;
 
 public class TurnManager : MonoBehaviour
 {
-    [Header("Ratas jugables")]
-    public GameObject[] players;
+    [Header("Prefabs y Spawn")]
+    [SerializeField] private GameObject ratPrefab;
+    [SerializeField] private Transform[] spawnPoints;
 
-    private int currentPlayerIndex = 0;
-    private CameraFollow cameraFollow;
+    private readonly List<PlayerMovement> players = new();
+    private int current;
+    private CameraFollow cam;
 
-    void Start()
+    private void Awake()
     {
-        cameraFollow = Camera.main.GetComponent<CameraFollow>();
-
-        if (cameraFollow == null)
-        {
-            Debug.LogError("No se encontró el script CameraFollow en la cámara principal.");
-        }
-
-        SetActivePlayer(0);
+        cam = Camera.main.GetComponent<CameraFollow>();
+        if (cam == null) Debug.LogError("❌  CameraFollow no encontrado.");
     }
 
-    // Eliminamos el cambio de turno manual aquí 👇
+    private void Start()
+    {
+        SpawnPlayers();
+        ActivatePlayer(0);
+    }
+
+    private void SpawnPlayers()
+    {
+        for (int i = 0; i < spawnPoints.Length; i++)
+        {
+            GameObject go = Instantiate(ratPrefab, spawnPoints[i].position, Quaternion.identity);
+            go.name = $"rat_{i}";
+            players.Add(go.GetComponent<PlayerMovement>());
+        }
+        Debug.Log($"TurnManager ▶️   {players.Count} ratas creadas.");
+    }
 
     public void EndTurn()
     {
-        currentPlayerIndex = (currentPlayerIndex + 1) % players.Length;
-        SetActivePlayer(currentPlayerIndex);
+        current = (current + 1) % players.Count;
+        ActivatePlayer(current);
     }
 
-    void SetActivePlayer(int index)
+    private void ActivatePlayer(int idx)
     {
-        for (int i = 0; i < players.Length; i++)
+        for (int i = 0; i < players.Count; i++)
         {
-            var movement = players[i].GetComponent<PlayerMovement>();
-
-            if (movement != null)
-            {
-                bool isActive = (i == index);
-                movement.enabled = isActive;
-
-                if (isActive)
-                {
-                    movement.ResetTurn(); // reinicia variables de disparo
-                }
-            }
+            bool myTurn = (i == idx);
+            players[i].SetTurnActive(myTurn);
         }
 
-        if (cameraFollow != null)
-        {
-            cameraFollow.target = players[index].transform;
-            cameraFollow.SetZoom(4.5f);
-        }
+        cam.target = players[idx].transform;
+        cam.SetZoom(4.5f);
+
+        Debug.Log($"TurnManager ▶️  Turno de {players[idx].name}");
     }
 }

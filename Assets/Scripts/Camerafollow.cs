@@ -3,39 +3,28 @@ using UnityEngine;
 public class CameraFollow : MonoBehaviour
 {
     public Transform target;
-    public float smoothSpeed = 0.125f;
-    public Vector3 offset = new Vector3(0f, 0f, -10f);
+    public Vector3 offset = new(0, 0, -10);
+    public float posSmooth = .15f;
 
     [Header("Zoom")]
-    public float targetZoom = 5f;           // Zoom deseado
-    public float zoomSpeed = 5f;            // Qué tan rápido se ajusta el zoom
+    public float targetZoom = 5f;
+    public float zoomSpeed = 5f;
     private Camera cam;
 
-    void Start()
-    {
-        cam = Camera.main;
-        if (cam != null)
-        {
-            cam.orthographicSize = targetZoom;
-        }
-    }
+    private void Awake() => cam = Camera.main;
 
-    void LateUpdate()
+    private void LateUpdate()
     {
         if (target == null || cam == null) return;
 
-        // Movimiento suave
-        Vector3 desiredPosition = target.position + offset;
-        Vector3 smoothedPosition = Vector3.Lerp(transform.position, desiredPosition, smoothSpeed);
-        transform.position = smoothedPosition;
+        transform.position = Vector3.Lerp(transform.position,
+                                          target.position + offset,
+                                          posSmooth);
 
-        // Zoom suave hacia el valor deseado
-        cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetZoom, Time.deltaTime * zoomSpeed);
+        cam.orthographicSize = Mathf.Lerp(cam.orthographicSize,
+                                          targetZoom,
+                                          Time.deltaTime * zoomSpeed);
     }
 
-    // Permitir cambiar el zoom desde otros scripts
-    public void SetZoom(float newZoom)
-    {
-        targetZoom = newZoom;
-    }
+    public void SetZoom(float z) => targetZoom = z;
 }

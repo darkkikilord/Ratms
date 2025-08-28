@@ -3,7 +3,6 @@ using UnityEngine;
 
 public class DamagePopup : MonoBehaviour
 {
-    [SerializeField] private float lifetime = 1f;
     [SerializeField] private float floatSpeed = 1f;
     [SerializeField] private Color damageColor = Color.red;
     [SerializeField] private float fadeSpeed = 1.5f;
@@ -32,7 +31,7 @@ public class DamagePopup : MonoBehaviour
         // Reducir la opacidad
         canvasGroup.alpha -= fadeSpeed * Time.deltaTime;
 
-        // Destruir cuando esté completamente invisible
+        // Destruir cuando estï¿½ completamente invisible
         if (canvasGroup.alpha <= 0f)
         {
             Destroy(gameObject);

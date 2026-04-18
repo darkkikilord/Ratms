@@ -4,17 +4,15 @@ using UnityEngine;
 namespace Ratms.Networking
 {
     /// <summary>
-    ///  Movimiento de la rata en MULTIJUGADOR.
-    ///  Versión simplificada: movimiento, salto, flip y animación. SIN disparos todavía.
-    ///  El disparo de red lo meteremos en una sesión futura.
+    ///  Movimiento + disparo de la rata en MULTIJUGADOR.
     ///
-    ///  Diferencias clave con el PlayerMovement de single-player:
-    ///   • Hereda de NetworkBehaviour (no MonoBehaviour).
-    ///   • Solo el dueño (IsOwner) procesa input y física.
-    ///   • El flip (izquierda/derecha) y la velocidad para animación
-    ///     se sincronizan con NetworkVariables, así los otros clientes
-    ///     ven la rata girarse y correr igual que su dueño.
-    ///   • No usa el TurnManager — en esta fase cada jugador se mueve libre.
+    ///  Lo que hace:
+    ///   • Movimiento horizontal y salto (solo el dueño).
+    ///   • Flip y velocidad sincronizados por red (todos los clientes ven al
+    ///     dueño girarse y correr igual).
+    ///   • Apuntado ↑↓ con ángulo sincronizado por red.
+    ///   • Carga de disparo con ESPACIO y disparo del NetworkBazooka.
+    ///   • Tras disparar, pide al NetworkTurnManager que acabe el turno.
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D))]
     public class NetworkPlayerMovement : NetworkBehaviour
@@ -44,11 +42,30 @@ namespace Ratms.Networking
         [Tooltip("Nombre del parámetro float del Animator que decide idle/agachada/corriendo.")]
         [SerializeField] private string speedParam = "Speed";
 
+        [Header("Vida / Armas")]
+        [Tooltip("Referencia al NetworkHealth de esta rata (se auto-resuelve).")]
+        [SerializeField] private NetworkHealth health;
+
+        [Tooltip("Referencia al NetworkBazooka en la propia rata (se auto-resuelve si está vacío).")]
+        [SerializeField] private NetworkBazooka bazooka;
+
+        [Tooltip("Mano de la rata que sujeta el arma. Rota con el ángulo de apuntado.")]
+        [SerializeField] private Transform weaponHolder;
+
+        [Tooltip("Velocidad de apuntado (grados por segundo).")]
+        [SerializeField] private float aimSpeed = 200f;
+
+        [Tooltip("Segundos de retardo entre el disparo y pasar el turno al siguiente jugador.")]
+        [SerializeField] private float endTurnDelay = 0.6f;
+
         // --- Privadas ---
         private Rigidbody2D rb;
         private float inputX;
         private int speedHash;
         private SpriteRenderer[] allSprites;
+        private Vector3 weaponHolderDefaultPos;
+        private bool weaponHolderPosCached;
+        private float endTurnTimer = -1f;
 
         /// <summary>
         ///  Variable sincronizada por red: true = mira a la derecha, false = izquierda.
@@ -71,6 +88,16 @@ namespace Ratms.Networking
             readPerm: NetworkVariableReadPermission.Everyone,
             writePerm: NetworkVariableWritePermission.Owner);
 
+        /// <summary>
+        ///  Ángulo de apuntado en grados (0 = horizontal, 90 = arriba).
+        ///  Lo escribe el dueño, lo leen todos los clientes para aplicar la
+        ///  rotación del weaponHolder. Así todos ven tu bazooka apuntando al mismo sitio.
+        /// </summary>
+        private readonly NetworkVariable<float> aimAngle = new(
+            value: 45f,
+            readPerm: NetworkVariableReadPermission.Everyone,
+            writePerm: NetworkVariableWritePermission.Owner);
+
         // ==================================================================
         // CICLO DE VIDA
         // ==================================================================
@@ -79,6 +106,18 @@ namespace Ratms.Networking
             rb = GetComponent<Rigidbody2D>();
             ResolveVisualReferences();
             speedHash = Animator.StringToHash(speedParam);
+
+            // Auto-resolución del bazooka y la vida si están en la misma rata
+            if (bazooka == null) bazooka = GetComponentInChildren<NetworkBazooka>();
+            if (health == null) health = GetComponent<NetworkHealth>();
+
+            // Guardamos la pos local por defecto del weaponHolder para poder
+            // reflejarla cuando la rata mire al otro lado.
+            if (weaponHolder != null)
+            {
+                weaponHolderDefaultPos = weaponHolder.localPosition;
+                weaponHolderPosCached = true;
+            }
         }
 
         /// <summary>
@@ -109,14 +148,16 @@ namespace Ratms.Networking
             if (animator == null) animator = GetComponent<Animator>();
             if (animator == null) animator = GetComponentInChildren<Animator>();
 
-            // Cacheamos TODOS los sprites NO-weapon para poder flipear todo a la vez.
-            // Así no importa si es en el root o en un hijo, ni si hay varios.
+            // Cacheamos TODOS los sprites que NO cuelguen del weaponHolder.
+            // Así el flip del cuerpo no toca a las armas (bazooka, granada, etc.),
+            // y el flip del arma se gestiona por separado en ApplyAimRotation.
             var found = GetComponentsInChildren<SpriteRenderer>(true);
             var list = new System.Collections.Generic.List<SpriteRenderer>();
             foreach (var sr in found)
             {
-                if (!sr.transform.name.ToLower().Contains("weapon"))
-                    list.Add(sr);
+                if (weaponHolder != null && sr.transform.IsChildOf(weaponHolder))
+                    continue; // ignoramos sprites que cuelguen del weaponHolder
+                list.Add(sr);
             }
             allSprites = list.ToArray();
 
@@ -133,10 +174,16 @@ namespace Ratms.Networking
             // entran después y ven al jugador ya girado)
             ApplyFlipVisual(facingRight.Value);
             ApplyAnimationSpeed(syncedSpeed.Value);
+            ApplyAimRotation(aimAngle.Value, facingRight.Value);
 
             // Cuando los valores cambien por red, actualizamos visuales
             facingRight.OnValueChanged += OnFacingChanged;
             syncedSpeed.OnValueChanged += OnSpeedChanged;
+            aimAngle.OnValueChanged += OnAimChanged;
+
+            // Cuando esta rata muera EN EL SERVIDOR, sacarla de los turnos
+            if (IsServer && health != null)
+                health.OnDiedServer += HandleDiedServer;
 
             // Etiqueta en la jerarquía para depurar
             gameObject.name = IsOwner
@@ -155,6 +202,19 @@ namespace Ratms.Networking
         {
             facingRight.OnValueChanged -= OnFacingChanged;
             syncedSpeed.OnValueChanged -= OnSpeedChanged;
+            aimAngle.OnValueChanged -= OnAimChanged;
+            if (health != null) health.OnDiedServer -= HandleDiedServer;
+        }
+
+        /// <summary>
+        ///  Server-side: cuando esta rata muere, la quitamos del orden de turnos
+        ///  para que no se le espere eternamente.
+        /// </summary>
+        private void HandleDiedServer(NetworkHealth h)
+        {
+            if (!IsServer) return;
+            var tm = NetworkTurnManager.Instance;
+            if (tm != null) tm.RemovePlayerServer(OwnerClientId);
         }
 
         // ==================================================================
@@ -177,20 +237,25 @@ namespace Ratms.Networking
 
         private void Update()
         {
+            // El timer de "fin de turno tras disparar" corre aunque ya no podamos controlar,
+            // para que el servidor efectivamente avance el turno.
+            TickEndTurnTimer();
+
             if (!CanControl())
             {
-                // Si pierdo el turno mientras me movía, dejo de empujar.
+                // Si pierdo el turno mientras me movía, dejo de empujar y cancelo carga.
                 inputX = 0f;
+                if (bazooka != null && bazooka.IsCharging) bazooka.CancelCharging();
                 return;
             }
 
             inputX = Input.GetAxisRaw("Horizontal");
 
-            // Salto (W o Espacio)
+            // Salto — ahora SOLO con W para no chocar con ESPACIO (que ahora es disparo)
             bool grounded = groundCheck != null
                 && Physics2D.OverlapCircle(groundCheck.position, groundRadius, groundMask);
 
-            if (grounded && (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.Space)))
+            if (grounded && Input.GetKeyDown(KeyCode.W))
             {
                 rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
             }
@@ -199,11 +264,107 @@ namespace Ratms.Networking
             if (inputX > 0.01f && !facingRight.Value) facingRight.Value = true;
             else if (inputX < -0.01f && facingRight.Value) facingRight.Value = false;
 
+            // Apuntado ↑ ↓
+            HandleAimInput();
+
+            // Disparo (ESPACIO): carga mientras se mantiene, dispara al soltar
+            HandleFireInput();
+
             // Publica la velocidad para que todos los clientes animen correctamente.
             // Sólo actualizamos si cambia "notablemente" para no saturar la red.
             float currentSpeed = Mathf.Abs(rb.linearVelocity.x);
             if (Mathf.Abs(currentSpeed - syncedSpeed.Value) > 0.1f)
                 syncedSpeed.Value = currentSpeed;
+        }
+
+        // ==================================================================
+        // APUNTADO
+        // ==================================================================
+        private void HandleAimInput()
+        {
+            float v = Input.GetAxisRaw("Vertical");
+            if (Mathf.Abs(v) < 0.1f) return;
+
+            float next = aimAngle.Value + v * aimSpeed * Time.deltaTime;
+            // Limito a un rango cómodo para jugar (0° horizontal adelante, 90° arriba, 180° atrás)
+            next = Mathf.Clamp(next, 0f, 180f);
+            aimAngle.Value = next;
+        }
+
+        private void OnAimChanged(float oldValue, float newValue)
+        {
+            ApplyAimRotation(newValue, facingRight.Value);
+        }
+
+        private void ApplyAimRotation(float angle, bool right)
+        {
+            if (weaponHolder == null) return;
+
+            // Rotación Z pura: ángulo de apuntado.
+            // (Antes usábamos también Y=180 al mirar a la izquierda, pero eso
+            //  al combinarse con la Z dejaba el apuntado al revés — ponías 90°
+            //  pensando "arriba" y el motor calculaba "abajo". Ya no.)
+            weaponHolder.localEulerAngles = new Vector3(0f, 0f, angle);
+
+            // Flip horizontal REAL con escala negativa en X.
+            // Esto refleja el weaponHolder y TODOS sus hijos (bazooka visual,
+            // firepoint, trayectoria) como un espejo. Así el arma apunta hacia
+            // la misma dirección que la rata y el ángulo de apuntado responde
+            // bien en ambos lados.
+            Vector3 scale = weaponHolder.localScale;
+            float abs = Mathf.Abs(scale.x);
+            scale.x = right ? abs : -abs;
+            weaponHolder.localScale = scale;
+
+            // Reflejamos la posición local en X por si el pivote del
+            // weaponHolder no está justo en el centro de la rata.
+            if (weaponHolderPosCached)
+            {
+                var pos = weaponHolderDefaultPos;
+                pos.x *= right ? 1f : -1f;
+                weaponHolder.localPosition = pos;
+            }
+        }
+
+        // ==================================================================
+        // DISPARO
+        // ==================================================================
+        private void HandleFireInput()
+        {
+            if (bazooka == null) return;
+
+            if (Input.GetKeyDown(KeyCode.Space))
+                bazooka.StartCharging();
+
+            if (bazooka.IsCharging)
+            {
+                Vector2 dir = weaponHolder != null ? (Vector2)weaponHolder.right : Vector2.right;
+                bazooka.TickCharging(Time.deltaTime, dir);
+            }
+
+            if (Input.GetKeyUp(KeyCode.Space) && bazooka.IsCharging)
+            {
+                Vector2 dir = weaponHolder != null ? (Vector2)weaponHolder.right : Vector2.right;
+                bool fired = bazooka.ReleaseShot(dir);
+                if (fired) ScheduleEndTurn();
+            }
+        }
+
+        private void ScheduleEndTurn()
+        {
+            endTurnTimer = endTurnDelay;
+        }
+
+        private void TickEndTurnTimer()
+        {
+            if (endTurnTimer < 0f) return;
+            endTurnTimer -= Time.deltaTime;
+            if (endTurnTimer <= 0f)
+            {
+                endTurnTimer = -1f;
+                var tm = NetworkTurnManager.Instance;
+                if (tm != null && IsOwner) tm.EndTurnServerRpc();
+            }
         }
 
         private void FixedUpdate()
@@ -221,12 +382,13 @@ namespace Ratms.Networking
         }
 
         /// <summary>
-        ///  LateUpdate se ejecuta DESPUÉS del Animator. Reaplicamos el flip aquí
-        ///  para que no nos lo pise ninguna animación que toque al SpriteRenderer.
+        ///  LateUpdate se ejecuta DESPUÉS del Animator. Reaplicamos el flip y
+        ///  el ángulo de apuntado aquí para que no los pise ninguna animación.
         /// </summary>
         private void LateUpdate()
         {
             ApplyFlipVisual(facingRight.Value);
+            ApplyAimRotation(aimAngle.Value, facingRight.Value);
         }
 
         // ==================================================================

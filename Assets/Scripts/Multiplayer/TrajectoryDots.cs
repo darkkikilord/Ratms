@@ -1,0 +1,188 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Ratms.Networking
+{
+    /// <summary>
+    ///  Indicador de trayectoria tipo Worms: una serie de PUNTITOS que van
+    ///  describiendo el arco parabólico que seguiría un proyectil lanzado
+    ///  desde <see cref="firePoint"/> con la fuerza y dirección dadas.
+    ///
+    ///  IMPORTANTE — por qué los dots viven en WORLD SPACE:
+    ///   Este script suele ir como hijo del arma, que a su vez es hijo de un
+    ///   Weaponholder con escala muy pequeña (el bazooka se ve chiquitito).
+    ///   Si creásemos los dots como hijos, heredarían esa escala y no se verían.
+    ///   Por eso al nacer los desparentamos al root de la escena: mantienen su
+    ///   tamaño absoluto y los colocamos cada frame leyendo firePoint.position.
+    ///   Al destruirse el arma los limpiamos (OnDestroy) para no dejar basura.
+    ///
+    ///  API pública:
+    ///    • Show(force, dir) → enseña la trayectoria.
+    ///    • Preview(dir)     → enseña con fuerza fija (arma equipada sin cargar).
+    ///    • Hide()           → la apaga.
+    /// </summary>
+    public class TrajectoryDots : MonoBehaviour
+    {
+        [Header("Origen")]
+        [Tooltip("Desde qué Transform calcular la parábola (normalmente la punta del arma).")]
+        public Transform firePoint;
+
+        [Header("Puntitos")]
+        [Tooltip("Cuántos puntitos se dibujan a lo largo de la trayectoria.")]
+        [Range(4, 60)] public int dotCount = 18;
+
+        [Tooltip("Separación temporal entre puntitos (s). Más alto = trayectoria más larga.")]
+        public float timeStep = 0.06f;
+
+        [Tooltip("Tamaño en el MUNDO de cada puntito (unidades Unity).")]
+        public float dotWorldSize = 0.2f;
+
+        [Tooltip("Color de los puntitos.")]
+        public Color dotColor = new Color(1f, 1f, 1f, 0.95f);
+
+        [Tooltip("Sprite del puntito. Si lo dejas vacío, se genera un círculo blanco suave por código.")]
+        public Sprite dotSprite;
+
+        [Tooltip("Sorting layer de los puntitos (por nombre). Déjalo en Default si no sabes.")]
+        public string sortingLayerName = "Default";
+
+        [Tooltip("Sorting order: alto = por delante del escenario y de la rata.")]
+        public int sortingOrder = 1000;
+
+        [Header("Preview (cuando no está cargando)")]
+        [Tooltip("Fuerza que se usa al llamar a Preview().")]
+        public float previewForce = 7f;
+
+        // Estado interno
+        private readonly List<Transform> dots = new();
+        private float gravity;
+        private bool visible;
+        private float cachedForce;
+        private Vector2 cachedDir;
+
+        // ==============================================================
+        private void Awake()
+        {
+            gravity = Mathf.Abs(Physics2D.gravity.y);
+            if (dotSprite == null) dotSprite = BuildCircleSprite();
+            BuildPool();
+            HideImmediate();
+        }
+
+        private void OnDestroy()
+        {
+            // Limpieza: los dots viven en world space así que hay que destruirlos a mano.
+            foreach (var d in dots)
+            {
+                if (d != null) Destroy(d.gameObject);
+            }
+            dots.Clear();
+        }
+
+        private void OnDisable()
+        {
+            HideImmediate();
+        }
+
+        private void BuildPool()
+        {
+            for (int i = 0; i < dotCount; i++)
+            {
+                GameObject go = new GameObject($"TrajectoryDot_{i}");
+                // ¡Importante! No lo metemos como hijo nuestro: vive en world space
+                // para ignorar la escala del weaponholder.
+                go.transform.SetParent(null, worldPositionStays: true);
+
+                // Tamaño en el mundo: el dot es independiente así que simplemente
+                // le ponemos el tamaño deseado.
+                go.transform.localScale = Vector3.one * dotWorldSize;
+
+                var sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = dotSprite;
+                sr.color = dotColor;
+                sr.sortingLayerName = sortingLayerName;
+                sr.sortingOrder = sortingOrder;
+
+                // Ligero efecto "hormigueo": los puntos lejanos se ven un poco más pequeños.
+                float shrink = Mathf.Lerp(1f, 0.55f, (float)i / Mathf.Max(1, dotCount - 1));
+                go.transform.localScale = Vector3.one * dotWorldSize * shrink;
+
+                go.SetActive(false);
+                dots.Add(go.transform);
+            }
+        }
+
+        /// <summary>
+        ///  Genera un sprite de círculo blanco suave 32x32 por código para que
+        ///  el efecto funcione sin depender de assets que haya que configurar.
+        /// </summary>
+        private Sprite BuildCircleSprite()
+        {
+            const int size = 32;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+
+            float r = size * 0.5f;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - r + 0.5f;
+                    float dy = y - r + 0.5f;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    float alpha = Mathf.Clamp01((r - d) / 1.5f);
+                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+        }
+
+        // ==============================================================
+        // API PÚBLICA
+        // ==============================================================
+        public void Show(float force, Vector2 dir)
+        {
+            visible = true;
+            cachedForce = Mathf.Max(0.01f, force);
+            cachedDir = dir.sqrMagnitude > 0.0001f ? dir.normalized : Vector2.right;
+            SetAllActive(true);
+        }
+
+        public void Preview(Vector2 dir) => Show(previewForce, dir);
+
+        public void Hide() => HideImmediate();
+
+        private void HideImmediate()
+        {
+            visible = false;
+            foreach (var d in dots)
+                if (d != null) d.gameObject.SetActive(false);
+        }
+
+        // ==============================================================
+        private void LateUpdate()
+        {
+            if (!visible || firePoint == null) return;
+
+            Vector2 start = firePoint.position;
+            Vector2 vel = cachedDir * cachedForce;
+
+            for (int i = 0; i < dots.Count; i++)
+            {
+                float t = i * timeStep;
+                float dx = vel.x * t;
+                float dy = vel.y * t - 0.5f * gravity * t * t;
+                Vector3 p = new Vector3(start.x + dx, start.y + dy, firePoint.position.z);
+                if (dots[i] != null) dots[i].position = p;
+            }
+        }
+
+        private void SetAllActive(bool active)
+        {
+            foreach (var d in dots)
+                if (d != null) d.gameObject.SetActive(active);
+        }
+    }
+}

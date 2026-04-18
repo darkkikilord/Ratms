@@ -11,6 +11,10 @@ namespace Ratms.Networking
     ///
     ///  Es UI "de andamio" con IMGUI. En Fase 5 lo reemplazaremos por un menú
     ///  bonito integrado en el MainMenu.
+    ///
+    ///  Cuando ya estás CONECTADO, el panel se auto-minimiza a los pocos
+    ///  segundos para no tapar la partida. En la esquina queda un botoncito
+    ///  "Red ▾" que lo vuelve a desplegar. También puedes alternarlo con H.
     /// </summary>
     [RequireComponent(typeof(RelayManager))]
     public class NetworkBootstrap : MonoBehaviour
@@ -23,6 +27,11 @@ namespace Ratms.Networking
         [Tooltip("Altura de referencia: el panel se escala para que se vea bien en cualquier resolución.")]
         [SerializeField] private float referenceHeight = 1080f;
 
+        [Header("Auto-minimizar")]
+        [Tooltip("Segundos tras conectar antes de plegar el panel automáticamente.")]
+        [SerializeField] private float autoMinimizeAfter = 6f;
+        [SerializeField] private KeyCode toggleKey = KeyCode.H;
+
         private RelayManager relay;
 
         // Estado de la UI
@@ -30,9 +39,44 @@ namespace Ratms.Networking
         private string statusMessage = "";
         private bool busy = false;
 
+        // Auto-ocultar
+        private bool minimized = false;
+        private bool autoMinimizeArmed = false;
+        private float connectedAt = -1f;
+
         private void Awake()
         {
             relay = GetComponent<RelayManager>();
+        }
+
+        private void Update()
+        {
+            // Tecla H → alternar manualmente
+            if (Input.GetKeyDown(toggleKey))
+                minimized = !minimized;
+
+            // Auto-minimizar cuando acabamos de conectar
+            bool connected = NetworkManager.Singleton != null &&
+                             (NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer);
+
+            if (connected && !autoMinimizeArmed)
+            {
+                connectedAt = Time.time;
+                autoMinimizeArmed = true;
+            }
+            else if (!connected && autoMinimizeArmed)
+            {
+                // Nos desconectaron: volver a mostrar el panel entero
+                autoMinimizeArmed = false;
+                minimized = false;
+                connectedAt = -1f;
+            }
+
+            if (connected && autoMinimizeArmed && !minimized &&
+                Time.time - connectedAt >= autoMinimizeAfter)
+            {
+                minimized = true;
+            }
         }
 
         private void OnGUI()
@@ -47,11 +91,9 @@ namespace Ratms.Networking
             GUI.skin.label.fontSize = 18;
             GUI.skin.textField.fontSize = 22;
 
-            GUILayout.BeginArea(new Rect(panelMargin.x, panelMargin.y, panelSize.x, panelSize.y),
-                                GUI.skin.box);
-
             if (NetworkManager.Singleton == null)
             {
+                GUILayout.BeginArea(new Rect(panelMargin.x, panelMargin.y, panelSize.x, 60), GUI.skin.box);
                 GUILayout.Label("NetworkManager no encontrado en la escena.");
                 GUILayout.EndArea();
                 GUI.matrix = previousMatrix;
@@ -60,17 +102,54 @@ namespace Ratms.Networking
 
             bool isConnected = NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer;
 
-            if (!isConnected)
+            // Si está minimizado y conectado → solo una pastillita con código
+            if (minimized && isConnected)
             {
-                DrawDisconnectedPanel();
+                DrawMinimizedPill();
             }
             else
             {
-                DrawConnectedPanel();
+                GUILayout.BeginArea(new Rect(panelMargin.x, panelMargin.y, panelSize.x, panelSize.y),
+                                    GUI.skin.box);
+
+                if (!isConnected)
+                {
+                    DrawDisconnectedPanel();
+                }
+                else
+                {
+                    DrawConnectedPanel();
+                }
+
+                GUILayout.EndArea();
             }
 
-            GUILayout.EndArea();
             GUI.matrix = previousMatrix;
+        }
+
+        // ==========================================================
+        // MINIMIZADO (pastilla en la esquina)
+        // ==========================================================
+        private void DrawMinimizedPill()
+        {
+            float w = 230f;
+            float h = 44f;
+            GUILayout.BeginArea(new Rect(panelMargin.x, panelMargin.y, w, h), GUI.skin.box);
+            GUILayout.BeginHorizontal();
+
+            string code = relay.LastJoinCode;
+            if (NetworkManager.Singleton.IsHost && !string.IsNullOrEmpty(code))
+                GUILayout.Label($"Host · {code}", GUILayout.ExpandWidth(true));
+            else if (NetworkManager.Singleton.IsHost)
+                GUILayout.Label("Host", GUILayout.ExpandWidth(true));
+            else
+                GUILayout.Label("Cliente", GUILayout.ExpandWidth(true));
+
+            if (GUILayout.Button("Red ▾", GUILayout.Width(80)))
+                minimized = false;
+
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
         }
 
         // ==========================================================
@@ -121,11 +200,16 @@ namespace Ratms.Networking
         // ==========================================================
         private void DrawConnectedPanel()
         {
+            GUILayout.BeginHorizontal();
             string mode = NetworkManager.Singleton.IsHost ? "HOST"
                         : NetworkManager.Singleton.IsServer ? "SERVER"
                         : "CLIENT";
+            GUILayout.Label($"Conectado como: {mode}", GUILayout.ExpandWidth(true));
 
-            GUILayout.Label($"Conectado como: {mode}");
+            if (GUILayout.Button("Ocultar ▴", GUILayout.Width(100)))
+                minimized = true;
+            GUILayout.EndHorizontal();
+
             GUILayout.Label($"Jugadores conectados: {NetworkManager.Singleton.ConnectedClientsIds.Count}");
 
             // Si el host tiene un código de Relay, lo mostramos bien grande
@@ -147,6 +231,8 @@ namespace Ratms.Networking
                 NetworkManager.Singleton.Shutdown();
                 ClearStatus();
             }
+
+            GUILayout.Label("(pulsa H para mostrar/ocultar)", GUI.skin.label);
         }
 
         // ==========================================================

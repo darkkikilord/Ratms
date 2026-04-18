@@ -223,6 +223,38 @@ namespace Ratms.Networking
         }
 
         // =========================================================
+        // Muerte de jugadores
+        // =========================================================
+        /// <summary>
+        ///  Saca a un cliente de la rotación porque su rata ha muerto.
+        ///  Llamarlo desde el servidor cuando <see cref="NetworkHealth.OnDiedServer"/> dispare.
+        /// </summary>
+        public void RemovePlayerServer(ulong clientId)
+        {
+            if (!IsServer) return;
+
+            int idx = turnOrder.IndexOf(clientId);
+            if (idx < 0) return;
+
+            turnOrder.RemoveAt(idx);
+            if (idx < currentTurnIndex) currentTurnIndex--;
+
+            // Condición de victoria simple: si queda 1 o 0, se acabó la partida
+            if (turnOrder.Count <= 1)
+            {
+                CurrentTurnClientId.Value = ulong.MaxValue;
+                TurnTimeRemaining.Value = 0f;
+                InTransition.Value = false;
+                gameStarted = false;
+                return;
+            }
+
+            // Si cayó el que tenía turno, avanzamos ya
+            if (CurrentTurnClientId.Value == clientId)
+                AdvanceTurnServer();
+        }
+
+        // =========================================================
         // Helpers para los clientes
         // =========================================================
         /// <summary>

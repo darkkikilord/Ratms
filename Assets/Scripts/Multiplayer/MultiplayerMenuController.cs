@@ -1,0 +1,349 @@
+using System.Collections;
+using TMPro;
+using Unity.Netcode;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+
+namespace Ratms.Networking
+{
+    /// <summary>
+    ///  Controlador del PANEL DE MULTIJUGADOR dentro del MainMenu.
+    ///
+    ///  Sustituye al NetworkBootstrap (que era IMGUI rústico) por una UI
+    ///  bonita con Canvas + Buttons + TMP_InputField.
+    ///
+    ///  Flujo:
+    ///    1. Usuario pulsa "Jugar" en el MainMenu → se muestra este panel.
+    ///    2. El HOST pulsa "Crear sala"   → RelayManager crea sala, recibe
+    ///       código corto (ej. ABC123) y lo enseña en pantalla. Se muestra
+    ///       la zona "Esperando jugadores..." con un botón "Empezar" que
+    ///       solo se activa cuando hay ≥ 2 jugadores conectados.
+    ///    3. El CLIENTE introduce el código → RelayManager.JoinAsync. Cuando
+    ///       conecta, entra automáticamente en la zona de espera (no necesita
+    ///       pulsar "Empezar", eso es cosa del host).
+    ///    4. Al pulsar "Empezar partida" el host llama a
+    ///       NetworkManager.SceneManager.LoadScene("Escenario 1"). NGO
+    ///       sincroniza la carga → todos aterrizan en el escenario a la vez.
+    ///    5. El GameSceneSpawnManager (en el Escenario 1) spawneará cada
+    ///       rata en su SpawnPoint correspondiente.
+    ///
+    ///  Notas:
+    ///    • Este GameObject debe vivir como HIJO de un GameObject persistente
+    ///      (DontDestroyOnLoad) junto con el NetworkManager y el RelayManager,
+    ///      porque tiene que seguir vivo al cargar el Escenario 1 para poder
+    ///      escuchar desconexiones y volver al menú. PERO el PANEL de UI
+    ///      solo existe en el MainMenu; al cambiar de escena lo ocultamos.
+    ///
+    ///    • Si prefieres mantenerlo simple (no persistente), coméntame y lo
+    ///      dejamos solo en el MainMenu — perderemos la capacidad de volver
+    ///      al menú sin reiniciar, pero ahorramos complicaciones.
+    /// </summary>
+    public class MultiplayerMenuController : MonoBehaviour
+    {
+        [Header("Dependencias")]
+        [Tooltip("El RelayManager (normalmente en el mismo GameObject persistente que el NetworkManager).")]
+        [SerializeField] private RelayManager relayManager;
+
+        [Header("Paneles del menú")]
+        [Tooltip("Panel raíz del MAIN del menú (con botones Jugar / Opciones / Salir).")]
+        [SerializeField] private GameObject mainPanel;
+
+        [Tooltip("Panel de elección HOST / CLIENT (con los botones 'Crear sala' y 'Unirse').")]
+        [SerializeField] private GameObject multiplayerPanel;
+
+        [Tooltip("Panel de espera: muestra el código y 'Esperando jugadores...' para el host.")]
+        [SerializeField] private GameObject lobbyPanel;
+
+        [Header("Botones — elección Host / Client")]
+        [SerializeField] private Button btnCreateRoom;
+        [SerializeField] private Button btnJoinRoom;
+        [SerializeField] private Button btnBackFromMultiplayer;
+        [Tooltip("Campo donde el cliente introduce el código de sala (ej. ABC123).")]
+        [SerializeField] private TMP_InputField joinCodeInput;
+
+        [Header("UI del lobby (tras crear / unirse)")]
+        [Tooltip("Texto que muestra 'Código: XXXXXX' al host.")]
+        [SerializeField] private TMP_Text lobbyCodeText;
+
+        [Tooltip("Texto con el número de jugadores conectados ('2/4 jugadores en la sala').")]
+        [SerializeField] private TMP_Text lobbyPlayerCountText;
+
+        [Tooltip("Botón 'Empezar partida'. Solo el HOST lo ve y solo se activa con ≥2 jugadores.")]
+        [SerializeField] private Button btnStartGame;
+
+        [Tooltip("Botón 'Cancelar / Desconectar' — sale de la sala y vuelve al menú.")]
+        [SerializeField] private Button btnCancelLobby;
+
+        [Tooltip("Mensajes de estado ('Creando sala...', 'Error', etc.).")]
+        [SerializeField] private TMP_Text statusText;
+
+        [Header("Config")]
+        [Tooltip("Nombre EXACTO de la escena del escenario de juego. Añádela en Build Settings.")]
+        [SerializeField] private string gameSceneName = "Escenario 1";
+
+        [Tooltip("Mínimo de jugadores para poder empezar (por defecto 2 — host + 1).")]
+        [SerializeField] private int minPlayersToStart = 2;
+
+        // ----------------------------------------------------------------
+        private bool isBusy;
+
+        // ================================================================
+        private void Awake()
+        {
+            // Auto-resolver el RelayManager. Orden de búsqueda:
+            //   1. Mismo GameObject  2. Padres  3. Cualquier sitio en la escena.
+            if (relayManager == null) relayManager = GetComponent<RelayManager>();
+            if (relayManager == null) relayManager = GetComponentInParent<RelayManager>();
+            if (relayManager == null) relayManager = FindFirstObjectByType<RelayManager>();
+
+            if (btnCreateRoom          != null) btnCreateRoom.onClick.AddListener(OnCreateRoomClicked);
+            if (btnJoinRoom            != null) btnJoinRoom.onClick.AddListener(OnJoinRoomClicked);
+            if (btnBackFromMultiplayer != null) btnBackFromMultiplayer.onClick.AddListener(ShowMain);
+            if (btnStartGame           != null) btnStartGame.onClick.AddListener(OnStartGameClicked);
+            if (btnCancelLobby         != null) btnCancelLobby.onClick.AddListener(OnCancelLobbyClicked);
+
+            // Arranque limpio: solo el main panel visible.
+            ShowMain();
+            SetStatus("");
+        }
+
+        private void OnEnable()
+        {
+            if (NetworkManager.Singleton != null)
+            {
+                NetworkManager.Singleton.OnClientConnectedCallback    += HandleClientConnected;
+                NetworkManager.Singleton.OnClientDisconnectCallback   += HandleClientDisconnected;
+                NetworkManager.Singleton.OnServerStarted              += HandleServerStarted;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (NetworkManager.Singleton != null)
+            {
+                NetworkManager.Singleton.OnClientConnectedCallback    -= HandleClientConnected;
+                NetworkManager.Singleton.OnClientDisconnectCallback   -= HandleClientDisconnected;
+                NetworkManager.Singleton.OnServerStarted              -= HandleServerStarted;
+            }
+        }
+
+        // ================================================================
+        // NAVEGACIÓN DE PANELES
+        // ================================================================
+        /// <summary>
+        ///  Llamado desde el botón "Jugar" del MainMenuController.
+        ///  Muestra el panel de elección Host/Client.
+        /// </summary>
+        public void ShowMultiplayer()
+        {
+            SetActive(mainPanel, false);
+            SetActive(multiplayerPanel, true);
+            SetActive(lobbyPanel, false);
+            SetStatus("");
+        }
+
+        public void ShowMain()
+        {
+            SetActive(mainPanel, true);
+            SetActive(multiplayerPanel, false);
+            SetActive(lobbyPanel, false);
+            SetStatus("");
+        }
+
+        private void ShowLobby()
+        {
+            SetActive(mainPanel, false);
+            SetActive(multiplayerPanel, false);
+            SetActive(lobbyPanel, true);
+            RefreshLobbyUI();
+        }
+
+        /// <summary>
+        ///  Oculta TODOS los paneles del menú. Se llama al cargar el Escenario 1
+        ///  para que no tape el juego.
+        /// </summary>
+        public void HideAllPanels()
+        {
+            SetActive(mainPanel, false);
+            SetActive(multiplayerPanel, false);
+            SetActive(lobbyPanel, false);
+        }
+
+        // ================================================================
+        // ACCIONES (botones)
+        // ================================================================
+        private async void OnCreateRoomClicked()
+        {
+            if (isBusy || relayManager == null) return;
+            isBusy = true;
+            SetStatus("Creando sala...");
+
+            string code = await relayManager.CreateHostAsync();
+
+            isBusy = false;
+
+            if (string.IsNullOrEmpty(code))
+            {
+                SetStatus("❌ Error creando sala. Revisa la consola.");
+                return;
+            }
+
+            // Al crear el host, pasamos al lobby.
+            ShowLobby();
+        }
+
+        private async void OnJoinRoomClicked()
+        {
+            if (isBusy || relayManager == null) return;
+
+            string code = joinCodeInput != null ? joinCodeInput.text.Trim().ToUpper() : "";
+            if (string.IsNullOrEmpty(code))
+            {
+                SetStatus("Introduce un código para unirte.");
+                return;
+            }
+
+            isBusy = true;
+            SetStatus($"Uniéndose a {code}...");
+
+            bool ok = await relayManager.JoinAsync(code);
+
+            isBusy = false;
+
+            if (!ok)
+            {
+                SetStatus("❌ Error al unirse. ¿El código es correcto?");
+                return;
+            }
+
+            // Cliente conectado → pasamos al lobby (se mostrará "Esperando al host...").
+            ShowLobby();
+        }
+
+        private void OnStartGameClicked()
+        {
+            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsHost) return;
+            if (NetworkManager.Singleton.ConnectedClients.Count < minPlayersToStart)
+            {
+                SetStatus($"Necesitas al menos {minPlayersToStart} jugadores.");
+                return;
+            }
+
+            // Ocultamos el menú antes del cambio de escena para evitar que se vea
+            // sobrepuesto durante la transición.
+            HideAllPanels();
+
+            // NGO carga la escena SINCRONIZADA en todos los clientes.
+            NetworkManager.Singleton.SceneManager.LoadScene(gameSceneName, LoadSceneMode.Single);
+        }
+
+        private void OnCancelLobbyClicked()
+        {
+            if (NetworkManager.Singleton != null &&
+                (NetworkManager.Singleton.IsHost || NetworkManager.Singleton.IsClient))
+            {
+                NetworkManager.Singleton.Shutdown();
+            }
+
+            // Damos un pequeño retardo para que el Shutdown se procese antes
+            // de volver a mostrar el menú principal.
+            StartCoroutine(ReturnToMainAfterFrame());
+        }
+
+        private IEnumerator ReturnToMainAfterFrame()
+        {
+            yield return null;
+            ShowMain();
+        }
+
+        // ================================================================
+        // EVENTOS DE RED
+        // ================================================================
+        private void HandleServerStarted()
+        {
+            // El HOST ya está servidor + cliente — el RefreshLobbyUI se encarga
+            // de mostrar el código y habilitar/deshabilitar el botón Empezar.
+            RefreshLobbyUI();
+        }
+
+        private void HandleClientConnected(ulong clientId)
+        {
+            RefreshLobbyUI();
+        }
+
+        private void HandleClientDisconnected(ulong clientId)
+        {
+            // Si el que se fue soy yo (cliente, no host), vuelvo al menú.
+            var nm = NetworkManager.Singleton;
+            if (nm != null && !nm.IsServer && clientId == nm.LocalClientId)
+            {
+                SetStatus("Te has desconectado de la sala.");
+                ShowMain();
+                return;
+            }
+
+            RefreshLobbyUI();
+        }
+
+        // ================================================================
+        // UI del lobby
+        // ================================================================
+        private void Update()
+        {
+            // Refresco defensivo mientras el lobby esté abierto, por si se pierde
+            // algún evento (poco común pero nos curamos en salud).
+            if (lobbyPanel != null && lobbyPanel.activeInHierarchy)
+                RefreshLobbyUI();
+        }
+
+        private void RefreshLobbyUI()
+        {
+            if (lobbyPanel == null || !lobbyPanel.activeInHierarchy) return;
+            var nm = NetworkManager.Singleton;
+            if (nm == null) return;
+
+            // Código de sala (solo el host tiene uno real; el cliente ya lo metió él).
+            if (lobbyCodeText != null)
+            {
+                if (nm.IsHost && relayManager != null && !string.IsNullOrEmpty(relayManager.LastJoinCode))
+                    lobbyCodeText.text = $"Código: {relayManager.LastJoinCode}";
+                else if (nm.IsClient)
+                    lobbyCodeText.text = "Conectado a la sala";
+                else
+                    lobbyCodeText.text = "";
+            }
+
+            // Jugadores conectados
+            int count = nm.ConnectedClientsIds != null ? nm.ConnectedClientsIds.Count : 0;
+            if (lobbyPlayerCountText != null)
+                lobbyPlayerCountText.text = $"{count} jugadores en la sala";
+
+            // Botón Empezar: solo el host lo ve y solo si hay suficientes jugadores.
+            if (btnStartGame != null)
+            {
+                btnStartGame.gameObject.SetActive(nm.IsHost);
+                btnStartGame.interactable = nm.IsHost && count >= minPlayersToStart;
+            }
+
+            // Mensaje de estado por defecto del lobby
+            if (statusText != null && string.IsNullOrEmpty(statusText.text))
+            {
+                SetStatus(nm.IsHost
+                    ? (count >= minPlayersToStart ? "Listos para empezar" : "Esperando jugadores...")
+                    : "Esperando a que el host empiece...");
+            }
+        }
+
+        // ================================================================
+        private void SetActive(GameObject go, bool active)
+        {
+            if (go != null && go.activeSelf != active) go.SetActive(active);
+        }
+
+        private void SetStatus(string msg)
+        {
+            if (statusText != null) statusText.text = msg;
+        }
+    }
+}

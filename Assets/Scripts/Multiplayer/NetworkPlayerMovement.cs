@@ -89,12 +89,21 @@ namespace Ratms.Networking
             writePerm: NetworkVariableWritePermission.Owner);
 
         /// <summary>
-        ///  Ángulo de apuntado en grados (0 = horizontal, 90 = arriba).
+        ///  Ángulo de apuntado en grados, RELATIVO al lado al que mira la rata:
+        ///      0°  = recto hacia adelante (en la dirección que mira la rata)
+        ///     +90° = recto arriba
+        ///     -90° = recto abajo
         ///  Lo escribe el dueño, lo leen todos los clientes para aplicar la
         ///  rotación del weaponHolder. Así todos ven tu bazooka apuntando al mismo sitio.
+        ///
+        ///  El ángulo se guarda SIEMPRE en el sistema local del weaponHolder —
+        ///  el flip del lado lo hace ApplyFlipVisual invirtiendo la escala local
+        ///  del weaponHolder. Con ese truco, "0° adelante" apunta a la derecha
+        ///  cuando facingRight=true y a la izquierda cuando facingRight=false,
+        ///  sin tocar la variable.
         /// </summary>
         private readonly NetworkVariable<float> aimAngle = new(
-            value: 45f,
+            value: 0f,
             readPerm: NetworkVariableReadPermission.Everyone,
             writePerm: NetworkVariableWritePermission.Owner);
 
@@ -129,15 +138,28 @@ namespace Ratms.Networking
         private void ResolveVisualReferences()
         {
             // SpriteRenderer "de verdad" de la rata:
-            // primero el propio objeto, luego en hijos EXCLUYENDO el WeaponHolder
+            // primero el propio objeto, luego en hijos EXCLUYENDO el WeaponHolder.
+            //
+            // OJO: si el prefab tiene bodySprite arrastrado desde el source-prefab
+            // externo, esa referencia puede apuntar a un SpriteRenderer que NO
+            // pertenece a esta instancia (no es hijo de este transform). Entonces
+            // no se renderiza nada cuando lo flipeamos. Lo detectamos y descartamos.
+            if (bodySprite != null &&
+                bodySprite.transform != transform &&
+                !bodySprite.transform.IsChildOf(transform))
+            {
+                bodySprite = null;
+            }
+
             if (bodySprite == null) bodySprite = GetComponent<SpriteRenderer>();
             if (bodySprite == null)
             {
                 foreach (var sr in GetComponentsInChildren<SpriteRenderer>(true))
                 {
                     // Ignoramos sprites que cuelguen del WeaponHolder (armas equipadas)
-                    if (sr.transform.IsChildOf(transform) &&
-                        !sr.transform.name.ToLower().Contains("weapon"))
+                    if (weaponHolder != null && sr.transform.IsChildOf(weaponHolder))
+                        continue;
+                    if (sr.transform.IsChildOf(transform))
                     {
                         bodySprite = sr;
                         break;
@@ -285,9 +307,14 @@ namespace Ratms.Networking
             float v = Input.GetAxisRaw("Vertical");
             if (Mathf.Abs(v) < 0.1f) return;
 
+            // Rango SEMIcírculo del lado al que mira la rata:
+            //    -90° = recto abajo
+            //      0° = horizontal hacia adelante (en el lado al que mira la rata)
+            //    +90° = recto arriba
+            // Así NUNCA puede apuntar hacia atrás (y por tanto no se autodaña).
+            // Para disparar al otro lado, la rata tiene que girarse moviéndose.
             float next = aimAngle.Value + v * aimSpeed * Time.deltaTime;
-            // Limito a un rango cómodo para jugar (0° horizontal adelante, 90° arriba, 180° atrás)
-            next = Mathf.Clamp(next, 0f, 180f);
+            next = Mathf.Clamp(next, -90f, 90f);
             aimAngle.Value = next;
         }
 
@@ -300,30 +327,17 @@ namespace Ratms.Networking
         {
             if (weaponHolder == null) return;
 
-            // Rotación Z pura: ángulo de apuntado.
-            // (Antes usábamos también Y=180 al mirar a la izquierda, pero eso
-            //  al combinarse con la Z dejaba el apuntado al revés — ponías 90°
-            //  pensando "arriba" y el motor calculaba "abajo". Ya no.)
+            // Aquí SOLO escribimos el ángulo local. El flip del lado (mirar
+            // izquierda) se hace en ApplyFlipVisual invirtiendo la escala
+            // local del weaponHolder (ws.x = -abs). Con eso:
+            //   · 0° local + scale.x=+1 → apunta a la derecha (adelante).
+            //   · 0° local + scale.x=-1 → apunta a la izquierda (adelante
+            //                              visual al otro lado).
+            //   · +90° → arriba en ambos casos.
+            //   · -90° → abajo en ambos casos.
+            // Ningún signo del ángulo hay que cambiar porque la rotación Z
+            // compuesta con scale.x negativo ya refleja el vector.
             weaponHolder.localEulerAngles = new Vector3(0f, 0f, angle);
-
-            // Flip horizontal REAL con escala negativa en X.
-            // Esto refleja el weaponHolder y TODOS sus hijos (bazooka visual,
-            // firepoint, trayectoria) como un espejo. Así el arma apunta hacia
-            // la misma dirección que la rata y el ángulo de apuntado responde
-            // bien en ambos lados.
-            Vector3 scale = weaponHolder.localScale;
-            float abs = Mathf.Abs(scale.x);
-            scale.x = right ? abs : -abs;
-            weaponHolder.localScale = scale;
-
-            // Reflejamos la posición local en X por si el pivote del
-            // weaponHolder no está justo en el centro de la rata.
-            if (weaponHolderPosCached)
-            {
-                var pos = weaponHolderDefaultPos;
-                pos.x *= right ? 1f : -1f;
-                weaponHolder.localPosition = pos;
-            }
         }
 
         // ==================================================================
@@ -338,13 +352,13 @@ namespace Ratms.Networking
 
             if (bazooka.IsCharging)
             {
-                Vector2 dir = weaponHolder != null ? (Vector2)weaponHolder.right : Vector2.right;
+                Vector2 dir = GetWeaponForward();
                 bazooka.TickCharging(Time.deltaTime, dir);
             }
 
             if (Input.GetKeyUp(KeyCode.Space) && bazooka.IsCharging)
             {
-                Vector2 dir = weaponHolder != null ? (Vector2)weaponHolder.right : Vector2.right;
+                Vector2 dir = GetWeaponForward();
                 bool fired = bazooka.ReleaseShot(dir);
                 if (fired) ScheduleEndTurn();
             }
@@ -401,26 +415,70 @@ namespace Ratms.Networking
 
         private void ApplyFlipVisual(bool right)
         {
-            // Voltamos la rata cambiando el signo del scale.x del transform del sprite.
-            // Hemos comprobado con logs que es este método el que realmente se aplica
-            // al SpriteRenderer visible (no el flipX), así que usamos SOLO este para
-            // no cancelarnos a nosotros mismos.
+            // Estrategia: root SIEMPRE con escala positiva (no pisamos la escala
+            // que NetworkTransform sincroniza, y evitamos efectos raros en
+            // Rigidbody2D/Colliders). En su lugar:
+            //   1) El cuerpo se flipea con bodySprite.flipX.
+            //   2) El weaponHolder se flipea con su PROPIA escala local, así
+            //      el lanzamisiles mira al mismo lado que la rata.
+            //   3) La posición local del weaponHolder se refleja en X, para
+            //      que el arma no aparezca "cruzando" el cuerpo al girarse.
+            Vector3 rs = transform.localScale;
+            rs.x = Mathf.Abs(rs.x);
+            transform.localScale = rs;
+
+            // 1) Cuerpo: flipX en TODOS los sprites que NO cuelgan del weaponHolder.
+            //    Así no depende de que la referencia "bodySprite" del inspector
+            //    apunte al sprite correcto (a veces queda rota al heredar del
+            //    source prefab).
             if (allSprites != null)
             {
                 foreach (var sr in allSprites)
+                    if (sr != null) sr.flipX = !right;
+            }
+
+            // Seguridad: también el bodySprite explícito, por si apunta a uno
+            // no incluido en allSprites (p.ej. si quedó fuera del filtro).
+            if (bodySprite != null)
+                bodySprite.flipX = !right;
+
+            // 2) Weapon holder: escala local en X según lado
+            if (weaponHolder != null)
+            {
+                Vector3 ws = weaponHolder.localScale;
+                float absX = Mathf.Abs(ws.x);
+                ws.x = right ? absX : -absX;
+                weaponHolder.localScale = ws;
+
+                // 3) Posición local reflejada para que no quede "detrás" del cuerpo
+                if (weaponHolderPosCached)
                 {
-                    if (sr == null) continue;
-
-                    // Aseguramos flipX = false para que no interfiera
-                    sr.flipX = false;
-
-                    Transform t = sr.transform;
-                    Vector3 scale = t.localScale;
-                    float abs = Mathf.Abs(scale.x);
-                    scale.x = right ? abs : -abs;
-                    t.localScale = scale;
+                    Vector3 p = weaponHolderDefaultPos;
+                    p.x = right ? Mathf.Abs(p.x) : -Mathf.Abs(p.x);
+                    weaponHolder.localPosition = p;
                 }
             }
+        }
+
+        // ==================================================================
+        // DIRECCIÓN DE DISPARO / TRAYECTORIA
+        // ==================================================================
+        /// <summary>
+        ///  Dirección "forward" del weaponHolder en world space, TENIENDO EN
+        ///  CUENTA la escala local negativa (flip a la izquierda).
+        ///  <see cref="Transform.right"/> ignora la escala — solo usa la
+        ///  rotación — así que tras flipear scale.x=-1 devolvería el vector
+        ///  hacia la derecha, incorrecto. Con localToWorldMatrix sí aplicamos
+        ///  rotación + escala y obtenemos el vector que realmente apunta hacia
+        ///  el frente del arma flipeada.
+        /// </summary>
+        private Vector2 GetWeaponForward()
+        {
+            if (weaponHolder == null) return Vector2.right;
+            Vector3 v = weaponHolder.localToWorldMatrix.MultiplyVector(Vector3.right);
+            Vector2 r = new Vector2(v.x, v.y);
+            if (r.sqrMagnitude < 0.0001f) return Vector2.right;
+            return r.normalized;
         }
 
         // ==================================================================

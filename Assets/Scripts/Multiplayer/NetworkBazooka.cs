@@ -171,10 +171,24 @@ namespace Ratms.Networking
             return true;
         }
 
-        /// <summary>Dirección de apuntado (punta del cañón). Usa firePoint.right como vector forward.</summary>
+        /// <summary>
+        ///  Dirección de apuntado en world space (punta del cañón).
+        ///
+        ///  OJO: NO usamos <c>firePoint.right</c> porque ese vector IGNORA la
+        ///  escala del transform (solo usa la rotación). Cuando la rata mira
+        ///  a la izquierda, el weaponHolder tiene scale.x = -1 y eso NO afecta
+        ///  a <c>Transform.right</c> — seguiría devolviendo el vector derecho.
+        ///  Con <c>localToWorldMatrix.MultiplyVector</c> sí se aplica rotación
+        ///  y escala, así obtenemos el vector que realmente apunta al frente
+        ///  del cañón incluso con la rata flipeada.
+        /// </summary>
         private Vector2 AimDirection()
         {
-            return firePoint != null ? (Vector2)firePoint.right : Vector2.right;
+            if (firePoint == null) return Vector2.right;
+            Vector3 v = firePoint.localToWorldMatrix.MultiplyVector(Vector3.right);
+            Vector2 r = new Vector2(v.x, v.y);
+            if (r.sqrMagnitude < 0.0001f) return Vector2.right;
+            return r.normalized;
         }
 
         // ==============================================================

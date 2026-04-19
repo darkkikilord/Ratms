@@ -94,7 +94,27 @@ namespace Ratms.Networking
                 foreach (var id in NetworkManager.Singleton.ConnectedClientsIds)
                     if (!turnOrder.Contains(id))
                         turnOrder.Add(id);
+
+                // IMPORTANTE: si entramos desde el lobby, los clientes ya estaban
+                // conectados ANTES de cargar esta escena — por tanto OnClientConnected
+                // no se disparará para ellos aquí. Hay que arrancar el juego manualmente
+                // esperando un poquito (1s) a que NGO termine de sincronizar la escena
+                // y los objetos de jugador estén creados (los spawnea GameSceneSpawnManager).
+                Debug.Log($"[NetworkTurnManager] OnNetworkSpawn → {turnOrder.Count} jugadores en la cola. Arranque programado.");
+                Invoke(nameof(TryStartGameServer), 1.5f);
             }
+        }
+
+        /// <summary>
+        ///  Llamado por Invoke tras un pequeño delay, para dar tiempo a que
+        ///  las ratas se hayan spawneado en todos los clientes antes de decir
+        ///  de quién es el turno.
+        /// </summary>
+        private void TryStartGameServer()
+        {
+            if (!IsServer) return;
+            Debug.Log($"[NetworkTurnManager] TryStartGameServer — gameStarted={gameStarted}, jugadores={turnOrder.Count}");
+            if (!gameStarted) StartGameIfReady();
         }
 
         public override void OnNetworkDespawn()

@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using Ratms.Core;
+using Ratms.Networking;
 
 namespace Ratms.UI
 {
@@ -15,6 +16,7 @@ namespace Ratms.UI
 
         [Header("Buttons (Main)")]
         [SerializeField] private Button btnPlay;
+        [SerializeField] private Button btnMultiplayer;
         [SerializeField] private Button btnOptions;
         [SerializeField] private Button btnQuit;
 
@@ -22,7 +24,15 @@ namespace Ratms.UI
         [SerializeField] private Slider progressBar;
         [SerializeField] private TMP_Text loadingText;
 
+        [Header("Multijugador")]
+        [Tooltip("Controlador del panel multijugador (NetworkManager + lobby). Deja vacío para un MainMenu puramente single-player.")]
+        [SerializeField] private MultiplayerMenuController multiplayerMenu;
+
+        [Tooltip("Si está marcado, el botón 'Jugar' abre DIRECTAMENTE el panel multijugador (como si fuera Multijugador). Útil si el MainMenu solo tiene un botón Jugar.")]
+        [SerializeField] private bool playGoesToMultiplayer = false;
+
         [Header("Config")]
+        [Tooltip("Escena single-player que carga el botón 'Jugar' cuando NO va a multijugador.")]
         [SerializeField] private string firstLevelSceneName = "Level_01";
         [SerializeField] private bool useAsyncLoading = false;
 
@@ -32,6 +42,7 @@ namespace Ratms.UI
             if (loadingPanel) loadingPanel.SetActive(false);
 
             if (btnPlay) btnPlay.onClick.AddListener(OnPlay);
+            if (btnMultiplayer) btnMultiplayer.onClick.AddListener(OnMultiplayer);
             if (btnOptions) btnOptions.onClick.AddListener(ShowOptions);
             if (btnQuit) btnQuit.onClick.AddListener(OnQuit);
         }
@@ -55,6 +66,14 @@ namespace Ratms.UI
 
         private void OnPlay()
         {
+            // Opción: el botón 'Jugar' va directo al panel multijugador.
+            if (playGoesToMultiplayer && multiplayerMenu != null)
+            {
+                OnMultiplayer();
+                return;
+            }
+
+            // Single-player clásico.
             if (useAsyncLoading && loadingPanel && progressBar && loadingText)
             {
                 StartCoroutine(LoadAsyncRoutine());
@@ -63,6 +82,21 @@ namespace Ratms.UI
             {
                 SceneLoader.LoadScene(firstLevelSceneName);
             }
+        }
+
+        /// <summary>
+        ///  Llamado por el botón 'Multijugador'. Abre el panel de red.
+        /// </summary>
+        public void OnMultiplayer()
+        {
+            if (multiplayerMenu == null)
+            {
+                Debug.LogWarning("[MainMenu] No hay multiplayerMenu asignado en el inspector.");
+                return;
+            }
+            multiplayerMenu.ShowMultiplayer();
+            if (mainPanel) mainPanel.SetActive(false);
+            if (optionsPanel) optionsPanel.SetActive(false);
         }
 
         private IEnumerator LoadAsyncRoutine()

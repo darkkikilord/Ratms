@@ -115,11 +115,19 @@ namespace Ratms.Networking
             var hits = Physics2D.OverlapCircleAll(at, explosionRadius, damageMask);
             var alreadyDamaged = new HashSet<NetworkHealth>();
 
+            // NetworkHealth del dueño del misil: lo EXCLUIMOS del daño en área
+            // para evitar que un disparo hacia atrás te explote en la cara.
+            // (Worms-style: nunca te daña TU propio misil.)
+            NetworkHealth ownerHealth = null;
+            if (ownerNetObj != null)
+                ownerHealth = ownerNetObj.GetComponent<NetworkHealth>();
+
             foreach (var col in hits)
             {
                 if (col == null) continue;
                 var nh = col.GetComponentInParent<NetworkHealth>();
                 if (nh == null || alreadyDamaged.Contains(nh)) continue;
+                if (ownerHealth != null && nh == ownerHealth) continue; // no auto-daño
                 alreadyDamaged.Add(nh);
 
                 float dist = Vector2.Distance((Vector2)at, (Vector2)col.transform.position);

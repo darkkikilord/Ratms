@@ -556,7 +556,7 @@ MonoBehaviour:
   toggleKey: 9
   panelSize: {x: 260, y: 240}
   panelOffset: {x: 20, y: 20}
-  defaultWeapon: 0
+  defaultWeapon: -1
 --- !u!4 &7910872146381693778 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7878350319992209165, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}

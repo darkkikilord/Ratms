@@ -67,7 +67,7 @@ namespace Ratms.Networking
         {
             new WeaponEntry { id = WeaponId.None,     displayName = "Ninguna (guardar arma)",     implemented = true,  shortcut = KeyCode.Alpha0 },
             new WeaponEntry { id = WeaponId.Bazooka,  displayName = "Bazooka",                    implemented = true,  shortcut = KeyCode.Alpha1 },
-            new WeaponEntry { id = WeaponId.Grenade,  displayName = "Granada (próximamente)",     implemented = false, shortcut = KeyCode.Alpha2 },
+            new WeaponEntry { id = WeaponId.Grenade,  displayName = "Granada",                    implemented = true,  shortcut = KeyCode.Alpha2 },
             new WeaponEntry { id = WeaponId.Dynamite, displayName = "Dinamita (próximamente)",    implemented = false, shortcut = KeyCode.Alpha3 },
             new WeaponEntry { id = WeaponId.Shotgun,  displayName = "Escopeta (próximamente)",    implemented = false, shortcut = KeyCode.Alpha4 },
         };

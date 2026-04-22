@@ -49,6 +49,12 @@ namespace Ratms.Networking
         [Tooltip("Referencia al NetworkBazooka en la propia rata (se auto-resuelve si está vacío).")]
         [SerializeField] private NetworkBazooka bazooka;
 
+        [Tooltip("Referencia al NetworkGrenadeThrower en la propia rata (se auto-resuelve si está vacío).")]
+        [SerializeField] private NetworkGrenadeThrower grenadeThrower;
+
+        [Tooltip("Menú de armas de la propia rata (se auto-resuelve). Sirve para saber qué arma está equipada y disparar la correcta.")]
+        [SerializeField] private WeaponsMenuUI weaponsMenu;
+
         [Tooltip("Mano de la rata que sujeta el arma. Rota con el ángulo de apuntado.")]
         [SerializeField] private Transform weaponHolder;
 
@@ -116,8 +122,10 @@ namespace Ratms.Networking
             ResolveVisualReferences();
             speedHash = Animator.StringToHash(speedParam);
 
-            // Auto-resolución del bazooka y la vida si están en la misma rata
+            // Auto-resolución de referencias en la propia rata
             if (bazooka == null) bazooka = GetComponentInChildren<NetworkBazooka>();
+            if (grenadeThrower == null) grenadeThrower = GetComponentInChildren<NetworkGrenadeThrower>();
+            if (weaponsMenu == null) weaponsMenu = GetComponentInChildren<WeaponsMenuUI>();
             if (health == null) health = GetComponent<NetworkHealth>();
 
             // Guardamos la pos local por defecto del weaponHolder para poder
@@ -212,11 +220,14 @@ namespace Ratms.Networking
                 ? $"Rat_{OwnerClientId}_(yo)"
                 : $"Rat_{OwnerClientId}";
 
-            // Si SOY yo, que la cámara me siga
+            // Si SOY yo, que la cámara me siga (y recuerde a quién volver
+            // tras seguir un proyectil o tras una pausa de impacto).
             if (IsOwner)
             {
-                var cam = Camera.main != null ? Camera.main.GetComponent<CameraFollow>() : null;
-                if (cam != null) cam.target = transform;
+                var cam = CameraFollow.Instance != null
+                    ? CameraFollow.Instance
+                    : (Camera.main != null ? Camera.main.GetComponent<CameraFollow>() : null);
+                if (cam != null) cam.SetTarget(transform);
             }
         }
 
@@ -265,9 +276,11 @@ namespace Ratms.Networking
 
             if (!CanControl())
             {
-                // Si pierdo el turno mientras me movía, dejo de empujar y cancelo carga.
+                // Si pierdo el turno mientras me movía, dejo de empujar y cancelo
+                // cualquier carga en curso (bazooka o granada).
                 inputX = 0f;
                 if (bazooka != null && bazooka.IsCharging) bazooka.CancelCharging();
+                if (grenadeThrower != null && grenadeThrower.IsCharging) grenadeThrower.CancelCharging();
                 return;
             }
 
@@ -327,39 +340,71 @@ namespace Ratms.Networking
         {
             if (weaponHolder == null) return;
 
-            // Aquí SOLO escribimos el ángulo local. El flip del lado (mirar
-            // izquierda) se hace en ApplyFlipVisual invirtiendo la escala
-            // local del weaponHolder (ws.x = -abs). Con eso:
-            //   · 0° local + scale.x=+1 → apunta a la derecha (adelante).
-            //   · 0° local + scale.x=-1 → apunta a la izquierda (adelante
-            //                              visual al otro lado).
-            //   · +90° → arriba en ambos casos.
-            //   · -90° → abajo en ambos casos.
-            // Ningún signo del ángulo hay que cambiar porque la rotación Z
-            // compuesta con scale.x negativo ya refleja el vector.
-            weaponHolder.localEulerAngles = new Vector3(0f, 0f, angle);
+            // El flip de la rata (mirar izquierda) se hace poniendo scale.x=-1
+            // en el weaponHolder. Ese flip INVIERTE el eje X local, por lo que
+            // la rotación Z acaba invertida visualmente:
+            //   · scale.x=+1, Z=+90° → arma apunta arriba (✓ lo esperado).
+            //   · scale.x=-1, Z=+90° → arma apunta ABAJO (✗ controles invertidos).
+            // Para que ↑ y ↓ se sientan igual en ambos lados, cuando la rata
+            // mira a la izquierda APLICAMOS el ángulo negado. Así se cancela
+            // el efecto del scale negativo y arriba sigue siendo arriba.
+            //
+            // Ojo: la variable `aimAngle` sigue siendo la misma en red — la
+            // corrección se hace solo al pintar. Si no lo hiciéramos así, al
+            // girarte darías tumbos raros en el ángulo sincronizado.
+            float applied = right ? angle : -angle;
+            weaponHolder.localEulerAngles = new Vector3(0f, 0f, applied);
         }
 
         // ==================================================================
         // DISPARO
         // ==================================================================
+        /// <summary>
+        ///  ¿Qué arma está equipada AHORA? Se lee del WeaponsMenuUI sincronizado.
+        ///  Si no hay menú o no se puede leer, asumimos bazooka como fallback.
+        /// </summary>
+        private WeaponsMenuUI.WeaponId CurrentWeapon()
+        {
+            if (weaponsMenu == null) return WeaponsMenuUI.WeaponId.Bazooka;
+            return weaponsMenu.SelectedWeapon;
+        }
+
+        /// <summary>
+        ///  Enruta el input de carga/disparo al arma correcta según el menú.
+        ///  Si tienes bazooka equipada, carga/dispara el bazooka. Si tienes
+        ///  granada, carga/dispara el GrenadeThrower. Si no tienes arma
+        ///  equipada, ESPACIO no hace nada.
+        /// </summary>
         private void HandleFireInput()
         {
-            if (bazooka == null) return;
+            WeaponsMenuUI.WeaponId equipped = CurrentWeapon();
 
+            // === START: al pulsar ESPACIO, arrancamos la carga del arma correspondiente ===
             if (Input.GetKeyDown(KeyCode.Space))
-                bazooka.StartCharging();
-
-            if (bazooka.IsCharging)
             {
-                Vector2 dir = GetWeaponForward();
-                bazooka.TickCharging(Time.deltaTime, dir);
+                if (equipped == WeaponsMenuUI.WeaponId.Bazooka && bazooka != null)
+                    bazooka.StartCharging();
+                else if (equipped == WeaponsMenuUI.WeaponId.Grenade && grenadeThrower != null)
+                    grenadeThrower.StartCharging();
             }
 
-            if (Input.GetKeyUp(KeyCode.Space) && bazooka.IsCharging)
+            // === TICK: mientras se mantiene pulsado, sube la fuerza ===
+            Vector2 dir = GetWeaponForward();
+
+            if (bazooka != null && bazooka.IsCharging)
+                bazooka.TickCharging(Time.deltaTime, dir);
+            if (grenadeThrower != null && grenadeThrower.IsCharging)
+                grenadeThrower.TickCharging(Time.deltaTime, dir);
+
+            // === RELEASE: al soltar ESPACIO, disparamos ===
+            if (Input.GetKeyUp(KeyCode.Space))
             {
-                Vector2 dir = GetWeaponForward();
-                bool fired = bazooka.ReleaseShot(dir);
+                bool fired = false;
+                if (bazooka != null && bazooka.IsCharging)
+                    fired = bazooka.ReleaseShot(dir);
+                if (!fired && grenadeThrower != null && grenadeThrower.IsCharging)
+                    fired = grenadeThrower.ReleaseShot(dir);
+
                 if (fired) ScheduleEndTurn();
             }
         }
@@ -411,6 +456,9 @@ namespace Ratms.Networking
         private void OnFacingChanged(bool oldValue, bool newValue)
         {
             ApplyFlipVisual(newValue);
+            // El lado ha cambiado → el signo visual del ángulo también, así que
+            // repintamos el apuntado inmediatamente para no esperar al LateUpdate.
+            ApplyAimRotation(aimAngle.Value, newValue);
         }
 
         private void ApplyFlipVisual(bool right)

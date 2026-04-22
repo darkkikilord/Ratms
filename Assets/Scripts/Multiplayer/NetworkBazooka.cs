@@ -57,6 +57,12 @@ namespace Ratms.Networking
         public float MaxForce => maxForce;
         public bool IsBazookaEquipped => weaponsMenu == null || weaponsMenu.IsBazookaEquipped;
 
+        /// <summary>Expone el firePoint para que otras armas (granada, dinamita...) puedan reutilizar la misma salida.</summary>
+        public Transform FirePoint => firePoint;
+
+        /// <summary>Expone el TrajectoryDots para que otras armas puedan reutilizar el mismo indicador.</summary>
+        public TrajectoryDots TrajectoryDots => trajectoryDots;
+
         // ==============================================================
         private void Awake()
         {
@@ -101,9 +107,16 @@ namespace Ratms.Networking
         {
             if (trajectoryDots == null) return;
 
+            // Si está otra arma equipada (granada, dinamita...), NO pisamos la
+            // trayectoria: deja que el script de esa arma la pinte. Solo la
+            // ocultamos nosotros cuando el arma es None (desenfundado).
             if (!IsBazookaEquipped)
             {
-                trajectoryDots.Hide();
+                if (weaponsMenu != null &&
+                    weaponsMenu.SelectedWeapon == WeaponsMenuUI.WeaponId.None)
+                {
+                    trajectoryDots.Hide();
+                }
                 return;
             }
 

@@ -120,6 +120,33 @@ namespace Ratms.Networking
         }
 
         // ==============================================================
+        // KNOCKBACK (empujón de explosión)
+        // ==============================================================
+        /// <summary>
+        ///  Empuja a esta rata aplicando un impulso a su Rigidbody2D.
+        ///
+        ///  Se llama desde el servidor (misil/granada al explotar) y lo aplica
+        ///  SOLO el Owner de la rata — es quien controla la física de su
+        ///  personaje; el NetworkTransform sincroniza el "vuelo" al resto de
+        ///  clientes como cualquier otro movimiento normal.
+        ///
+        ///  Si la rata acaba de morir, no aplicamos empuje (para no mandar el
+        ///  cadáver volando por toda la pantalla — opinión de diseño;
+        ///  cámbialo si prefieres ragdoll).
+        /// </summary>
+        [ClientRpc]
+        public void ApplyKnockbackClientRpc(Vector2 force)
+        {
+            if (!IsOwner) return;
+            if (IsDead.Value) return;
+
+            var rb = GetComponent<Rigidbody2D>();
+            if (rb == null) return;
+
+            rb.AddForce(force, ForceMode2D.Impulse);
+        }
+
+        // ==============================================================
         // POPUPS
         // ==============================================================
         [ClientRpc]

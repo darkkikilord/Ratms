@@ -39,6 +39,19 @@ namespace Ratms.Networking
         [SerializeField] private float selfDestructSeconds = 8f;
         [SerializeField] private float ownerIgnoreTime = 0.5f;
 
+        [Header("Impacto — empujón y cámara")]
+        [Tooltip("Fuerza máxima del empujón a una rata pegada al centro de la explosión. Cae con la distancia igual que el daño.")]
+        [SerializeField] private float knockbackForce = 18f;
+
+        [Tooltip("Amplitud del temblor de cámara al explotar (unidades de mundo).")]
+        [SerializeField] private float shakeAmplitude = 0.28f;
+
+        [Tooltip("Duración del temblor de cámara (segundos).")]
+        [SerializeField] private float shakeDuration = 0.4f;
+
+        [Tooltip("Tiempo que la cámara se queda mirando el punto de impacto antes de volver al dueño.")]
+        [SerializeField] private float impactPauseSeconds = 1f;
+
         [Header("FX (opcional)")]
         [SerializeField] private GameObject explosionVfxPrefab;
         [SerializeField] private AudioClip explosionSfx;
@@ -60,6 +73,19 @@ namespace Ratms.Networking
             // en cada máquina.
             if (!IsServer && rb != null)
                 rb.simulated = false;
+
+            // Avisamos a TODOS los clientes para que sus cámaras sigan al
+            // proyectil mientras vuela (como en Worms). Cada cámara volverá
+            // sola a su rata cuando el misil se destruya o caduque el seguimiento.
+            if (IsServer)
+                FollowWithCameraClientRpc(selfDestructSeconds);
+        }
+
+        [ClientRpc]
+        private void FollowWithCameraClientRpc(float maxSeconds)
+        {
+            if (CameraFollow.Instance != null)
+                CameraFollow.Instance.FollowTransform(transform, maxSeconds);
         }
 
         /// <summary>
@@ -136,12 +162,25 @@ namespace Ratms.Networking
                 if (dmg <= 0) continue;
 
                 nh.ApplyDamageServer(dmg, col.transform.position);
+
+                // KNOCKBACK: empuja a la rata alejándola del centro de la explosión.
+                // La fuerza cae con la distancia igual que el daño (factor t).
+                // Sumamos bastante componente hacia arriba para que "salga volando"
+                // en parábola en vez de raspar por el suelo — así se siente más Worms.
+                Vector2 away = (Vector2)col.transform.position - (Vector2)at;
+                if (away.sqrMagnitude < 0.0001f) away = Vector2.up;
+                Vector2 push = (away.normalized + Vector2.up * 0.8f).normalized * (knockbackForce * t);
+                nh.ApplyKnockbackClientRpc(push);
             }
 
             // 2) Notificamos VFX/SFX a todos los clientes
             ExplosionFxClientRpc(at);
 
-            // 3) Fuera del mundo
+            // 3) Cámara: temblor + pausa dramática sobre el punto de impacto.
+            //    Al caducar la pausa, la cámara vuelve sola a la rata del dueño.
+            ExplosionCameraFxClientRpc(at, shakeAmplitude, shakeDuration, impactPauseSeconds);
+
+            // 4) Fuera del mundo
             if (NetworkObject != null && NetworkObject.IsSpawned)
                 NetworkObject.Despawn(destroy: true);
             else
@@ -156,6 +195,14 @@ namespace Ratms.Networking
 
             if (explosionSfx != null)
                 AudioSource.PlayClipAtPoint(explosionSfx, at, explosionSfxVolume);
+        }
+
+        [ClientRpc]
+        private void ExplosionCameraFxClientRpc(Vector3 at, float amp, float seconds, float pause)
+        {
+            if (CameraFollow.Instance == null) return;
+            CameraFollow.Instance.Shake(amp, seconds);
+            CameraFollow.Instance.FocusOnImpact(at, pause);
         }
 
         // ==============================================================

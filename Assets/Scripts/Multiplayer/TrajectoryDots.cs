@@ -65,6 +65,19 @@ namespace Ratms.Networking
         {
             gravity = Mathf.Abs(Physics2D.gravity.y);
             if (dotSprite == null) dotSprite = BuildCircleSprite();
+
+            // Auto-resolución defensiva: si olvidas asignar firePoint en el
+            // Inspector, buscamos el del bazooka (todas las armas comparten la
+            // misma salida de disparo en la mano de la rata).
+            if (firePoint == null)
+            {
+                var bazooka = GetComponentInParent<NetworkBazooka>();
+                if (bazooka == null)
+                    bazooka = GetComponentInChildren<NetworkBazooka>(includeInactive: true);
+                if (bazooka != null)
+                    firePoint = bazooka.FirePoint;
+            }
+
             BuildPool();
             HideImmediate();
         }

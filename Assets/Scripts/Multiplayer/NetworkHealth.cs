@@ -133,9 +133,14 @@ namespace Ratms.Networking
         ///  Si la rata acaba de morir, no aplicamos empuje (para no mandar el
         ///  cadáver volando por toda la pantalla — opinión de diseño;
         ///  cámbialo si prefieres ragdoll).
+        ///
+        ///  <paramref name="freeFlightSeconds"/>: durante este tiempo el
+        ///  <see cref="NetworkPlayerMovement"/> ignora su linearDamping y el
+        ///  maxSpeed. Así el empujón "vuela" de verdad en lugar de frenar en
+        ///  medio segundo por la fricción aérea que la rata usa para caminar.
         /// </summary>
         [ClientRpc]
-        public void ApplyKnockbackClientRpc(Vector2 force)
+        public void ApplyKnockbackClientRpc(Vector2 force, float freeFlightSeconds = 0.5f)
         {
             if (!IsOwner) return;
             if (IsDead.Value) return;
@@ -143,7 +148,19 @@ namespace Ratms.Networking
             var rb = GetComponent<Rigidbody2D>();
             if (rb == null) return;
 
+            // Reseteamos velocidad vertical para que el empujón "suba" de verdad
+            // aunque la rata estuviera ya cayendo. Si la rata se movía horizontal,
+            // respetamos ese impulso sumándolo en vez de pisar.
+            Vector2 v = rb.linearVelocity;
+            v.y = 0f;
+            rb.linearVelocity = v;
+
             rb.AddForce(force, ForceMode2D.Impulse);
+
+            // Pedimos al script de movimiento que desactive fricción y tope de
+            // velocidad durante el "vuelo" del empujón.
+            var move = GetComponent<NetworkPlayerMovement>();
+            if (move != null) move.BeginKnockbackFlight(freeFlightSeconds);
         }
 
         // ==============================================================

@@ -197,6 +197,11 @@ namespace Ratms.Networking
                 nh.ApplyKnockbackClientRpc(push);
             }
 
+            // Carvea el TERRENO DESTRUCTIBLE en red. La granada rompe más
+            // mapa que el misil — parte de su diseño como arma de control de zona.
+            if (NetworkDestructibleTerrain.Instance != null)
+                NetworkDestructibleTerrain.Instance.ServerCarveAt(at, explosionRadius);
+
             // FX a todos los clientes
             ExplosionFxClientRpc(at);
 

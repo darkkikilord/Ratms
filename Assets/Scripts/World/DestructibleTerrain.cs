@@ -1,0 +1,879 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace Ratms.World
+{
+    /// <summary>
+    ///  TERRENO DESTRUCTIBLE estilo Worms — versión 0.8, Sesión 1.
+    ///
+    ///  Cómo funciona:
+    ///   · Tenemos un <see cref="Texture2D"/> interno donde cada píxel es
+    ///     "sólido" (alpha = 1) o "aire" (alpha = 0).
+    ///   · El <see cref="SpriteRenderer"/> la muestra tal cual — lo que ves
+    ///     es lo que hay.
+    ///   · El <see cref="PolygonCollider2D"/> es la FORMA contra la que chocan
+    ///     las ratas/proyectiles. Se recalcula desde el alpha de la textura
+    ///     aprovechando que Unity, al crear un <see cref="Sprite"/> con
+    ///     <see cref="SpriteMeshType.Tight"/>, auto-genera un outline a partir
+    ///     de los píxeles. Extraemos ese outline con
+    ///     <see cref="Sprite.GetPhysicsShape"/> y lo asignamos al collider.
+    ///
+    ///  Coordenadas:
+    ///   · Pivot del sprite: esquina INFERIOR-IZQUIERDA (0, 0).
+    ///     Así la posición del transform ES la esquina inferior-izquierda
+    ///     del mapa — mucho más intuitivo para colocar terrenos.
+    ///   · Conversión píxel ↔ mundo: divide/multiplica por
+    ///     <see cref="pixelsPerUnit"/>.
+    ///
+    ///  API pública (lo que usarán las explosiones):
+    ///   · <see cref="CarveHole(Vector2,float)"/> — carvea este terreno concreto.
+    ///   · <see cref="CarveAllAt(Vector2,float)"/> (static) — carvea TODOS los
+    ///     terrenos de la escena. Atajo que usarán misil/granada desde cualquier
+    ///     sitio sin tener que buscar referencias.
+    ///
+    ///  Rendimiento (Sesión 1):
+    ///   · Guardamos los píxeles en un <see cref="Color32[]"/> cacheado —
+    ///     carvear es solo tocar ese array, no la textura (rápido).
+    ///   · Al carvear SOLO marcamos "dirty"; en el siguiente LateUpdate
+    ///     reconstruimos sprite+collider una única vez. Si 3 misiles explotan
+    ///     en el mismo frame, solo regeneramos una vez.
+    ///   · Regenerar el <see cref="PolygonCollider2D"/> de un mapa grande
+    ///     TIENE un coste. Si el mapa es muy grande habrá que partirlo en
+    ///     chunks (Sesión 3 o 4). Para 1024×512 va de sobra.
+    /// </summary>
+    [RequireComponent(typeof(SpriteRenderer))]
+    [RequireComponent(typeof(PolygonCollider2D))]
+    public class DestructibleTerrain : MonoBehaviour
+    {
+        // ============================================================
+        //  CONFIGURACIÓN
+        // ============================================================
+        [Header("Tamaño")]
+        [Tooltip("Ancho de la textura del terreno en píxeles.")]
+        [SerializeField] private int textureWidth = 1024;
+
+        [Tooltip("Alto de la textura del terreno en píxeles.")]
+        [SerializeField] private int textureHeight = 512;
+
+        [Tooltip("Píxeles por unidad de mundo. Controla el TAMAÑO en el mundo: " +
+                 "un terreno de 1024 px con PPU=32 ocupa 32 unidades de ancho. " +
+                 "Sube PPU → mapa más pequeño pero más detalle.")]
+        [SerializeField] private float pixelsPerUnit = 32f;
+
+        [Header("Generación inicial")]
+        [Tooltip("Si ON, al Start construye un terreno de prueba a mano (colinas " +
+                 "y cuevas) para que podamos validar que el sistema funciona sin " +
+                 "depender aún del generador procedural de la Sesión 2.")]
+        [SerializeField] private bool generateTestTerrainOnStart = true;
+
+        [Header("Colores del terreno de prueba")]
+        [SerializeField] private Color32 dirtColor  = new Color32(130, 85, 50, 255);
+        [SerializeField] private Color32 grassColor = new Color32(80, 160, 70, 255);
+        [SerializeField] private int grassBandPx = 6;
+
+        [Header("Debug")]
+        [Tooltip("Dibuja el bounding box del terreno en la vista de Escena.")]
+        [SerializeField] private bool drawGizmos = true;
+
+        [Header("Collider — modo")]
+        [Tooltip("Si ON, ignora la magia automática de Sprite.Tight de Unity y SIEMPRE construye el collider con nuestro skyline (de abajo a arriba, ignorando islas flotantes). " +
+                 "Recomendado quedarse en ON: Sprite.Tight ha demostrado producir colliders inconsistentes en runtime con texturas grandes (a veces shapeCount=0, a veces shapes solapados). " +
+                 "Apágalo solo si quieres recuperar el comportamiento por defecto y depurar.")]
+        [SerializeField] private bool forceSkylineCollider = true;
+
+        [Tooltip("Si ON, escribe en consola cada vez que reconstruimos el collider qué método usó (Sprite.Tight, skyline o rectángulo) y cuántos vértices quedaron. Útil para entender si las paredes invisibles son culpa nuestra o de Unity.")]
+        [SerializeField] private bool debugColliderBuild = true;
+
+        // ============================================================
+        //  ESTADO INTERNO
+        // ============================================================
+        private SpriteRenderer sr;
+        private PolygonCollider2D poly;
+        private Texture2D tex;
+        private Color32[] pixels;    // cache de píxeles para carvear rápido
+        private bool dirty;          // si true, reconstruiremos en LateUpdate
+
+        /// <summary>Todos los terrenos activos en la escena — para CarveAllAt.</summary>
+        private static readonly List<DestructibleTerrain> s_all = new();
+
+        // API read-only
+        public int WidthPx => textureWidth;
+        public int HeightPx => textureHeight;
+        public float PixelsPerUnit => pixelsPerUnit;
+        public Vector2 WorldSize => new Vector2(textureWidth / pixelsPerUnit,
+                                                textureHeight / pixelsPerUnit);
+
+        // ============================================================
+        //  CICLO DE VIDA
+        // ============================================================
+        private void Awake()
+        {
+            sr = GetComponent<SpriteRenderer>();
+            poly = GetComponent<PolygonCollider2D>();
+            s_all.Add(this);
+        }
+
+        private void OnDestroy()
+        {
+            s_all.Remove(this);
+            if (tex != null) Destroy(tex);
+        }
+
+        private void Start()
+        {
+            if (generateTestTerrainOnStart)
+            {
+                BuildTestTerrain();
+                Rebuild();
+            }
+        }
+
+        private void LateUpdate()
+        {
+            if (dirty)
+            {
+                Rebuild();
+                dirty = false;
+            }
+        }
+
+        // ============================================================
+        //  CONSTRUCCIÓN DE LA TEXTURA
+        // ============================================================
+
+        /// <summary>
+        ///  Inicializa el terreno copiando los píxeles de una textura externa.
+        ///  Úsalo cuando tengas el generador procedural — le pasas lo que genere.
+        ///  La textura FUENTE debe tener Read/Write Enabled en el Inspector.
+        /// </summary>
+        public void SetTerrain(Texture2D source)
+        {
+            if (source == null) { Debug.LogWarning("[DestructibleTerrain] SetTerrain con textura null"); return; }
+
+            textureWidth = source.width;
+            textureHeight = source.height;
+
+            EnsureTexture();
+            pixels = source.GetPixels32();
+            dirty = true;
+        }
+
+        /// <summary>
+        ///  Recibe un array de píxeles ya generado desde fuera (normalmente
+        ///  <see cref="TerrainGenerator"/>) y lo vuelca directamente al terreno.
+        ///  Evita el paso intermedio de crear un Texture2D temporal — va
+        ///  del Color32[] del generador al Color32[] interno de un tirón.
+        ///  Reconstruye sprite+collider al instante.
+        /// </summary>
+        public void ApplyPixels(Color32[] srcPixels, int srcWidth, int srcHeight)
+        {
+            if (srcPixels == null)
+            {
+                Debug.LogWarning("[DestructibleTerrain] ApplyPixels: array null");
+                return;
+            }
+            if (srcPixels.Length != srcWidth * srcHeight)
+            {
+                Debug.LogWarning($"[DestructibleTerrain] ApplyPixels: longitud {srcPixels.Length} " +
+                                 $"no coincide con {srcWidth}x{srcHeight}={srcWidth*srcHeight}");
+                return;
+            }
+
+            textureWidth = srcWidth;
+            textureHeight = srcHeight;
+            EnsureTexture();
+
+            // Copia segura — no nos quedamos con la referencia externa por si
+            // el generador la reutiliza para otra cosa.
+            System.Array.Copy(srcPixels, pixels, srcPixels.Length);
+
+            Rebuild();
+            dirty = false;
+        }
+
+        /// <summary>
+        ///  Evita que Start() construya el terreno de prueba por su cuenta.
+        ///  Lo llama <see cref="TerrainGenerator"/> desde su Awake para que
+        ///  el terreno no se genere dos veces (una con los senos de prueba,
+        ///  otra con el procedural). Awake corre antes de cualquier Start,
+        ///  así que llamarlo ahí es seguro.
+        /// </summary>
+        public void SuppressTestTerrain()
+        {
+            generateTestTerrainOnStart = false;
+        }
+
+        /// <summary>
+        ///  Reconstruye desde cero el terreno de prueba. Útil para el tester
+        ///  ("tecla R") para volver al estado inicial sin reiniciar la escena.
+        /// </summary>
+        public void RegenerateTestTerrain()
+        {
+            BuildTestTerrain();
+            Rebuild();
+        }
+
+        /// <summary>
+        ///  Crea la textura interna si no existe o cambió de tamaño.
+        /// </summary>
+        private void EnsureTexture()
+        {
+            if (tex != null && tex.width == textureWidth && tex.height == textureHeight)
+                return;
+
+            if (tex != null) Destroy(tex);
+            tex = new Texture2D(textureWidth, textureHeight, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Point;   // estilo pixel art — sin suavizado
+            tex.wrapMode = TextureWrapMode.Clamp;
+
+            pixels = new Color32[textureWidth * textureHeight];
+        }
+
+        /// <summary>
+        ///  Terreno simple hecho a mano: colinas onduladas con seno + dos capas
+        ///  (tierra marrón, hierba verde encima) + tres cuevas pre-carveadas.
+        ///  Sirve para probar que el sistema funciona. En la Sesión 2 lo
+        ///  sustituirá un generador procedural con Perlin noise.
+        /// </summary>
+        private void BuildTestTerrain()
+        {
+            EnsureTexture();
+            Color32 air = new Color32(0, 0, 0, 0);
+
+            int groundLevel = Mathf.RoundToInt(textureHeight * 0.6f);
+
+            for (int y = 0; y < textureHeight; y++)
+            {
+                for (int x = 0; x < textureWidth; x++)
+                {
+                    // Altura del suelo en este x (dos senos superpuestos = colinas)
+                    int h = groundLevel
+                          + Mathf.RoundToInt(Mathf.Sin(x * 0.015f) * 40f)
+                          + Mathf.RoundToInt(Mathf.Sin(x * 0.05f)  * 15f);
+
+                    int idx = y * textureWidth + x;
+
+                    if (y > h)                       pixels[idx] = air;           // cielo
+                    else if (y > h - grassBandPx)    pixels[idx] = grassColor;    // hierba
+                    else                             pixels[idx] = dirtColor;     // tierra
+                }
+            }
+
+            // Un par de cuevas pre-excavadas para que se note visualmente
+            // que la forma NO es simplemente un rectángulo.
+            PunchCircleInPixels(new Vector2Int(textureWidth / 4,     groundLevel - 40), 30);
+            PunchCircleInPixels(new Vector2Int(textureWidth / 2,     groundLevel - 80), 45);
+            PunchCircleInPixels(new Vector2Int(3 * textureWidth / 4, groundLevel - 30), 28);
+        }
+
+        /// <summary>
+        ///  Borra un círculo de píxeles del array (no aplica a la textura aún).
+        ///  Trabajar directamente sobre el Color32[] es muchísimo más rápido que
+        ///  llamar a Texture2D.SetPixel una vez por píxel.
+        ///
+        ///  Versión PERFECTA: usada internamente por el terreno de prueba y las
+        ///  cuevas predefinidas. Para explosiones se usa
+        ///  <see cref="PunchIrregularCircleInPixels"/>.
+        /// </summary>
+        private void PunchCircleInPixels(Vector2Int center, int radius)
+        {
+            if (pixels == null) return;
+            int r2 = radius * radius;
+            int xmin = Mathf.Max(0, center.x - radius);
+            int xmax = Mathf.Min(textureWidth - 1, center.x + radius);
+            int ymin = Mathf.Max(0, center.y - radius);
+            int ymax = Mathf.Min(textureHeight - 1, center.y + radius);
+
+            Color32 air = new Color32(0, 0, 0, 0);
+            for (int y = ymin; y <= ymax; y++)
+            {
+                int row = y * textureWidth;
+                for (int x = xmin; x <= xmax; x++)
+                {
+                    int dx = x - center.x;
+                    int dy = y - center.y;
+                    if (dx * dx + dy * dy <= r2)
+                        pixels[row + x] = air;
+                }
+            }
+        }
+
+        /// <summary>
+        ///  Borra un círculo IRREGULAR (con ruido en el borde) — lo que se ve
+        ///  como un cráter realista, no un círculo de compás.
+        ///
+        ///  Cómo funciona: para cada píxel cercano al centro calculamos su
+        ///  ángulo y perturbamos el "radio efectivo" con Perlin(sin(ang), cos(ang)).
+        ///  Resultado: el borde del cráter ondula un +-irregularity% respecto
+        ///  al radio nominal. Además podemos añadir un poco de "dentado" (Hash
+        ///  por píxel) para que el borde no sea suave del todo, más tipo tierra
+        ///  reventada.
+        /// </summary>
+        /// <param name="center">Centro en coordenadas de píxel.</param>
+        /// <param name="radius">Radio nominal en píxeles.</param>
+        /// <param name="irregularity">Fracción +-r que puede variar el borde, 0..1. 0.15 = +-15%.</param>
+        /// <param name="rng">Seed para el ruido de este cráter (posición mundo del impacto) — así cada agujero es único.</param>
+        private void PunchIrregularCircleInPixels(Vector2Int center, int radius,
+                                                  float irregularity, int rng)
+        {
+            if (pixels == null) return;
+            if (radius <= 0) return;
+
+            // Margen extra porque el borde irregular puede extenderse un poco
+            // más allá del radio nominal.
+            int expand = Mathf.CeilToInt(radius * (1f + irregularity + 0.1f));
+            int xmin = Mathf.Max(0, center.x - expand);
+            int xmax = Mathf.Min(textureWidth - 1, center.x + expand);
+            int ymin = Mathf.Max(0, center.y - expand);
+            int ymax = Mathf.Min(textureHeight - 1, center.y + expand);
+
+            // Offsets Perlin a partir del seed — así dos explosiones en el
+            // mismo sitio dan formas distintas.
+            float offX = (rng & 0xFFFF) * 0.013f;
+            float offY = ((rng >> 16) & 0xFFFF) * 0.017f;
+
+            Color32 air = new Color32(0, 0, 0, 0);
+
+            for (int y = ymin; y <= ymax; y++)
+            {
+                int row = y * textureWidth;
+                for (int x = xmin; x <= xmax; x++)
+                {
+                    int dx = x - center.x;
+                    int dy = y - center.y;
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (dist > expand) continue;
+
+                    // Ángulo 0..2π → tomamos Perlin(cos, sin) para que varíe
+                    // continuamente al girar. Escala 1.8 = ~3 "bollos" por vuelta.
+                    float ang = Mathf.Atan2(dy, dx);
+                    float pert = Mathf.PerlinNoise(
+                        Mathf.Cos(ang) * 1.8f + offX,
+                        Mathf.Sin(ang) * 1.8f + offY);
+                    // pert ~[0,1] → centrarla en 0 para que sea ±irregularity
+                    float rNoise = (pert - 0.5f) * 2f * irregularity;
+                    float effectiveR = radius * (1f + rNoise);
+
+                    if (dist <= effectiveR)
+                        pixels[row + x] = air;
+                }
+            }
+        }
+
+        // ============================================================
+        //  API DE CARVING (lo que llaman las explosiones)
+        // ============================================================
+
+        [Header("Forma del cráter de explosión")]
+        [Tooltip("Fracción del radio nominal que realmente se carvea (0.85 = cráter un 15% más pequeño que la explosión). Los diseñadores suelen querer que el carving sea un pelín menor que el daño.")]
+        [SerializeField, Range(0.5f, 1.2f)] private float craterRadiusScale = 0.85f;
+
+        [Tooltip("Irregularidad del borde del cráter (0 = círculo perfecto, 0.2 = borde bastante orgánico). 0.15 va bien para Worms.")]
+        [SerializeField, Range(0f, 0.4f)] private float craterIrregularity = 0.15f;
+
+        /// <summary>
+        ///  Carvea un agujero en ESTE terreno con forma IRREGULAR (no un círculo
+        ///  perfecto). El radio visible es <c>worldRadius * craterRadiusScale</c>
+        ///  y el borde se ondula ±<see cref="craterIrregularity"/>% por ruido Perlin.
+        ///
+        ///  Si el centro cae fuera del terreno pero el círculo toca sus bordes,
+        ///  se carvea la intersección igualmente (el método interno recorta
+        ///  los límites).
+        /// </summary>
+        public void CarveHole(Vector2 worldPos, float worldRadius)
+        {
+            if (pixels == null) return;
+
+            // World → espacio local del terreno → píxel
+            Vector3 local = transform.InverseTransformPoint(worldPos);
+            int cx = Mathf.RoundToInt(local.x * pixelsPerUnit);
+            int cy = Mathf.RoundToInt(local.y * pixelsPerUnit);
+            int r  = Mathf.CeilToInt(worldRadius * craterRadiusScale * pixelsPerUnit);
+
+            // Seed determinista a partir del punto de impacto (para que
+            // clientes y host dibujen el MISMO cráter con el MISMO ruido).
+            int seed = unchecked(cx * 73856093 ^ cy * 19349663);
+
+            PunchIrregularCircleInPixels(new Vector2Int(cx, cy), r, craterIrregularity, seed);
+            dirty = true;
+        }
+
+        /// <summary>
+        ///  Atajo estático: carvea en TODOS los terrenos de la escena a la vez.
+        ///  Úsalo desde misil / granada sin tener que buscar referencias.
+        /// </summary>
+        public static void CarveAllAt(Vector2 worldPos, float worldRadius)
+        {
+            for (int i = s_all.Count - 1; i >= 0; i--)
+            {
+                var t = s_all[i];
+                if (t != null) t.CarveHole(worldPos, worldRadius);
+            }
+        }
+
+        // ============================================================
+        //  RECONSTRUCCIÓN DEL SPRITE Y DEL COLISIONADOR
+        // ============================================================
+        private void Rebuild()
+        {
+            if (tex == null || pixels == null) return;
+
+            // 0) Seguridad: aseguramos que el collider está en un estado
+            //    funcional antes de tocar nada. Si alguien lo desactivó o lo
+            //    puso como trigger sin querer, lo devolvemos a su sitio.
+            if (poly == null) poly = GetComponent<PolygonCollider2D>();
+            if (poly != null)
+            {
+                poly.enabled = true;
+                poly.isTrigger = false;
+            }
+
+            // 1) Vuelca el array de píxeles a la textura
+            tex.SetPixels32(pixels);
+            tex.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+
+            // 2) Crea un sprite nuevo con mesh TIGHT — Unity genera el outline
+            //    por nosotros a partir del alpha de los píxeles.
+            //    extrude=1 da algo más de margen y reduce el riesgo de
+            //    "vertices too close" al construir el PolygonCollider2D.
+            Sprite newSprite = Sprite.Create(
+                tex,
+                new Rect(0, 0, textureWidth, textureHeight),
+                new Vector2(0f, 0f),       // pivot = esquina inferior-izquierda
+                pixelsPerUnit,
+                extrude: 1,
+                meshType: SpriteMeshType.Tight);
+
+            // Destruye el sprite anterior para no acumular basura en memoria.
+            var old = sr.sprite;
+            sr.sprite = newSprite;
+            if (old != null && old != newSprite) Destroy(old);
+
+            // 3) Extrae los paths del sprite y aplícalos al PolygonCollider2D.
+            //    GetPhysicsShape devuelve los puntos YA en unidades de mundo
+            //    (respeta pixelsPerUnit), así que van directos al collider.
+            //
+            //  *** SHORT-CIRCUIT ***: si forceSkylineCollider está ON, saltamos
+            //  Sprite.Tight directamente y nos vamos al fallback. Sprite.Tight
+            //  ha demostrado generar colliders inconsistentes (ver doc del flag).
+            int shapeCount = forceSkylineCollider ? 0 : newSprite.GetPhysicsShapeCount();
+
+            var path = new List<Vector2>();
+            int totalPointsRaw = 0;
+            int totalPointsAfter = 0;
+            int acceptedShapes = 0;
+
+            // Tolerancia para RDP en UNIDADES DE MUNDO. 2 px de tolerancia es
+            // imperceptible visualmente (las ratas son mucho más grandes) y
+            // reduce vértices a la décima parte en mapas con mucho ruido
+            // Perlin, evitando el rechazo "vertices too close" de Unity.
+            float rdpEpsilon = 2f / pixelsPerUnit;
+            // Además, distancia mínima estricta entre vértices consecutivos
+            // (Unity internamente exige algo mayor que ~1 píxel).
+            float minDist = 2f / pixelsPerUnit;
+            float minDistSq = minDist * minDist;
+
+            for (int i = 0; i < shapeCount; i++)
+            {
+                path.Clear();
+                newSprite.GetPhysicsShape(i, path);
+                totalPointsRaw += path.Count;
+                if (path.Count < 3) continue; // shape degenerado
+
+                // Paso A: Ramer–Douglas–Peucker. Quita vértices colineales y
+                // detalles inferiores a rdpEpsilon. Es lo que más puntos elimina.
+                var rdp = RamerDouglasPeucker(path, rdpEpsilon);
+
+                // Paso B: red de seguridad. Por si tras RDP quedó algún par
+                // de vértices muy juntos, los fusionamos.
+                var simplified = DropClosePairs(rdp, minDistSq);
+                if (simplified.Count < 3) continue; // quedó demasiado corto
+
+                poly.SetPath(acceptedShapes, simplified.ToArray());
+                acceptedShapes++;
+                totalPointsAfter += simplified.Count;
+            }
+
+            // Ajustamos pathCount al número real de shapes aceptados.
+            poly.pathCount = acceptedShapes;
+
+            // FALLBACK DE EMERGENCIA: si Unity no nos dio ningún shape o los
+            // rechazó todos, construimos nosotros un "skyline" columna a
+            // columna leyendo el alpha de la textura. Es menos refinado que
+            // Sprite.Tight (no detecta cuevas ni islas flotantes como agujeros)
+            // pero garantiza que la rata tenga SUELO donde pisar y no caiga
+            // al vacío.
+            if (acceptedShapes == 0 && HasAnySolidPixel())
+            {
+                var skyline = BuildSkylinePolygon();
+                if (skyline != null && skyline.Length >= 3)
+                {
+                    poly.pathCount = 1;
+                    poly.SetPath(0, skyline);
+                    if (debugColliderBuild)
+                    {
+                        string reason = forceSkylineCollider
+                            ? "FORZADO por toggle 'forceSkylineCollider'"
+                            : $"Sprite.Tight devolvió shapeCount={shapeCount}";
+                        Debug.Log($"[DestructibleTerrain] Collider via SKYLINE ({reason}) — " +
+                                  $"{skyline.Length} vértices, textura={textureWidth}x{textureHeight}, PPU={pixelsPerUnit}, " +
+                                  $"layer={gameObject.layer} ({LayerMask.LayerToName(gameObject.layer)}).");
+                    }
+                    return;
+                }
+
+                // Último recurso: rectángulo envolvente. No debería hacer falta
+                // nunca, pero así aseguramos "siempre hay collider".
+                Vector2 bl = new Vector2(0f, 0f);
+                Vector2 br = new Vector2(textureWidth / pixelsPerUnit, 0f);
+                Vector2 tr = new Vector2(textureWidth / pixelsPerUnit, textureHeight / pixelsPerUnit);
+                Vector2 tl = new Vector2(0f, textureHeight / pixelsPerUnit);
+                poly.pathCount = 1;
+                poly.SetPath(0, new[] { bl, br, tr, tl });
+                Debug.LogError($"[DestructibleTerrain] Rebuild → skyline falló; aplicado " +
+                               $"FALLBACK RECTANGULAR. Textura={textureWidth}x{textureHeight}.");
+                return;
+            }
+
+            if (shapeCount == 0 && !HasAnySolidPixel())
+            {
+                // La textura sí está vacía — es legítimo, no hay collider.
+                poly.pathCount = 0;
+                Debug.LogWarning($"[DestructibleTerrain] Rebuild → shapeCount=0 y textura vacía. " +
+                                 $"Sin collider (correcto). Textura={textureWidth}x{textureHeight}.");
+                return;
+            }
+
+            if (debugColliderBuild)
+            {
+                Debug.Log($"[DestructibleTerrain] Collider via SPRITE.TIGHT (Unity) — " +
+                          $"shapes originales={shapeCount}, aceptados={acceptedShapes}, " +
+                          $"puntos tras simplificar={totalPointsAfter}, " +
+                          $"textura={textureWidth}x{textureHeight}, PPU={pixelsPerUnit}, " +
+                          $"layer={gameObject.layer} ({LayerMask.LayerToName(gameObject.layer)}).");
+            }
+        }
+
+        /// <summary>
+        ///  Construye un polígono SKYLINE leyendo la textura columna a columna:
+        ///  para cada x, busca desde arriba el primer píxel sólido (alpha>0)
+        ///  y registra esa altura como "superficie". Devuelve un polígono que
+        ///  va por la superficie y se cierra por el borde inferior del mapa.
+        ///
+        ///  Limitaciones (aceptables como red de seguridad):
+        ///   · No detecta cuevas (el hueco interno del mapa queda relleno de
+        ///     collider — la rata no se mete en cuevas con este fallback).
+        ///   · No detecta islas flotantes (se ignoran).
+        ///   · Funciona genial para un mapa "cielo arriba, tierra abajo",
+        ///     que es nuestro caso en el 99% de las generaciones.
+        ///
+        ///  Para reducir vértices, muestreamos cada sampleStep píxeles en x.
+        ///  Tras muestrear aplicamos una MEDIA MÓVIL de 5 puntos a las alturas:
+        ///  así las espigas estrechas (picos de aguja que bloqueaban el paso
+        ///  de la rata) se suavizan, mientras que las montañas grandes quedan
+        ///  casi iguales. Resultado: no hay muros invisibles.
+        /// </summary>
+        private Vector2[] BuildSkylinePolygon()
+        {
+            const int sampleStep = 3;    // más fino → perfil más liso
+            const int smoothRadius = 2;  // media móvil de (2*2+1)=5 puntos
+            const int caveSkipMax = 50;  // huecos más cortos que esto se tratan como cuevas internas
+            if (pixels == null) return null;
+
+            // --- Paso 1: sample de alturas (en píxeles) columna a columna ---
+            int sampleCount = (textureWidth + sampleStep - 1) / sampleStep;
+            if (sampleCount < 2) return null;
+            int[] sampleX = new int[sampleCount + 1];
+            float[] sampleYpx = new float[sampleCount + 1];
+            int actualCount = 0;
+            bool anySurfaceFound = false;
+
+            // ANTI-TRINCHERA: cuando una columna NO tiene nada sólido (surfaceY=-1),
+            // en vez de meter un punto a y=0 (lo que crearía una "V" en el polígono
+            // y la rata caería ahí), usamos la última altura conocida. Esto da
+            // como mucho un techo recto pasando por encima del hueco — sin
+            // bajadas a cero. La rata camina sin caer por gaps en el ruido.
+            float lastValidYpx = -1f;
+            for (int s = 0; s < sampleCount; s++)
+            {
+                int x = s * sampleStep;
+                if (x >= textureWidth) break;
+                sampleX[actualCount] = x;
+                int surfaceY = FindMainSurfaceY(x, caveSkipMax);
+                if (surfaceY < 0)
+                {
+                    // Sin sólido en esta columna → reusamos la última altura
+                    // válida (o 0 al principio del mapa si aún no había ninguna).
+                    sampleYpx[actualCount] = lastValidYpx >= 0 ? lastValidYpx : 0f;
+                }
+                else
+                {
+                    float ypx = surfaceY + 1f; // justo encima
+                    sampleYpx[actualCount] = ypx;
+                    lastValidYpx = ypx;
+                    anySurfaceFound = true;
+                }
+                actualCount++;
+            }
+
+            // Último x explícito si no cayó justo en múltiplo
+            int lastX = textureWidth - 1;
+            if (sampleX[actualCount - 1] != lastX)
+            {
+                sampleX[actualCount] = lastX;
+                int surfaceY = FindMainSurfaceY(lastX, caveSkipMax);
+                if (surfaceY < 0)
+                {
+                    sampleYpx[actualCount] = lastValidYpx >= 0 ? lastValidYpx : 0f;
+                }
+                else
+                {
+                    sampleYpx[actualCount] = surfaceY + 1f;
+                    anySurfaceFound = true;
+                }
+                actualCount++;
+            }
+
+            if (!anySurfaceFound) return null;
+
+            // SEGUNDA PASADA hacia atrás para rellenar columnas iniciales que
+            // venían con sampleYpx=0 porque aún no había vista una columna válida.
+            // Usamos la siguiente válida hacia adelante. Así NO empieza el mapa
+            // con un acantilado a y=0 si las primeras columnas estaban vacías.
+            float nextValid = -1f;
+            for (int i = actualCount - 1; i >= 0; i--)
+            {
+                if (sampleYpx[i] > 0f) { nextValid = sampleYpx[i]; }
+                else if (nextValid > 0f) { sampleYpx[i] = nextValid; }
+            }
+
+            // --- Paso 2: media móvil para suavizar picos-aguja ---
+            float[] smoothed = new float[actualCount];
+            for (int i = 0; i < actualCount; i++)
+            {
+                int from = Mathf.Max(0, i - smoothRadius);
+                int to = Mathf.Min(actualCount - 1, i + smoothRadius);
+                float sum = 0f;
+                int count = 0;
+                for (int j = from; j <= to; j++) { sum += sampleYpx[j]; count++; }
+                smoothed[i] = sum / count;
+            }
+
+            // --- Paso 3: convertir a polígono en unidades de mundo ---
+            var upper = new List<Vector2>(actualCount);
+            for (int i = 0; i < actualCount; i++)
+            {
+                upper.Add(new Vector2(sampleX[i] / pixelsPerUnit, smoothed[i] / pixelsPerUnit));
+            }
+
+            // Cerramos el polígono bajando por la esquina inferior derecha y
+            // volviendo por la inferior izquierda. Así el interior del polígono
+            // es TODO el volumen de tierra.
+            var poly = new List<Vector2>(upper.Count + 2);
+            poly.AddRange(upper);
+            poly.Add(new Vector2(lastX / pixelsPerUnit, 0f));
+            poly.Add(new Vector2(0f, 0f));
+
+            // Simplificamos para reducir vértices a lo esencial
+            var simplified = RamerDouglasPeucker(poly, 2f / pixelsPerUnit);
+            return simplified.ToArray();
+        }
+
+        /// <summary>
+        ///  Encuentra la Y de la superficie del SUELO PRINCIPAL en una columna x.
+        ///
+        ///  Diferencia clave respecto al método anterior (que iba de arriba a
+        ///  abajo y agarraba el primer píxel sólido): aquí vamos de ABAJO HACIA
+        ///  ARRIBA siguiendo el bloque sólido principal, y SALTAMOS las cuevas
+        ///  pequeñas (huecos &lt; <paramref name="caveSkipMax"/>) tratándolas
+        ///  como parte interna del suelo. Cuando aparece un hueco más grande,
+        ///  asumimos que es CIELO de verdad y paramos.
+        ///
+        ///  Resultado: las islas flotantes (que tienen un gran hueco de aire
+        ///  bajo ellas) NO se cuentan como superficie, así no aparecen "muros
+        ///  invisibles" que conecten su techo con el suelo principal.
+        ///
+        ///  Devuelve -1 si la columna no tiene ningún píxel sólido (cielo total).
+        /// </summary>
+        private int FindMainSurfaceY(int x, int caveSkipMax)
+        {
+            if (pixels == null) return -1;
+            int surfaceY = -1;
+            int y = 0;
+            while (y < textureHeight)
+            {
+                if (pixels[y * textureWidth + x].a > 0)
+                {
+                    // Sólido → vamos extendiendo la superficie hacia arriba.
+                    surfaceY = y;
+                    y++;
+                    continue;
+                }
+
+                // Aire. ¿Es una cueva pequeña dentro del suelo o el cielo de verdad?
+                int probe = y + 1;
+                int limit = Mathf.Min(y + caveSkipMax, textureHeight);
+                bool moreSolidNearby = false;
+                while (probe < limit)
+                {
+                    if (pixels[probe * textureWidth + x].a > 0)
+                    {
+                        moreSolidNearby = true;
+                        break;
+                    }
+                    probe++;
+                }
+
+                if (!moreSolidNearby)
+                {
+                    // Hueco grande → es cielo. Paramos: la última surfaceY es
+                    // la cima del bloque principal de tierra.
+                    break;
+                }
+
+                // Cueva pequeña → la saltamos y seguimos buscando arriba.
+                y = probe;
+            }
+            return surfaceY;
+        }
+
+        /// <summary>
+        ///  Comprueba si queda AL MENOS UN píxel sólido (alpha > 0) en el
+        ///  array — solo para decidir si activar el fallback rectangular.
+        /// </summary>
+        private bool HasAnySolidPixel()
+        {
+            if (pixels == null) return false;
+            // Muestreo: si hay un píxel sólido cada 64, lo pillamos enseguida
+            // y ahorramos tiempo con texturas grandes.
+            for (int i = 0; i < pixels.Length; i += 64)
+                if (pixels[i].a > 0) return true;
+            return false;
+        }
+
+        /// <summary>
+        ///  Ramer–Douglas–Peucker iterativo. Reduce un polígono a los vértices
+        ///  que realmente aportan forma, descartando puntos cuya desviación
+        ///  respecto a la línea "inicio → fin" sea menor que <paramref name="epsilon"/>.
+        ///  Versión iterativa con stack (evita stack overflow en paths muy largos).
+        /// </summary>
+        private static List<Vector2> RamerDouglasPeucker(List<Vector2> points, float epsilon)
+        {
+            int n = points.Count;
+            if (n < 3) return new List<Vector2>(points);
+
+            bool[] keep = new bool[n];
+            keep[0] = true;
+            keep[n - 1] = true;
+
+            var stack = new Stack<(int, int)>();
+            stack.Push((0, n - 1));
+
+            while (stack.Count > 0)
+            {
+                var (first, last) = stack.Pop();
+                if (last <= first + 1) continue;
+
+                float maxDist = 0f;
+                int maxIdx = first;
+                Vector2 a = points[first];
+                Vector2 b = points[last];
+
+                for (int i = first + 1; i < last; i++)
+                {
+                    float d = PerpendicularDistance(points[i], a, b);
+                    if (d > maxDist)
+                    {
+                        maxDist = d;
+                        maxIdx = i;
+                    }
+                }
+
+                if (maxDist > epsilon)
+                {
+                    keep[maxIdx] = true;
+                    stack.Push((first, maxIdx));
+                    stack.Push((maxIdx, last));
+                }
+            }
+
+            var result = new List<Vector2>(n);
+            for (int i = 0; i < n; i++)
+                if (keep[i]) result.Add(points[i]);
+            return result;
+        }
+
+        /// <summary>
+        ///  Distancia perpendicular del punto <paramref name="p"/> a la recta
+        ///  que pasa por <paramref name="a"/> y <paramref name="b"/>.
+        /// </summary>
+        private static float PerpendicularDistance(Vector2 p, Vector2 a, Vector2 b)
+        {
+            float dx = b.x - a.x;
+            float dy = b.y - a.y;
+            float len2 = dx * dx + dy * dy;
+            if (len2 < 1e-12f) return Vector2.Distance(p, a); // a y b coinciden
+            float num = Mathf.Abs(dy * p.x - dx * p.y + b.x * a.y - b.y * a.x);
+            return num / Mathf.Sqrt(len2);
+        }
+
+        /// <summary>
+        ///  Red de seguridad: elimina vértices consecutivos cuya distancia al
+        ///  anterior sea menor que <paramref name="minDistSq"/>. Se usa después
+        ///  del RDP como "limpieza final" antes de entregar al collider.
+        /// </summary>
+        private static List<Vector2> DropClosePairs(List<Vector2> input, float minDistSq)
+        {
+            var output = new List<Vector2>(input.Count);
+            if (input.Count == 0) return output;
+            output.Add(input[0]);
+            for (int i = 1; i < input.Count; i++)
+            {
+                Vector2 last = output[output.Count - 1];
+                if ((input[i] - last).sqrMagnitude >= minDistSq)
+                    output.Add(input[i]);
+            }
+            // Asegurarnos de que el cierre no está pegado al primer punto
+            if (output.Count >= 2 &&
+                (output[output.Count - 1] - output[0]).sqrMagnitude < minDistSq)
+            {
+                output.RemoveAt(output.Count - 1);
+            }
+            return output;
+        }
+
+        // ============================================================
+        //  GIZMOS
+        // ============================================================
+        private void OnDrawGizmos()
+        {
+            if (!drawGizmos) return;
+            Gizmos.color = new Color(1f, 0.9f, 0.2f, 0.7f);
+            Vector3 size = new Vector3(textureWidth / pixelsPerUnit,
+                                       textureHeight / pixelsPerUnit, 0);
+            Vector3 center = transform.position + size * 0.5f;
+            Gizmos.DrawWireCube(center, size);
+
+            // PINTA EL POLÍGONO DEL COLLIDER EN ROJO BRILLANTE
+            // Así vemos si el skyline tiene picos verticales raros
+            // (= paredes invisibles) o trincheras (= huecos por los que cae la rata).
+            // Se pinta SIN necesidad de seleccionar el GameObject.
+            var p = GetComponent<PolygonCollider2D>();
+            if (p == null) return;
+
+            Gizmos.color = Color.red;
+            Vector3 worldOffset = transform.position;
+            for (int pathIdx = 0; pathIdx < p.pathCount; pathIdx++)
+            {
+                var pts = p.GetPath(pathIdx);
+                if (pts == null || pts.Length < 2) continue;
+                for (int i = 0; i < pts.Length; i++)
+                {
+                    Vector3 a = worldOffset + (Vector3)(Vector2)pts[i];
+                    Vector3 b = worldOffset + (Vector3)(Vector2)pts[(i + 1) % pts.Length];
+                    Gizmos.DrawLine(a, b);
+                }
+            }
+        }
+    }
+}

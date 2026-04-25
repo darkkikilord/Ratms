@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Ratms.World;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -42,6 +43,45 @@ namespace Ratms.Networking
 
         [Tooltip("Puntos de aparición. El orden de conexión define qué punto toca a cada cliente (0 al primero, 1 al segundo, etc.).")]
         [SerializeField] private Transform[] spawnPoints;
+
+        [Header("Adaptar al terreno procedural")]
+        [Tooltip("Si ON, al spawnear una rata ignoramos la Y del SpawnPoint y la pegamos a la superficie del mapa procedural actual. Usa la X del SpawnPoint como sitio lateral, pero la altura se calcula sola — así no salen ratas flotando ni enterradas aunque el mapa cambie cada partida.")]
+        [SerializeField] private bool snapToTerrainSurface = true;
+
+        [Tooltip("Radio lateral (en PÍXELES del mapa, no unidades de mundo) en el que buscamos la columna más plana alrededor del SpawnPoint. 0 = usa la X exacta. 80 px ≈ 2.5 unidades con PPU=32 — suele ser suficiente para evitar picos afilados. Sube si tus SpawnPoints pueden caer cerca de paredes.")]
+        [SerializeField] private int surfaceSearchRadiusPx = 80;
+
+        [Tooltip("Separación extra hacia ARRIBA (unidades de mundo) sobre el píxel de superficie. Evita que la rata aparezca con los pies clavados dentro de la hierba o, peor, se cuele dentro del terreno. 2.5 deja a la rata cayendo desde bastante arriba — se asienta sola por gravedad.")]
+        [SerializeField] private float surfaceOffsetY = 2.5f;
+
+        [Header("Retraso inicial antes de spawnear")]
+        [Tooltip("Segundos que esperamos desde OnLoadEventCompleted antes de instanciar las ratas. Da tiempo a que el PolygonCollider2D del terreno destructible se reconstruya y esté listo para chocar. 0.4s suele bastar; súbelo si las ratas siguen atravesando el suelo.")]
+        [SerializeField] private float initialSpawnDelay = 0.4f;
+
+        [Header("Verificación anti-clipping")]
+        [Tooltip("Si ON, al spawnear comprobamos con un OverlapCircle que no estamos metiendo a la rata dentro del terreno. Si la detectamos clipeada, subimos la Y hasta dejarla limpia.")]
+        [SerializeField] private bool verifySpawnIsClear = true;
+
+        [Tooltip("Radio del círculo de verificación (unidades de mundo). Aproximadamente el tamaño de la rata.")]
+        [SerializeField] private float spawnClearRadius = 0.5f;
+
+        [Tooltip("Layers que consideramos 'terreno sólido' para la comprobación anti-clipping. Déjalo en Default si tu terreno está en ese layer; si lo tienes en un layer propio (Terrain, Ground...), selecciónalo aquí.")]
+        [SerializeField] private LayerMask terrainLayerMask = ~0;
+
+        [Tooltip("Cuántas veces como mucho subimos la Y buscando un sitio limpio antes de rendirnos.")]
+        [SerializeField] private int maxClearAttempts = 10;
+
+        [Tooltip("Cuánto subimos la Y en cada intento (unidades de mundo).")]
+        [SerializeField] private float clearAttemptStep = 0.6f;
+
+        [Header("Red de seguridad — 'kill zone'")]
+        [Tooltip("Si una rata cae por debajo de esta Y de mundo (por bug, explosión, lo que sea), el servidor la re-teleporta sobre la superficie del mapa en vez de dejarla caer al vacío infinito. Pon un valor claramente por debajo del terreno. -20 suele valer si el terreno arranca en Y=0.")]
+        [SerializeField] private float fallKillY = -10f;
+
+        [Tooltip("Cada cuántos segundos comprobamos si alguna rata ha caído al vacío. No hace falta revisar cada frame — con 0.5s es más que suficiente.")]
+        [SerializeField] private float fallCheckInterval = 0.5f;
+
+        private float fallCheckTimer;
 
         [Header("Colores por equipo (opcional)")]
         [Tooltip("Se asignan por orden de conexión al NetworkPlayerMovement.teamColor, si existe.")]
@@ -123,6 +163,40 @@ namespace Ratms.Networking
         }
 
         // ================================================================
+        //   VIGILANCIA DE RATAS QUE CAEN AL VACÍO
+        // ================================================================
+        private void Update()
+        {
+            if (!IsServer) return;
+            fallCheckTimer += Time.deltaTime;
+            if (fallCheckTimer < fallCheckInterval) return;
+            fallCheckTimer = 0f;
+
+            foreach (var kv in spawnedRats)
+            {
+                var no = kv.Value;
+                if (no == null || !no.IsSpawned) continue;
+                if (no.transform.position.y > fallKillY) continue;
+
+                // Rata en el limbo → le buscamos otra vez un sitio bueno encima del terreno
+                // y la teleportamos allí. Paramos su velocidad para que no rebote en cuanto aterrice.
+                int spIndex = 0;
+                int i = 0;
+                foreach (var k in spawnedRats.Keys)
+                {
+                    if (k == kv.Key) { spIndex = i; break; }
+                    i++;
+                }
+                Vector3 rescue = ResolveSpawnPosition(spIndex);
+                no.transform.position = rescue;
+                var rb = no.GetComponent<Rigidbody2D>();
+                if (rb != null) rb.linearVelocity = Vector2.zero;
+                if (debugLogs)
+                    Debug.Log($"[GameSceneSpawnManager] 💀→♻️ Rata clientId={kv.Key} se cayó al vacío (y<{fallKillY}). La reubico en {rescue}.");
+            }
+        }
+
+        // ================================================================
         //   EVENTO: todos los clientes han terminado de cargar la escena
         // ================================================================
         private void HandleLoadEventCompleted(string sceneName,
@@ -140,9 +214,18 @@ namespace Ratms.Networking
                           $"TimedOut: {clientsTimedOut.Count}");
             }
 
-            // Iteramos TODOS los clientes conectados (no solo los que completaron
-            // esta carga, por si alguno ya estaba dentro). Usamos un índice incremental
-            // basado en spawnedRats.Count para ir repartiendo SpawnPoints y colores.
+            // Retrasamos el spawn unos frames para que el PolygonCollider2D del
+            // terreno destructible haya terminado de reconstruirse. Si spawneamos
+            // demasiado pronto, la rata cae antes de que exista el collider y
+            // atraviesa el suelo → vacío.
+            StartCoroutine(DelayedSpawnAll());
+        }
+
+        private System.Collections.IEnumerator DelayedSpawnAll()
+        {
+            yield return new WaitForSeconds(initialSpawnDelay);
+
+            if (!IsServer) yield break;
             var all = NetworkManager.Singleton.ConnectedClientsIds;
             foreach (var clientId in all)
             {
@@ -199,17 +282,13 @@ namespace Ratms.Networking
                 return;
             }
 
-            // Posición: SpawnPoint correspondiente (o (0,0,0) si no hay suficientes).
-            Vector3 pos = Vector3.zero;
+            Vector3 pos = ResolveSpawnPosition(index);
             Quaternion rot = Quaternion.identity;
             if (spawnPoints != null && spawnPoints.Length > 0)
             {
                 int sp = index % spawnPoints.Length;
                 if (spawnPoints[sp] != null)
-                {
-                    pos = spawnPoints[sp].position;
                     rot = spawnPoints[sp].rotation;
-                }
             }
 
             GameObject go = Instantiate(ratNetworkPrefab, pos, rot);
@@ -232,6 +311,73 @@ namespace Ratms.Networking
 
             // Color de equipo (opcional, si el NetworkPlayerMovement lo soporta).
             ApplyTeamColor(go, index);
+        }
+
+        /// <summary>
+        ///  Calcula la posición de mundo donde debe aparecer una rata a partir
+        ///  de su <paramref name="index"/> (0, 1, 2...). Usa el SpawnPoint del
+        ///  array para la X y, si el terreno procedural está listo y el toggle
+        ///  está ON, pega la Y a la superficie actual del mapa.
+        ///
+        ///  También se usa como "fallback de rescate" cuando una rata cae al
+        ///  vacío — la re-teleportamos a este sitio.
+        /// </summary>
+        private Vector3 ResolveSpawnPosition(int index)
+        {
+            Vector3 pos = Vector3.zero;
+            if (spawnPoints != null && spawnPoints.Length > 0)
+            {
+                int sp = index % spawnPoints.Length;
+                if (spawnPoints[sp] != null)
+                    pos = spawnPoints[sp].position;
+            }
+
+            if (snapToTerrainSurface)
+            {
+                var generator = FindFirstObjectByType<TerrainGenerator>();
+                if (generator != null && generator.HasHeightLine)
+                {
+                    Vector3? surface = generator.GetSurfaceWorldPos(pos.x, surfaceSearchRadiusPx);
+                    if (surface.HasValue)
+                    {
+                        Vector3 s = surface.Value;
+                        // Si hay búsqueda de zona plana, usamos la X que eligió el generator.
+                        pos.x = surfaceSearchRadiusPx > 0 ? s.x : pos.x;
+                        pos.y = s.y + surfaceOffsetY;
+                        if (debugLogs)
+                            Debug.Log($"[GameSceneSpawnManager] Snap spawn #{index} a superficie: {pos}");
+                    }
+                    else if (debugLogs)
+                    {
+                        Debug.LogWarning($"[GameSceneSpawnManager] GetSurfaceWorldPos devolvió null para X={pos.x}. Usando SpawnPoint tal cual.");
+                    }
+                }
+                else if (debugLogs)
+                {
+                    Debug.Log("[GameSceneSpawnManager] No hay TerrainGenerator con mapa generado todavía — spawn con SpawnPoint literal.");
+                }
+            }
+
+            // Verificación anti-clipping: si por lo que sea (isla flotante, cueva
+            // justo debajo del SpawnPoint, cálculo impreciso) el punto elegido
+            // cae DENTRO del terreno, subimos la Y en pequeños pasos hasta
+            // dejar a la rata en aire limpio.
+            if (verifySpawnIsClear)
+            {
+                for (int attempt = 0; attempt < maxClearAttempts; attempt++)
+                {
+                    Collider2D overlap = Physics2D.OverlapCircle(
+                        new Vector2(pos.x, pos.y),
+                        spawnClearRadius,
+                        terrainLayerMask);
+                    if (overlap == null) break; // limpio
+                    pos.y += clearAttemptStep;
+                    if (debugLogs)
+                        Debug.Log($"[GameSceneSpawnManager] Spawn #{index} clipeaba con '{overlap.name}', subo a Y={pos.y}");
+                }
+            }
+
+            return pos;
         }
 
         private void ApplyTeamColor(GameObject ratGo, int index)

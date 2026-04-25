@@ -2545,8 +2545,8 @@ MonoBehaviour:
   btnStartGame: {fileID: 11368948}
   btnCancelLobby: {fileID: 1657749253}
   statusText: {fileID: 1489590310}
-  gameSceneName: Escenario 1
-  minPlayersToStart: 2
+  gameSceneName: Escenario_TerrainTest
+  minPlayersToStart: 1
 --- !u!114 &889761797
 MonoBehaviour:
   m_ObjectHideFlags: 0

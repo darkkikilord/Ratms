@@ -18,9 +18,20 @@ namespace Ratms.Networking
     public class NetworkPlayerMovement : NetworkBehaviour
     {
         [Header("Movimiento")]
-        [SerializeField] private float moveForce = 20f;
+        [Tooltip("Velocidad tope al andar (unidades/s).")]
         [SerializeField] private float maxSpeed = 6f;
-        [SerializeField] private float linearDrag = 4f;
+
+        [Tooltip("Cuánto tarda en acelerar desde 0 hasta maxSpeed al pulsar A/D (unidades/s²). 40 = llega a 6 u/s en 0.15s — se nota responsivo pero no brusco.")]
+        [SerializeField] private float moveAcceleration = 40f;
+
+        [Tooltip("Cuánto tarda en frenar al soltar las teclas (unidades/s²). Ligeramente mayor que la aceleración para que la rata se detenga rápido pero no clavada.")]
+        [SerializeField] private float moveDeceleration = 55f;
+
+        // Campos viejos mantenidos por compatibilidad; ya no se usan en la
+        // lógica nueva, pero evitan que el Inspector marque valores perdidos
+        // si alguien los tenía editados.
+        [HideInInspector, SerializeField] private float moveForce = 20f;
+        [HideInInspector, SerializeField] private float linearDrag = 4f;
 
         [Header("Salto")]
         [SerializeField] private float jumpForce = 10f;
@@ -72,6 +83,48 @@ namespace Ratms.Networking
         private Vector3 weaponHolderDefaultPos;
         private bool weaponHolderPosCached;
         private float endTurnTimer = -1f;
+
+        // Cooldown para evitar saltos dobles: tras saltar, no se puede volver
+        // a saltar hasta que pasa un poquito Y se vuelva a tocar suelo de verdad.
+        [Header("Salto — afinado")]
+        [Tooltip("Segundos mínimos entre dos saltos consecutivos, por si el groundCheck detecta suelo durante un frame del salto inicial.")]
+        [SerializeField] private float jumpCooldown = 0.25f;
+
+        [Tooltip("Colliders con estos tags NO cuentan como 'suelo' aunque estén en la groundMask. Úsalo si la rata tiene algún collider hijo que se superpone al groundCheck.")]
+        [SerializeField] private string[] groundCheckIgnoreTags = new string[0];
+
+        [Tooltip("Coyote time: segundos de gracia DESPUÉS de dejar el suelo durante los que aún se puede saltar. Soluciona el bug clásico de pulsar W justo cuando empiezas a caer del borde de un saliente y no salta.")]
+        [SerializeField] private float coyoteTime = 0.10f;
+
+        [Tooltip("Jump buffer: si pulsas W/Up hasta este número de segundos ANTES de tocar el suelo, el salto se ejecuta automáticamente al aterrizar. Da una sensación de salto muy responsiva.")]
+        [SerializeField] private float jumpBufferTime = 0.10f;
+
+        [Tooltip("Si la velocidad vertical de la rata supera este valor (positivo = subiendo), no se considera 'en el suelo'. Antes era 0.5 — demasiado bajo, los rebotes diminutos del collider procedural anulaban el groundcheck. 2 perdona los micro-rebotes pero detecta de verdad un salto en marcha.")]
+        [SerializeField] private float groundCheckMaxRiseVy = 2f;
+
+        [Tooltip("Si está ON, escupe en consola un Debug.Log cada vez que IsGrounded() detecta o pierde suelo, y otro al pulsar saltar con todas las condiciones. PUESTO ON POR DEFECTO mientras afinamos el salto — quítalo cuando funcione.")]
+        [SerializeField] private bool debugGroundCheck = true;
+
+        [Tooltip("Distancia (unidades de mundo) hacia abajo del raycast de respaldo del groundcheck. " +
+                 "Es independiente del groundMask: detecta CUALQUIER collider que no sea de la rata. " +
+                 "Sirve de fallback cuando el groundCheck Transform no está bien colocado o el groundMask está mal configurado.")]
+        [SerializeField] private float groundRaycastDistance = 0.40f;
+
+        private float nextJumpAllowedTime = -1f;
+        // Buffer reutilizable para el OverlapCircleNonAlloc (evita allocs por frame).
+        private readonly Collider2D[] groundHits = new Collider2D[8];
+        private readonly RaycastHit2D[] groundRayHits = new RaycastHit2D[8];
+
+        // Estado interno del coyote/buffer.
+        private float lastGroundedTime = -10f; // último instante en el que SÍ había suelo
+        private float jumpRequestedTime = -10f; // último instante en el que se pulsó saltar
+        private bool wasGrounded; // estado anterior, solo para el log de debug
+
+        // Ventana de "vuelo libre" tras un empujón de explosión: durante este
+        // tiempo ignoramos linearDamping y maxSpeed para que la rata vuele
+        // bonito en vez de frenarse en medio segundo.
+        private float knockbackFlightUntil = -1f;
+        private bool InKnockbackFlight => Time.time < knockbackFlightUntil;
 
         /// <summary>
         ///  Variable sincronizada por red: true = mira a la derecha, false = izquierda.
@@ -286,13 +339,63 @@ namespace Ratms.Networking
 
             inputX = Input.GetAxisRaw("Horizontal");
 
-            // Salto — ahora SOLO con W para no chocar con ESPACIO (que ahora es disparo)
-            bool grounded = groundCheck != null
-                && Physics2D.OverlapCircle(groundCheck.position, groundRadius, groundMask);
+            // Salto — acepta W o la flecha arriba (lo que cada quien prefiera).
+            // ESPACIO se queda reservado para disparar.
+            //
+            // Lógica con COYOTE + BUFFER (estándar plataformas modernas):
+            //
+            //   · Cada frame en el suelo, recordamos lastGroundedTime = ahora.
+            //     Estamos "permitidos a saltar" hasta ahora + coyoteTime, aunque
+            //     ya no toquemos suelo. Esto cubre dos casos:
+            //       (a) Saltas justo cuando caes del borde de una colina.
+            //       (b) El collider procedural rebota un milímetro: aunque
+            //           IsGrounded devuelva false un frame, lo perdonamos.
+            //
+            //   · Cuando pulsas W/Up, anotamos jumpRequestedTime = ahora.
+            //     El "jump" salta si jumpRequestedTime está dentro de
+            //     jumpBufferTime → es decir, si pulsaste hace poco. Cubre:
+            //       (a) Pulsas un pelín antes de aterrizar.
+            //       (b) Frame raro donde el groundCheck no corre.
+            //
+            //   · El jumpCooldown sigue ahí para que dos pulsaciones muy
+            //     seguidas (incluso por chattering del teclado) no doblen.
+            bool grounded = IsGrounded();
+            if (grounded) lastGroundedTime = Time.time;
 
-            if (grounded && Input.GetKeyDown(KeyCode.W))
+            if (debugGroundCheck && grounded != wasGrounded)
+            {
+                Debug.Log($"[NetworkPlayerMovement] grounded={grounded} vy={rb.linearVelocity.y:F2}");
+                wasGrounded = grounded;
+            }
+
+            bool jumpKeyDown = Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow);
+            if (jumpKeyDown) jumpRequestedTime = Time.time;
+
+            bool canCoyoteJump = (Time.time - lastGroundedTime) <= coyoteTime;
+            bool jumpBuffered  = (Time.time - jumpRequestedTime) <= jumpBufferTime;
+            bool cooldownOk    = Time.time >= nextJumpAllowedTime;
+
+            // Log diagnóstico al pulsar saltar — así sabemos exactamente
+            // qué condición falla si la rata no salta.
+            if (jumpKeyDown && debugGroundCheck)
+            {
+                Debug.Log($"[Salto] pressed | grounded={grounded} vy={rb.linearVelocity.y:F2} " +
+                          $"| coyoteOk={canCoyoteJump} bufferOk={jumpBuffered} cooldownOk={cooldownOk} " +
+                          $"| groundCheck={(groundCheck != null ? groundCheck.name : "NULL")} " +
+                          $"| groundMask={(int)groundMask.value}");
+            }
+
+            if (canCoyoteJump && jumpBuffered && cooldownOk)
             {
                 rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
+                nextJumpAllowedTime = Time.time + jumpCooldown;
+                // "Consumimos" la petición y el coyote para que no se ejecuten
+                // dos saltos seguidos por el mismo input ni por el mismo
+                // contacto de suelo.
+                jumpRequestedTime = -10f;
+                lastGroundedTime  = -10f;
+
+                if (debugGroundCheck) Debug.Log("[Salto] EJECUTADO ✓");
             }
 
             // Flip: actualiza la NetworkVariable → se propaga a todos
@@ -306,10 +409,19 @@ namespace Ratms.Networking
             HandleFireInput();
 
             // Publica la velocidad para que todos los clientes animen correctamente.
-            // Sólo actualizamos si cambia "notablemente" para no saturar la red.
+            // Sólo actualizamos si cambia "notablemente" para no saturar la red
+            // (la NetworkVariable lanzaría un mensaje en cada frame con 0.001
+            // de diferencia, cosa que no aporta nada y satura ancho de banda).
             float currentSpeed = Mathf.Abs(rb.linearVelocity.x);
             if (Mathf.Abs(currentSpeed - syncedSpeed.Value) > 0.1f)
                 syncedSpeed.Value = currentSpeed;
+
+            // EN EL DUEÑO: alimentamos el Animator local con la velocidad real
+            // CADA frame, sin esperar al callback de la NetworkVariable. Así la
+            // transición idle → corriendo / agachada se nota instantánea al
+            // empezar a andar (antes había un lag hasta que el umbral de 0.1
+            // hacía saltar el mensaje de red y volvía a nosotros).
+            ApplyAnimationSpeed(currentSpeed);
         }
 
         // ==================================================================
@@ -428,16 +540,57 @@ namespace Ratms.Networking
 
         private void FixedUpdate()
         {
-            if (!CanControl()) return;
+            if (rb == null) return;
 
-            if (Mathf.Abs(inputX) > 0.1f)
-                rb.AddForce(Vector2.right * inputX * moveForce);
+            // Durante la ventana de "vuelo libre" tras una explosión, quitamos
+            // la fricción y NO clampamos la velocidad. Así el empujón se siente
+            // de verdad en vez de frenarse en medio segundo.
+            if (InKnockbackFlight)
+            {
+                rb.linearDamping = 0f;
+                return;
+            }
 
-            if (Mathf.Abs(rb.linearVelocity.x) > maxSpeed)
-                rb.linearVelocity = new Vector2(Mathf.Sign(rb.linearVelocity.x) * maxSpeed,
-                                                rb.linearVelocity.y);
+            // Gestionamos la fricción horizontal manualmente con MoveTowards —
+            // así NO queremos linearDamping, o iría en contra y se notaría
+            // "lento/pegajoso". Lo dejamos a 0 siempre que la rata controla.
+            rb.linearDamping = 0f;
 
-            rb.linearDamping = linearDrag;
+            if (!CanControl())
+            {
+                // No controlamos → no tocamos la velocidad. Dejamos que la
+                // física (gravedad, colisiones) haga lo suyo.
+                return;
+            }
+
+            // ----------------------------------------------------------------
+            // MOVIMIENTO SMOOTH:
+            // En vez de AddForce + clamp duro (brusco al arrancar/parar),
+            // usamos Mathf.MoveTowards para interpolar la velocidad horizontal
+            // hasta la velocidad objetivo. La aceleración y deceleración son
+            // configurables desde el Inspector:
+            //   · A/D pulsados → objetivo = ±maxSpeed, interpolamos con
+            //     moveAcceleration (u/s²).
+            //   · A/D soltados → objetivo = 0, interpolamos con
+            //     moveDeceleration (u/s²), un pelín más alto para que no
+            //     patine.
+            // Este enfoque da un arranque y frenado lineales suaves, se
+            // siente mucho más "jugoso" que el impulso+drag.
+            // ----------------------------------------------------------------
+            float targetVx = inputX * maxSpeed;
+            float accel = Mathf.Abs(targetVx) > 0.01f ? moveAcceleration : moveDeceleration;
+            float newVx = Mathf.MoveTowards(rb.linearVelocity.x, targetVx, accel * Time.fixedDeltaTime);
+            rb.linearVelocity = new Vector2(newVx, rb.linearVelocity.y);
+        }
+
+        /// <summary>
+        ///  Lo llama <see cref="NetworkHealth.ApplyKnockbackClientRpc"/> justo
+        ///  después de aplicar el impulso. Activa una ventana en la que la rata
+        ///  "vuela libre" (sin fricción aérea ni tope de velocidad).
+        /// </summary>
+        public void BeginKnockbackFlight(float seconds)
+        {
+            knockbackFlightUntil = Time.time + Mathf.Max(0.05f, seconds);
         }
 
         /// <summary>
@@ -541,6 +694,101 @@ namespace Ratms.Networking
         {
             if (animator != null && animator.runtimeAnimatorController != null)
                 animator.SetFloat(speedHash, speed);
+        }
+
+        // ==================================================================
+        // GROUND CHECK
+        // ==================================================================
+        /// <summary>
+        ///  ¿La rata está pegada a algo que cuenta como suelo?
+        ///  Ver comentarios en Update() para la lógica completa.
+        /// </summary>
+        /// <summary>
+        ///  ¿La rata está pegada a algo que cuenta como suelo?
+        ///
+        ///  Implementación a prueba de balas con DOS estrategias en cascada:
+        ///   1) OverlapCircle desde groundCheck (preferido, lo que había antes).
+        ///   2) Raycast hacia abajo desde la base del propio collider de la rata
+        ///      (FALLBACK). No depende de groundMask ni del groundCheck Transform.
+        ///      Acepta cualquier collider que no cuelgue de la rata.
+        ///
+        ///  Razón del fallback: si el groundMask no incluye la layer del
+        ///  terreno procedural, o el groundCheck Transform no está colocado
+        ///  exactamente en los pies, el OverlapCircle devuelve "nada" y la
+        ///  rata cree que está volando. El raycast es independiente y
+        ///  rescata el detect.
+        /// </summary>
+        private bool IsGrounded()
+        {
+            // Si va subiendo claramente, no es suelo (anti salto infinito).
+            if (rb != null && rb.linearVelocity.y > groundCheckMaxRiseVy) return false;
+
+            // ---------- Estrategia 1: OverlapCircle desde groundCheck ----------
+            // Auto-resolución por si el prefab no tiene el groundCheck arrastrado.
+            if (groundCheck == null)
+            {
+                var found = transform.Find("groundcheck");
+                if (found == null) found = transform.Find("GroundCheck");
+                if (found == null) found = transform.Find("groundCheck");
+                if (found != null) groundCheck = found;
+            }
+
+            if (groundCheck != null)
+            {
+                // BULLETPROOF: ignoramos el groundMask del Inspector y miramos
+                // TODAS las layers. El filtro de self más abajo descarta los
+                // colliders de la propia rata. Así da igual en qué layer esté
+                // el terreno procedural — siempre lo detectamos.
+                int maskValue = ~0;
+
+                int count = Physics2D.OverlapCircleNonAlloc(
+                    groundCheck.position, groundRadius, groundHits, maskValue);
+
+                for (int i = 0; i < count; i++)
+                {
+                    var c = groundHits[i];
+                    if (c == null) continue;
+                    if (c.transform == transform) continue;
+                    if (c.transform.IsChildOf(transform)) continue;
+                    if (groundCheckIgnoreTags != null && groundCheckIgnoreTags.Length > 0)
+                    {
+                        bool ignored = false;
+                        foreach (var tag in groundCheckIgnoreTags)
+                            if (!string.IsNullOrEmpty(tag) && c.CompareTag(tag)) { ignored = true; break; }
+                        if (ignored) continue;
+                    }
+                    return true;
+                }
+            }
+
+            // ---------- Estrategia 2 (FALLBACK): raycast hacia abajo ----------
+            // Salimos desde justo por encima de la base del collider de la rata
+            // (o de su transform si no tiene). Cualquier collider que no sea
+            // suyo cuenta como suelo. No usamos máscara: queremos máxima fiabilidad.
+            Vector2 origin;
+            float startInside = 0.05f; // 5 cm por encima de la base, para no salir DENTRO del suelo si está hundida
+            var selfCol = GetComponent<Collider2D>();
+            if (selfCol != null)
+            {
+                Bounds b = selfCol.bounds;
+                origin = new Vector2(b.center.x, b.min.y + startInside);
+            }
+            else
+            {
+                origin = (Vector2)transform.position + Vector2.up * startInside;
+            }
+
+            int rayCount = Physics2D.RaycastNonAlloc(origin, Vector2.down, groundRayHits, groundRaycastDistance);
+            for (int i = 0; i < rayCount; i++)
+            {
+                var c = groundRayHits[i].collider;
+                if (c == null) continue;
+                if (c.transform == transform) continue;
+                if (c.transform.IsChildOf(transform)) continue;
+                return true;
+            }
+
+            return false;
         }
 
         // ==================================================================

@@ -40,8 +40,14 @@ namespace Ratms.Networking
         [SerializeField] private float ownerIgnoreTime = 0.5f;
 
         [Header("Impacto — empujón y cámara")]
-        [Tooltip("Fuerza máxima del empujón a una rata pegada al centro de la explosión. Cae con la distancia igual que el daño.")]
-        [SerializeField] private float knockbackForce = 18f;
+        [Tooltip("Fuerza máxima del empujón a una rata pegada al centro de la explosión. Cae con la distancia con falloff sqrt (más 'kick' a media distancia).")]
+        [SerializeField] private float knockbackForce = 32f;
+
+        [Tooltip("Empujón MÍNIMO que recibe una rata alcanzada por la explosión, aunque esté en el borde. 0 = solo falloff. Sube esto si quieres que cualquier impacto se note.")]
+        [SerializeField] private float minKnockback = 8f;
+
+        [Tooltip("Segundos durante los cuales la rata ignora su linearDamping tras un empujón, para que vuele de verdad en lugar de frenarse en medio segundo.")]
+        [SerializeField] private float knockbackFreeFlight = 0.5f;
 
         [Tooltip("Amplitud del temblor de cámara al explotar (unidades de mundo).")]
         [SerializeField] private float shakeAmplitude = 0.28f;
@@ -137,7 +143,7 @@ namespace Ratms.Networking
             if (!IsServer || exploded) return;
             exploded = true;
 
-            // 1) Daño en área con falloff lineal
+            // 1) Daño en área con falloff lineal.
             var hits = Physics2D.OverlapCircleAll(at, explosionRadius, damageMask);
             var alreadyDamaged = new HashSet<NetworkHealth>();
 
@@ -164,23 +170,33 @@ namespace Ratms.Networking
                 nh.ApplyDamageServer(dmg, col.transform.position);
 
                 // KNOCKBACK: empuja a la rata alejándola del centro de la explosión.
-                // La fuerza cae con la distancia igual que el daño (factor t).
-                // Sumamos bastante componente hacia arriba para que "salga volando"
-                // en parábola en vez de raspar por el suelo — así se siente más Worms.
+                // Falloff SQRT (mucho más notorio a media distancia que el lineal):
+                //   · centro: t ≈ 1        → empujón completo
+                //   · mitad:  t ≈ 0.71     → con lineal habría sido 0.5
+                //   · borde:  t ≈ 0        → solo queda minKnockback
+                // Sumamos componente hacia arriba (+0.8) para que "salga volando"
+                // en parábola en vez de raspar por el suelo — estilo Worms.
                 Vector2 away = (Vector2)col.transform.position - (Vector2)at;
                 if (away.sqrMagnitude < 0.0001f) away = Vector2.up;
-                Vector2 push = (away.normalized + Vector2.up * 0.8f).normalized * (knockbackForce * t);
-                nh.ApplyKnockbackClientRpc(push);
+                float kbT = Mathf.Sqrt(t);
+                float magnitude = Mathf.Max(minKnockback, knockbackForce * kbT);
+                Vector2 push = (away.normalized + Vector2.up * 0.8f).normalized * magnitude;
+                nh.ApplyKnockbackClientRpc(push, knockbackFreeFlight);
             }
 
-            // 2) Notificamos VFX/SFX a todos los clientes
+            // 2) Carvea el TERRENO DESTRUCTIBLE en red. El NetworkDestructibleTerrain
+            //    propaga la orden a todos los clientes (incluido el host-as-client).
+            if (NetworkDestructibleTerrain.Instance != null)
+                NetworkDestructibleTerrain.Instance.ServerCarveAt(at, explosionRadius);
+
+            // 3) Notificamos VFX/SFX a todos los clientes
             ExplosionFxClientRpc(at);
 
-            // 3) Cámara: temblor + pausa dramática sobre el punto de impacto.
+            // 4) Cámara: temblor + pausa dramática sobre el punto de impacto.
             //    Al caducar la pausa, la cámara vuelve sola a la rata del dueño.
             ExplosionCameraFxClientRpc(at, shakeAmplitude, shakeDuration, impactPauseSeconds);
 
-            // 4) Fuera del mundo
+            // 5) Fuera del mundo
             if (NetworkObject != null && NetworkObject.IsSpawned)
                 NetworkObject.Despawn(destroy: true);
             else

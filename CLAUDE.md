@@ -40,6 +40,10 @@ Tipos de daño: `DamageType` (Generic, Explosion, Fire*, Water, Fall, Melee*). *
 - `[Header]` + `[Tooltip]` en español en todos los campos del Inspector.
 - Al borrar un script o prefab, borrar también su `.meta` y comprobar que ningún `.prefab`/`.unity` referencia su GUID.
 
+## Prueba automática (ver el juego sin jugar)
+`powershell -ExecutionPolicy Bypass -File tools\autotest.ps1` (Unity cerrado; `-SkipBuild` reutiliza la build, `-Biome Sewer` fuerza bioma).
+Compila la build, el juego se juega solo (~30 s: host local, bazooka, granada) y deja capturas + `informe.txt` en `AutoTest\Run_<fecha>\`. Mira las PNG con Read para revisar cambios visuales. Al añadir armas o mecánicas, amplía el guion en `Assets/Scripts/Testing/AutoPlayTest.cs`.
+
 ## Git
 - Rama de trabajo: `Main` (sigue a `origin/Main`, repo `darkkikilord/Ratms`).
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.

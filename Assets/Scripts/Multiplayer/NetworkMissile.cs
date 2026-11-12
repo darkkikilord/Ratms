@@ -39,6 +39,11 @@ namespace Ratms.Networking
         [SerializeField] private float selfDestructSeconds = 8f;
         [SerializeField] private float ownerIgnoreTime = 0.5f;
 
+        [Tooltip("DEV / TESTING: si está ON, el misil PUEDE dañar también al lanzador. " +
+                 "Útil para probar el popup en solitario sin tener que entrar dos clientes. " +
+                 "Para multijugador real: déjalo OFF (estilo Worms — tu propio misil no te daña).")]
+        [SerializeField] private bool allowSelfDamage = false;
+
         [Header("Impacto — empujón y cámara")]
         [Tooltip("Fuerza máxima del empujón a una rata pegada al centro de la explosión. Cae con la distancia con falloff sqrt (más 'kick' a media distancia).")]
         [SerializeField] private float knockbackForce = 32f;
@@ -147,11 +152,19 @@ namespace Ratms.Networking
             var hits = Physics2D.OverlapCircleAll(at, explosionRadius, damageMask);
             var alreadyDamaged = new HashSet<NetworkHealth>();
 
+            // DEBUG: te dice en consola si la explosión está alcanzando o no
+            // a alguna rata. Si ves "0 colliders" o "0 ratas en radio", tu
+            // misil cayó lejos de las ratas y por eso no aparece popup.
+            Debug.Log($"[NetworkMissile] Explosión en {at} — {hits.Length} colliders en radio {explosionRadius}");
+
             // NetworkHealth del dueño del misil: lo EXCLUIMOS del daño en área
             // para evitar que un disparo hacia atrás te explote en la cara.
             // (Worms-style: nunca te daña TU propio misil.)
+            // EXCEPCIÓN: si está activado allowSelfDamage (modo testing en
+            // solitario), no excluimos a nadie. Útil para probar el popup
+            // sin tener que abrir dos clientes.
             NetworkHealth ownerHealth = null;
-            if (ownerNetObj != null)
+            if (!allowSelfDamage && ownerNetObj != null)
                 ownerHealth = ownerNetObj.GetComponent<NetworkHealth>();
 
             foreach (var col in hits)
@@ -167,7 +180,8 @@ namespace Ratms.Networking
                 int dmg = Mathf.CeilToInt(maxDamage * t);
                 if (dmg <= 0) continue;
 
-                nh.ApplyDamageServer(dmg, col.transform.position);
+                Debug.Log($"[NetworkMissile] → Aplicando {dmg} de daño a {nh.gameObject.name} (dist={dist:F2}, t={t:F2})");
+                nh.ApplyDamageServer(dmg, col.transform.position, DamageType.Explosion);
 
                 // KNOCKBACK: empuja a la rata alejándola del centro de la explosión.
                 // Falloff SQRT (mucho más notorio a media distancia que el lineal):
@@ -180,6 +194,17 @@ namespace Ratms.Networking
                 if (away.sqrMagnitude < 0.0001f) away = Vector2.up;
                 float kbT = Mathf.Sqrt(t);
                 float magnitude = Mathf.Max(minKnockback, knockbackForce * kbT);
+
+                // KNOCKBACK PROPORCIONAL AL DAÑO:
+                //   · 25 dmg →  multiplicador 1.0 (impulso normal)
+                //   · 50 dmg →  multiplicador ~1.41
+                //   · 100 dmg →  multiplicador 2.0 (te manda el doble de lejos)
+                //   · 9 dmg →   multiplicador 0.6
+                // Usamos sqrt para que la curva no sea brutal — un golpe de
+                // 100 no debería mandarte 4× más lejos que uno de 25.
+                float damageScale = Mathf.Sqrt(Mathf.Max(1, dmg) / 25f);
+                magnitude *= damageScale;
+
                 Vector2 push = (away.normalized + Vector2.up * 0.8f).normalized * magnitude;
                 nh.ApplyKnockbackClientRpc(push, knockbackFreeFlight);
             }
@@ -196,7 +221,18 @@ namespace Ratms.Networking
             //    Al caducar la pausa, la cámara vuelve sola a la rata del dueño.
             ExplosionCameraFxClientRpc(at, shakeAmplitude, shakeDuration, impactPauseSeconds);
 
-            // 5) Fuera del mundo
+            // 5) Aviso al dueño: "ya he impactado, puedes acortar tu timer de
+            //    fin de turno". Así el siguiente jugador NO puede moverse
+            //    mientras el misil está en vuelo (endTurnDelay es 3.5s por
+            //    defecto), pero en cuanto explotamos, dejamos 1s de margen
+            //    para ver la pausa dramática y cambiamos de turno.
+            if (ownerNetObj != null)
+            {
+                var ownerMove = ownerNetObj.GetComponent<NetworkPlayerMovement>();
+                if (ownerMove != null) ownerMove.ShortenEndTurnClientRpc(1f);
+            }
+
+            // 6) Fuera del mundo
             if (NetworkObject != null && NetworkObject.IsSpawned)
                 NetworkObject.Despawn(destroy: true);
             else
@@ -211,6 +247,11 @@ namespace Ratms.Networking
 
             if (explosionSfx != null)
                 AudioSource.PlayClipAtPoint(explosionSfx, at, explosionSfxVolume);
+
+            // POPUP DE IMPACTO: SIEMPRE pintamos un "BOOM!" en el punto de la
+            // explosión, aunque no haya rata dañada. Así el jugador siempre
+            // ve feedback de su disparo (especialmente útil en testing solo).
+            WorldDamagePopup.SpawnImpact(at, "BOOM!", new Color(1f, 0.6f, 0.1f));
         }
 
         [ClientRpc]

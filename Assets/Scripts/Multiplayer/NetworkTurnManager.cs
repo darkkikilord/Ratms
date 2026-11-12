@@ -69,6 +69,24 @@ namespace Ratms.Networking
             readPerm: NetworkVariableReadPermission.Everyone,
             writePerm: NetworkVariableWritePermission.Server);
 
+        /// <summary>
+        ///  ID del cliente GANADOR. ulong.MaxValue = sin ganador aún (partida activa
+        ///  o empate). Cuando cambia a otro valor, la pantalla de victoria se muestra.
+        /// </summary>
+        public readonly NetworkVariable<ulong> WinnerClientId = new(
+            value: ulong.MaxValue,
+            readPerm: NetworkVariableReadPermission.Everyone,
+            writePerm: NetworkVariableWritePermission.Server);
+
+        /// <summary>
+        ///  true = la partida ha terminado (ha habido un ganador o empate).
+        ///  La UI de victoria se muestra cuando este flag se activa.
+        /// </summary>
+        public readonly NetworkVariable<bool> GameEnded = new(
+            value: false,
+            readPerm: NetworkVariableReadPermission.Everyone,
+            writePerm: NetworkVariableWritePermission.Server);
+
         // =========================================================
         // Estado interno del servidor
         // =========================================================
@@ -139,16 +157,20 @@ namespace Ratms.Networking
 
         private void OnClientDisconnected(ulong clientId)
         {
+            // Con la partida en marcha, desconectarse cuenta como "eliminado":
+            // así si solo queda 1 jugador, gana (antes la partida se quedaba
+            // colgada con un único jugador y sin pantalla de victoria).
+            if (gameStarted)
+            {
+                RemovePlayerServer(clientId);
+                return;
+            }
+
+            // Antes de empezar (o ya terminada): solo lo quitamos de la cola.
             int idx = turnOrder.IndexOf(clientId);
             if (idx < 0) return;
-
             turnOrder.RemoveAt(idx);
-            // Si se desconectó antes del turno actual, ajustamos el índice
-            if (idx < currentTurnIndex) currentTurnIndex--;
-
-            // Si se desconectó el que tenía turno, pasar al siguiente
-            if (CurrentTurnClientId.Value == clientId)
-                AdvanceTurnServer();
+            if (idx <= currentTurnIndex) currentTurnIndex--;
         }
 
         // =========================================================
@@ -257,15 +279,33 @@ namespace Ratms.Networking
             if (idx < 0) return;
 
             turnOrder.RemoveAt(idx);
-            if (idx < currentTurnIndex) currentTurnIndex--;
+            // "<=" y no "<": si cae el jugador del turno actual (o el anterior,
+            // durante la transición), el siguiente se desliza a su hueco. Al
+            // retroceder el índice, BeginNextTurnServer (+1) cae justo en él
+            // en vez de saltárselo.
+            if (idx <= currentTurnIndex) currentTurnIndex--;
 
-            // Condición de victoria simple: si queda 1 o 0, se acabó la partida
+            // Condición de victoria: si queda 1 o 0, se acabó la partida.
+            //   · 1 jugador restante → GANADOR = ese cliente
+            //   · 0 jugadores        → EMPATE (WinnerClientId = MaxValue)
             if (turnOrder.Count <= 1)
             {
                 CurrentTurnClientId.Value = ulong.MaxValue;
                 TurnTimeRemaining.Value = 0f;
                 InTransition.Value = false;
                 gameStarted = false;
+
+                if (turnOrder.Count == 1)
+                {
+                    WinnerClientId.Value = turnOrder[0];
+                    Debug.Log($"[NetworkTurnManager] ¡GANADOR! clientId={turnOrder[0]}");
+                }
+                else
+                {
+                    WinnerClientId.Value = ulong.MaxValue;   // empate
+                    Debug.Log("[NetworkTurnManager] Partida terminada en empate.");
+                }
+                GameEnded.Value = true;
                 return;
             }
 

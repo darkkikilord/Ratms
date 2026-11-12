@@ -210,6 +210,13 @@ MonoBehaviour:
     m_Bits: 4294967295
   selfDestructSeconds: 8
   ownerIgnoreTime: 0.5
+  allowSelfDamage: 1
+  knockbackForce: 12.5
+  minKnockback: 3.1
+  knockbackFreeFlight: 0.5
+  shakeAmplitude: 0.28
+  shakeDuration: 0.4
+  impactPauseSeconds: 1
   explosionVfxPrefab: {fileID: 0}
   explosionSfx: {fileID: 0}
   explosionSfxVolume: 0.7
@@ -242,10 +249,4 @@ MonoBehaviour:
   PositionThreshold: 0.001
   RotAngleThreshold: 0.01
   ScaleThreshold: 0.01
-  UseQuaternionSynchronization: 0
-  UseQuaternionCompression: 0
-  UseHalfFloatPrecision: 0
-  InLocalSpace: 0
-  SwitchTransformSpaceWhenParented: 0
-  Interpolate: 1
-  SlerpPosition: 0
+  UseQuaternionSynchronizati

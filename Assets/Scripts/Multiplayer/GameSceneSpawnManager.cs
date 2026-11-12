@@ -54,6 +54,17 @@ namespace Ratms.Networking
         [Tooltip("Separación extra hacia ARRIBA (unidades de mundo) sobre el píxel de superficie. Evita que la rata aparezca con los pies clavados dentro de la hierba o, peor, se cuele dentro del terreno. 2.5 deja a la rata cayendo desde bastante arriba — se asienta sola por gravedad.")]
         [SerializeField] private float surfaceOffsetY = 2.5f;
 
+        [Header("Spawn aleatorio en cualquier sitio pisable")]
+        [Tooltip("Si ON, ignoramos los SpawnPoints y el sistema de superficie/islas por separado, " +
+                 "y elegimos UN PÍXEL AL AZAR del pool de sitios válidos (suelo, cuevas o islas). " +
+                 "Cada rata aparece en un lugar distinto y sorprendente cada partida.")]
+        [SerializeField] private bool useRandomValidSpawn = true;
+
+        [Header("Spawn en islas flotantes (modo antiguo)")]
+        [Tooltip("Solo si useRandomValidSpawn está en OFF. Probabilidad (0-1) de spawnear en cima de una isla " +
+                 "en lugar de en el suelo principal.")]
+        [Range(0f, 1f)] [SerializeField] private float floatingIslandSpawnChance = 0.35f;
+
         [Header("Retraso inicial antes de spawnear")]
         [Tooltip("Segundos que esperamos desde OnLoadEventCompleted antes de instanciar las ratas. Da tiempo a que el PolygonCollider2D del terreno destructible se reconstruya y esté listo para chocar. 0.4s suele bastar; súbelo si las ratas siguen atravesando el suelo.")]
         [SerializeField] private float initialSpawnDelay = 0.4f;
@@ -337,19 +348,54 @@ namespace Ratms.Networking
                 var generator = FindFirstObjectByType<TerrainGenerator>();
                 if (generator != null && generator.HasHeightLine)
                 {
-                    Vector3? surface = generator.GetSurfaceWorldPos(pos.x, surfaceSearchRadiusPx);
-                    if (surface.HasValue)
+                    // MODO NUEVO: spawn 100% aleatorio en cualquier sitio pisable
+                    // (suelo, cuevas o islas — todo en un solo pool que ya está
+                    // filtrado por el escaneo de terreno).
+                    if (useRandomValidSpawn)
                     {
-                        Vector3 s = surface.Value;
-                        // Si hay búsqueda de zona plana, usamos la X que eligió el generator.
-                        pos.x = surfaceSearchRadiusPx > 0 ? s.x : pos.x;
-                        pos.y = s.y + surfaceOffsetY;
-                        if (debugLogs)
-                            Debug.Log($"[GameSceneSpawnManager] Snap spawn #{index} a superficie: {pos}");
+                        Vector3? validPos = generator.GetRandomValidSpawnWorld();
+                        if (validPos.HasValue)
+                        {
+                            pos = validPos.Value + Vector3.up * surfaceOffsetY;
+                            if (debugLogs)
+                                Debug.Log($"[GameSceneSpawnManager] Spawn #{index} en punto válido random: {pos}");
+                            return pos;   // saltamos la lógica antigua
+                        }
+                        else if (debugLogs)
+                        {
+                            Debug.LogWarning("[GameSceneSpawnManager] Pool de spawn vacío — fallback a superficie normal.");
+                        }
                     }
-                    else if (debugLogs)
+
+                    // MODO ANTIGUO: superficie + probabilidad de isla explícita
+                    bool spawnedOnIsland = false;
+                    if (floatingIslandSpawnChance > 0f && Random.value < floatingIslandSpawnChance)
                     {
-                        Debug.LogWarning($"[GameSceneSpawnManager] GetSurfaceWorldPos devolvió null para X={pos.x}. Usando SpawnPoint tal cual.");
+                        Vector3? islandPos = PickRandomIslandSpawn(generator);
+                        if (islandPos.HasValue)
+                        {
+                            pos = islandPos.Value + Vector3.up * surfaceOffsetY;
+                            spawnedOnIsland = true;
+                            if (debugLogs)
+                                Debug.Log($"[GameSceneSpawnManager] Spawn #{index} en ISLA flotante: {pos}");
+                        }
+                    }
+
+                    if (!spawnedOnIsland)
+                    {
+                        Vector3? surface = generator.GetSurfaceWorldPos(pos.x, surfaceSearchRadiusPx);
+                        if (surface.HasValue)
+                        {
+                            Vector3 s = surface.Value;
+                            pos.x = surfaceSearchRadiusPx > 0 ? s.x : pos.x;
+                            pos.y = s.y + surfaceOffsetY;
+                            if (debugLogs)
+                                Debug.Log($"[GameSceneSpawnManager] Snap spawn #{index} a superficie: {pos}");
+                        }
+                        else if (debugLogs)
+                        {
+                            Debug.LogWarning($"[GameSceneSpawnManager] GetSurfaceWorldPos devolvió null para X={pos.x}. Usando SpawnPoint tal cual.");
+                        }
                     }
                 }
                 else if (debugLogs)
@@ -399,6 +445,27 @@ namespace Ratms.Networking
                 // Mezcla suave para no perder el sprite original.
                 sr.color = Color.Lerp(Color.white, col, 0.6f);
             }
+        }
+
+        /// <summary>
+        ///  Devuelve la posición WORLD de la cima de una isla flotante random,
+        ///  o null si no hay islas en este mapa. Se usa para spawnear ratas
+        ///  en islas y no siempre en el suelo principal.
+        /// </summary>
+        private Vector3? PickRandomIslandSpawn(TerrainGenerator generator)
+        {
+            if (generator == null) return null;
+            var tops = generator.GetFloatingIslandTops();
+            if (tops == null || tops.Count == 0) return null;
+
+            var islandTop = tops[Random.Range(0, tops.Count)];
+            float ppu = generator.PixelsPerUnit;
+            Vector3 terrainPos = generator.transform.position;
+            // Píxel → mundo: +0.5 para centrar en el píxel
+            return new Vector3(
+                terrainPos.x + (islandTop.x + 0.5f) / ppu,
+                terrainPos.y + (islandTop.y + 0.5f) / ppu,
+                terrainPos.z);
         }
     }
 }

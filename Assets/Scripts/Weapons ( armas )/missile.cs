@@ -1,9 +1,17 @@
-﻿using UnityEngine;
+using UnityEngine;
+using Ratms.Networking;
 
+/// <summary>
+///  Misil en SINGLE-PLAYER (legacy).
+///
+///  En multijugador esto lo sustituye NetworkMissile.cs — este componente
+///  solo sigue aquí para que las escenas viejas no se rompan. Cuando colisiona,
+///  hace daño y muestra el popup nuevo (WorldDamagePopup) — ya no usa el
+///  antiguo DamagePopup que dejaba la "T" parásita.
+/// </summary>
 public class missile : MonoBehaviour
 {
     [SerializeField] private float damage = 50f;
-    [SerializeField] private GameObject damagePopupPrefab;
 
     private GameObject owner;
     private Collider2D myCol;
@@ -38,36 +46,14 @@ public class missile : MonoBehaviour
         if (health != null)
         {
             health.TakeDamage(damage);
-            ShowDamagePopup(collision.contacts[0].point);
+
+            // Popup en el punto exacto del impacto
+            Vector3 hitPoint = collision.contacts.Length > 0
+                ? (Vector3)collision.contacts[0].point
+                : transform.position;
+            WorldDamagePopup.Spawn(hitPoint, Mathf.RoundToInt(damage), DamageType.Explosion);
         }
 
         Destroy(gameObject);
-    }
-
-    void ShowDamagePopup(Vector3 position)
-    {
-        if (damagePopupPrefab == null) return;
-
-        // 👇 Forzamos Z = -4 para que se vea bien
-        Vector3 spawnPosition = new Vector3(position.x, position.y, -4f);
-
-        GameObject popup = Instantiate(damagePopupPrefab, spawnPosition, Quaternion.identity);
-
-        // 🔥 Buscar canvas dinámicamente por tag
-        GameObject canvasGO = GameObject.FindWithTag("WorldCanvas");
-        if (canvasGO != null)
-        {
-            popup.transform.SetParent(canvasGO.transform, worldPositionStays: true);
-        }
-        else
-        {
-            Debug.LogWarning("⚠️ No se encontró ningún objeto con el tag 'WorldCanvas'. Asegúrate de asignarlo.");
-        }
-
-        var damageScript = popup.GetComponent<DamagePopup>();
-        if (damageScript != null)
-        {
-            damageScript.Setup(damage);
-        }
     }
 }

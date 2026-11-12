@@ -81,6 +81,16 @@ namespace Ratms.World
                  "Apágalo solo si quieres recuperar el comportamiento por defecto y depurar.")]
         [SerializeField] private bool forceSkylineCollider = true;
 
+        [Tooltip("Si ON, detecta las cuevas internas del terreno (huecos rodeados de tierra) " +
+                 "y las añade como AGUJEROS al PolygonCollider2D. Así la rata puede entrar en las cuevas " +
+                 "en lugar de chocar contra 'paredes invisibles'.")]
+        [SerializeField] private bool detectCavesAsColliderHoles = true;
+
+        [Tooltip("Tamaño mínimo (en píxeles) para considerar un hueco como 'cueva navegable'. " +
+                 "Huecos más pequeños se ignoran (no son transitables por una rata). " +
+                 "Subir este valor si tu terreno tiene mucho ruido y salen miles de micro-cuevas.")]
+        [SerializeField] private int minCavePixels = 300;
+
         [Tooltip("Si ON, escribe en consola cada vez que reconstruimos el collider qué método usó (Sprite.Tight, skyline o rectángulo) y cuántos vértices quedaron. Útil para entender si las paredes invisibles son culpa nuestra o de Unity.")]
         [SerializeField] private bool debugColliderBuild = true;
 
@@ -92,6 +102,10 @@ namespace Ratms.World
         private Texture2D tex;
         private Color32[] pixels;    // cache de píxeles para carvear rápido
         private bool dirty;          // si true, reconstruiremos en LateUpdate
+        // Máscara de "tierra principal" (la conectada al suelo del mapa).
+        // Se reconstruye en cada Rebuild — se usa para que el skyline
+        // ignore islas flotantes. true = es parte del cuerpo principal.
+        private bool[] mainGroundMask;
 
         /// <summary>Todos los terrenos activos en la escena — para CarveAllAt.</summary>
         private static readonly List<DestructibleTerrain> s_all = new();
@@ -508,15 +522,39 @@ namespace Ratms.World
                 var skyline = BuildSkylinePolygon();
                 if (skyline != null && skyline.Length >= 3)
                 {
-                    poly.pathCount = 1;
+                    // El skyline cubre la TIERRA PRINCIPAL (todo lo conectado al
+                    // suelo del mapa por flood-fill). Las islas flotantes han
+                    // quedado fuera de la máscara → no tienen collider todavía.
+                    // Las cazamos aparte y las añadimos como paths adicionales:
+                    var islands = BuildIslandPolygons();
+
+                    // NUEVO: detectar CUEVAS INTERNAS (huecos rodeados de tierra)
+                    // y añadirlas como paths adicionales. PolygonCollider2D
+                    // con múltiples paths interpretará los interiores como
+                    // agujeros si están dentro del path principal (winding
+                    // even/odd rule). Resultado: la rata puede entrar en las
+                    // cuevas en lugar de chocar contra paredes invisibles.
+                    List<Vector2[]> caves = detectCavesAsColliderHoles
+                        ? BuildCavePolygons()
+                        : new List<Vector2[]>();
+
+                    poly.pathCount = 1 + islands.Count + caves.Count;
                     poly.SetPath(0, skyline);
+                    for (int i = 0; i < islands.Count; i++)
+                        poly.SetPath(i + 1, islands[i]);
+                    for (int i = 0; i < caves.Count; i++)
+                        poly.SetPath(1 + islands.Count + i, caves[i]);
+
                     if (debugColliderBuild)
                     {
                         string reason = forceSkylineCollider
                             ? "FORZADO por toggle 'forceSkylineCollider'"
                             : $"Sprite.Tight devolvió shapeCount={shapeCount}";
                         Debug.Log($"[DestructibleTerrain] Collider via SKYLINE ({reason}) — " +
-                                  $"{skyline.Length} vértices, textura={textureWidth}x{textureHeight}, PPU={pixelsPerUnit}, " +
+                                  $"{skyline.Length} vértices en tierra principal, " +
+                                  $"{islands.Count} isla(s) flotante(s), " +
+                                  $"{caves.Count} cueva(s) navegable(s) como huecos, " +
+                                  $"textura={textureWidth}x{textureHeight}, PPU={pixelsPerUnit}, " +
                                   $"layer={gameObject.layer} ({LayerMask.LayerToName(gameObject.layer)}).");
                     }
                     return;
@@ -577,8 +615,18 @@ namespace Ratms.World
         {
             const int sampleStep = 3;    // más fino → perfil más liso
             const int smoothRadius = 2;  // media móvil de (2*2+1)=5 puntos
-            const int caveSkipMax = 50;  // huecos más cortos que esto se tratan como cuevas internas
+            const int caveSkipMax = 50;  // legacy, ya no se usa con la máscara conectada
             if (pixels == null) return null;
+
+            // Antes de muestrear las columnas, calculamos qué píxeles son
+            // "tierra principal" (= los que están conectados al suelo del
+            // mapa por una cadena de píxeles sólidos vecinos). Las islas
+            // flotantes son chunks aislados de tierra que NO tocan el suelo
+            // por ningún camino, así que NO entran en la máscara y el
+            // polígono las ignora completamente. Resultado: las islas se
+            // quedan flotando como decoración visual y la rata pasa por
+            // debajo de ellas sin chocar contra "paredes invisibles".
+            mainGroundMask = BuildMainGroundMask();
 
             // --- Paso 1: sample de alturas (en píxeles) columna a columna ---
             int sampleCount = (textureWidth + sampleStep - 1) / sampleStep;
@@ -682,59 +730,459 @@ namespace Ratms.World
         /// <summary>
         ///  Encuentra la Y de la superficie del SUELO PRINCIPAL en una columna x.
         ///
-        ///  Diferencia clave respecto al método anterior (que iba de arriba a
-        ///  abajo y agarraba el primer píxel sólido): aquí vamos de ABAJO HACIA
-        ///  ARRIBA siguiendo el bloque sólido principal, y SALTAMOS las cuevas
-        ///  pequeñas (huecos &lt; <paramref name="caveSkipMax"/>) tratándolas
-        ///  como parte interna del suelo. Cuando aparece un hueco más grande,
-        ///  asumimos que es CIELO de verdad y paramos.
+        ///  Estrategia (la simple y la correcta cuando NO hay islas flotantes):
+        ///  vamos de ARRIBA HACIA ABAJO buscando el primer píxel sólido. Eso es
+        ///  exactamente la superficie visible — independientemente de cuántas
+        ///  cuevas tenga la columna por dentro.
         ///
-        ///  Resultado: las islas flotantes (que tienen un gran hueco de aire
-        ///  bajo ellas) NO se cuentan como superficie, así no aparecen "muros
-        ///  invisibles" que conecten su techo con el suelo principal.
+        ///  Por qué cambió: la versión anterior iba de abajo a arriba y trataba
+        ///  las cuevas pequeñas (&lt; caveSkipMax px) como "parte del suelo".
+        ///  Pero las cuevas reales del generador son MUY grandes (Max Cave
+        ///  Depth = 280 px en el Inspector), así que el algoritmo se confundía
+        ///  y plantaba la superficie en el SUELO de cada cueva, no en su techo.
+        ///  Eso hacía que el polígono tuviera "trincheras" verticales bajando
+        ///  por cada cueva — visibles como líneas rojas en el Gizmo, y agujeros
+        ///  por los que la rata se caía al vacío.
+        ///
+        ///  El parámetro <paramref name="caveSkipMax"/> queda por compatibilidad
+        ///  pero ya no se usa en esta versión.
         ///
         ///  Devuelve -1 si la columna no tiene ningún píxel sólido (cielo total).
         /// </summary>
         private int FindMainSurfaceY(int x, int caveSkipMax)
         {
             if (pixels == null) return -1;
-            int surfaceY = -1;
-            int y = 0;
-            while (y < textureHeight)
+
+            // PREFERIDO: si tenemos la máscara de tierra principal calculada,
+            // ignoramos cualquier píxel sólido que NO sea parte del cuerpo
+            // principal. Así las islas flotantes (chunks aislados) se saltan
+            // y el skyline va por la superficie del terreno PRINCIPAL,
+            // pasando por DEBAJO de las islas sin crear paredes verticales.
+            if (mainGroundMask != null)
+            {
+                for (int y = textureHeight - 1; y >= 0; y--)
+                {
+                    int idx = y * textureWidth + x;
+                    if (mainGroundMask[idx]) return y;
+                }
+                return -1;
+            }
+
+            // FALLBACK (sin máscara aún): de arriba hacia abajo, primer sólido.
+            for (int y = textureHeight - 1; y >= 0; y--)
             {
                 if (pixels[y * textureWidth + x].a > 0)
-                {
-                    // Sólido → vamos extendiendo la superficie hacia arriba.
-                    surfaceY = y;
-                    y++;
-                    continue;
-                }
-
-                // Aire. ¿Es una cueva pequeña dentro del suelo o el cielo de verdad?
-                int probe = y + 1;
-                int limit = Mathf.Min(y + caveSkipMax, textureHeight);
-                bool moreSolidNearby = false;
-                while (probe < limit)
-                {
-                    if (pixels[probe * textureWidth + x].a > 0)
-                    {
-                        moreSolidNearby = true;
-                        break;
-                    }
-                    probe++;
-                }
-
-                if (!moreSolidNearby)
-                {
-                    // Hueco grande → es cielo. Paramos: la última surfaceY es
-                    // la cima del bloque principal de tierra.
-                    break;
-                }
-
-                // Cueva pequeña → la saltamos y seguimos buscando arriba.
-                y = probe;
+                    return y;
             }
-            return surfaceY;
+            return -1;
+        }
+
+        /// <summary>
+        ///  Construye una máscara booleana del tamaño de la textura donde
+        ///  true = "este píxel es parte de la TIERRA PRINCIPAL", es decir,
+        ///  está conectado al suelo del mapa (fila inferior) por una cadena
+        ///  de píxeles sólidos vecinos.
+        ///
+        ///  Cómo funciona (BFS / flood-fill 4-conexo):
+        ///   1) Sembramos la cola con todos los píxeles sólidos de la fila
+        ///      inferior (y=0). Esos forman el "suelo" desde el que crece
+        ///      la región conectada.
+        ///   2) Si la fila inferior está vacía (raro pero posible si el
+        ///      generador deja un hueco abajo), buscamos el primer y desde
+        ///      abajo que SÍ tenga sólidos y sembramos desde ahí.
+        ///   3) Avanzamos en BFS marcando todo píxel sólido vecino (arriba,
+        ///      abajo, izquierda, derecha). Las islas flotantes — chunks
+        ///      aislados rodeados de aire — nunca son alcanzados, así que
+        ///      su máscara queda en false y el skyline las ignora.
+        ///
+        ///  Coste: O(N) donde N = textureWidth × textureHeight (2 millones
+        ///  para 2048×1024). En C# son pocos milisegundos. Se ejecuta solo
+        ///  cuando reconstruimos el collider (después de carvear), así que
+        ///  no impacta el frame rate del juego.
+        /// </summary>
+        private bool[] BuildMainGroundMask()
+        {
+            if (pixels == null) return null;
+            int total = textureWidth * textureHeight;
+            bool[] mask = new bool[total];
+            var queue = new Queue<int>();
+
+            // Paso 1: sembrar desde la fila inferior si tiene sólidos.
+            int seedRow = -1;
+            for (int x = 0; x < textureWidth; x++)
+            {
+                if (pixels[x].a > 0)
+                {
+                    if (seedRow < 0) seedRow = 0;
+                    mask[x] = true;
+                    queue.Enqueue(x);
+                }
+            }
+
+            // Paso 2: si la fila 0 estaba vacía, buscamos la primera fila
+            // desde abajo con algún sólido.
+            if (seedRow < 0)
+            {
+                for (int y = 1; y < textureHeight && seedRow < 0; y++)
+                {
+                    int rowStart = y * textureWidth;
+                    for (int x = 0; x < textureWidth; x++)
+                    {
+                        int idx = rowStart + x;
+                        if (pixels[idx].a > 0)
+                        {
+                            seedRow = y;
+                            mask[idx] = true;
+                            queue.Enqueue(idx);
+                        }
+                    }
+                }
+            }
+
+            if (seedRow < 0) return mask; // no hay sólidos — devolvemos máscara vacía
+
+            // Paso 3: BFS 4-conexo (arriba, abajo, izquierda, derecha)
+            while (queue.Count > 0)
+            {
+                int idx = queue.Dequeue();
+                int y = idx / textureWidth;
+                int x = idx - y * textureWidth;
+
+                // Arriba
+                if (y + 1 < textureHeight)
+                {
+                    int n = idx + textureWidth;
+                    if (!mask[n] && pixels[n].a > 0) { mask[n] = true; queue.Enqueue(n); }
+                }
+                // Abajo
+                if (y - 1 >= 0)
+                {
+                    int n = idx - textureWidth;
+                    if (!mask[n] && pixels[n].a > 0) { mask[n] = true; queue.Enqueue(n); }
+                }
+                // Izquierda
+                if (x - 1 >= 0)
+                {
+                    int n = idx - 1;
+                    if (!mask[n] && pixels[n].a > 0) { mask[n] = true; queue.Enqueue(n); }
+                }
+                // Derecha
+                if (x + 1 < textureWidth)
+                {
+                    int n = idx + 1;
+                    if (!mask[n] && pixels[n].a > 0) { mask[n] = true; queue.Enqueue(n); }
+                }
+            }
+
+            return mask;
+        }
+
+        /// <summary>
+        ///  Encuentra todos los chunks de tierra AISLADOS (= no conectados al
+        ///  suelo del mapa) y devuelve un polígono cerrado para cada uno.
+        ///  Cada polígono va como un PATH ADICIONAL del PolygonCollider2D, así
+        ///  las islas tienen su propio collider y la rata puede pisarlas y los
+        ///  misiles pueden explotar contra ellas.
+        ///
+        ///  Cómo funciona:
+        ///   1) Recorremos toda la textura buscando píxeles SÓLIDOS que NO
+        ///      estén en la máscara de tierra principal (ya calculada).
+        ///   2) Por cada uno, lanzamos un flood-fill local que descubre todo
+        ///      el chunk de la isla y lo marca como visitado.
+        ///   3) Construimos un polígono CERRADO para esa isla recorriendo sus
+        ///      columnas: para cada x, anotamos el píxel sólido más alto y el
+        ///      más bajo. El contorno va por arriba de izquierda a derecha y
+        ///      por abajo de derecha a izquierda → polígono cerrado simple
+        ///      que cubre la silueta de la isla.
+        ///   4) Lo simplificamos con RDP para reducir vértices.
+        ///
+        ///  Limitación conocida (aceptable): este método NO maneja islas con
+        ///  AGUJEROS internos (cuevas dentro de la isla). El collider sería
+        ///  "cerrado" — la cueva interna no sería accesible. Como las islas
+        ///  son chunks pequeños del Perlin, casi nunca tienen cuevas internas;
+        ///  si en el futuro fuese un problema, se puede usar marching squares.
+        /// </summary>
+        private List<Vector2[]> BuildIslandPolygons()
+        {
+            var result = new List<Vector2[]>();
+            if (pixels == null || mainGroundMask == null) return result;
+
+            int total = textureWidth * textureHeight;
+            bool[] visited = new bool[total];
+            var floodQueue = new Queue<int>();
+
+            // Mínimo de píxeles para considerar algo "isla" — chunks más
+            // pequeños que esto los ignoramos para no llenar el collider de
+            // micropolígonos por ruido del Perlin (granos de píxel sueltos).
+            const int minIslandPixels = 20;
+
+            for (int idx = 0; idx < total; idx++)
+            {
+                if (visited[idx]) continue;
+                if (mainGroundMask[idx]) continue;
+                if (pixels[idx].a == 0) continue;
+
+                // Inicio de una nueva isla: flood-fill localmente para
+                // descubrir todos los píxeles del chunk.
+                floodQueue.Clear();
+                floodQueue.Enqueue(idx);
+                visited[idx] = true;
+
+                int minX = textureWidth, maxX = -1;
+                int minY = textureHeight, maxY = -1;
+                int chunkPixelCount = 0;
+
+                // Para construir el polígono necesitamos saber, por columna,
+                // el píxel sólido más alto y más bajo de la isla. Lo guardamos
+                // en arrays que reutilizamos por isla (sparse — solo las
+                // columnas que la isla cubre).
+                // NOTE: usamos diccionarios pequeños para no allocar megabytes.
+                var topByCol = new System.Collections.Generic.Dictionary<int, int>();
+                var bottomByCol = new System.Collections.Generic.Dictionary<int, int>();
+
+                while (floodQueue.Count > 0)
+                {
+                    int p = floodQueue.Dequeue();
+                    int py = p / textureWidth;
+                    int px = p - py * textureWidth;
+
+                    chunkPixelCount++;
+                    if (px < minX) minX = px;
+                    if (px > maxX) maxX = px;
+                    if (py < minY) minY = py;
+                    if (py > maxY) maxY = py;
+
+                    // Actualiza top/bottom de esa columna
+                    if (!topByCol.TryGetValue(px, out int t) || py > t) topByCol[px] = py;
+                    if (!bottomByCol.TryGetValue(px, out int b) || py < b) bottomByCol[px] = py;
+
+                    // Vecinos
+                    if (py + 1 < textureHeight)
+                    {
+                        int n = p + textureWidth;
+                        if (!visited[n] && pixels[n].a > 0 && !mainGroundMask[n])
+                        { visited[n] = true; floodQueue.Enqueue(n); }
+                    }
+                    if (py - 1 >= 0)
+                    {
+                        int n = p - textureWidth;
+                        if (!visited[n] && pixels[n].a > 0 && !mainGroundMask[n])
+                        { visited[n] = true; floodQueue.Enqueue(n); }
+                    }
+                    if (px - 1 >= 0)
+                    {
+                        int n = p - 1;
+                        if (!visited[n] && pixels[n].a > 0 && !mainGroundMask[n])
+                        { visited[n] = true; floodQueue.Enqueue(n); }
+                    }
+                    if (px + 1 < textureWidth)
+                    {
+                        int n = p + 1;
+                        if (!visited[n] && pixels[n].a > 0 && !mainGroundMask[n])
+                        { visited[n] = true; floodQueue.Enqueue(n); }
+                    }
+                }
+
+                if (chunkPixelCount < minIslandPixels) continue; // ruido, lo saltamos
+
+                // Construimos el polígono CERRADO de la isla: top contour
+                // de izquierda a derecha, luego bottom contour de derecha
+                // a izquierda. Solo procesamos columnas que la isla toca.
+                var upper = new List<Vector2>();
+                var lower = new List<Vector2>();
+                for (int x = minX; x <= maxX; x++)
+                {
+                    if (!topByCol.TryGetValue(x, out int top)) continue;
+                    int bot = bottomByCol[x];
+
+                    // +1 / 0: el píxel de top se considera ocupado, así que el
+                    // contorno superior va medio píxel por encima → top + 1.
+                    upper.Add(new Vector2(x / pixelsPerUnit, (top + 1f) / pixelsPerUnit));
+                    lower.Add(new Vector2(x / pixelsPerUnit, bot / pixelsPerUnit));
+                }
+
+                if (upper.Count < 2) continue;
+
+                // Cerramos el polígono: upper (izq→der) + lower invertido (der→izq)
+                var closed = new List<Vector2>(upper.Count + lower.Count);
+                closed.AddRange(upper);
+                for (int i = lower.Count - 1; i >= 0; i--) closed.Add(lower[i]);
+
+                // Simplificamos con RDP para no inflar el collider con
+                // cientos de vértices micro.
+                var simplified = RamerDouglasPeucker(closed, 2f / pixelsPerUnit);
+                if (simplified.Count < 3) continue;
+
+                result.Add(simplified.ToArray());
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        ///  Detecta CUEVAS INTERNAS (huecos de aire rodeados de tierra) y
+        ///  devuelve sus contornos como polígonos para añadir al PolygonCollider2D
+        ///  como AGUJEROS. Sin esto, las cuevas se ven visualmente como huecos
+        ///  pero el collider es sólido → la rata choca contra paredes invisibles.
+        ///
+        ///  Algoritmo:
+        ///   1) Flood-fill desde los bordes de la textura sobre píxeles
+        ///      transparentes → marca el "aire exterior" (cielo/atmósfera).
+        ///   2) Cualquier píxel transparente NO en esa máscara es una CUEVA
+        ///      (aire aislado dentro del terreno).
+        ///   3) Flood-fill de cada cueva para descubrir sus píxeles.
+        ///   4) Para cuevas suficientemente grandes (>= minCavePixels), extraer
+        ///      contorno columna a columna igual que las islas flotantes.
+        /// </summary>
+        private List<Vector2[]> BuildCavePolygons()
+        {
+            var result = new List<Vector2[]>();
+            if (pixels == null) return result;
+
+            int total = textureWidth * textureHeight;
+
+            // Paso 1: máscara de "aire exterior" — todo píxel transparente
+            // conectado a los bordes de la textura por vecinos transparentes.
+            bool[] exteriorAir = new bool[total];
+            var q = new Queue<int>();
+
+            // Sembrar desde los cuatro bordes
+            for (int x = 0; x < textureWidth; x++)
+            {
+                int topIdx = (textureHeight - 1) * textureWidth + x;
+                if (pixels[topIdx].a == 0 && !exteriorAir[topIdx])
+                { exteriorAir[topIdx] = true; q.Enqueue(topIdx); }
+                int botIdx = x;
+                if (pixels[botIdx].a == 0 && !exteriorAir[botIdx])
+                { exteriorAir[botIdx] = true; q.Enqueue(botIdx); }
+            }
+            for (int y = 0; y < textureHeight; y++)
+            {
+                int leftIdx = y * textureWidth;
+                if (pixels[leftIdx].a == 0 && !exteriorAir[leftIdx])
+                { exteriorAir[leftIdx] = true; q.Enqueue(leftIdx); }
+                int rightIdx = y * textureWidth + (textureWidth - 1);
+                if (pixels[rightIdx].a == 0 && !exteriorAir[rightIdx])
+                { exteriorAir[rightIdx] = true; q.Enqueue(rightIdx); }
+            }
+
+            // BFS por vecinos transparentes
+            while (q.Count > 0)
+            {
+                int p = q.Dequeue();
+                int py = p / textureWidth;
+                int px = p - py * textureWidth;
+                if (py + 1 < textureHeight)
+                {
+                    int n = p + textureWidth;
+                    if (pixels[n].a == 0 && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
+                }
+                if (py - 1 >= 0)
+                {
+                    int n = p - textureWidth;
+                    if (pixels[n].a == 0 && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
+                }
+                if (px - 1 >= 0)
+                {
+                    int n = p - 1;
+                    if (pixels[n].a == 0 && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
+                }
+                if (px + 1 < textureWidth)
+                {
+                    int n = p + 1;
+                    if (pixels[n].a == 0 && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
+                }
+            }
+
+            // Paso 2/3/4: para cada píxel transparente no en exteriorAir,
+            // hacer flood-fill de la cueva y extraer contorno.
+            bool[] visitedCave = new bool[total];
+            var caveQueue = new Queue<int>();
+
+            for (int idx = 0; idx < total; idx++)
+            {
+                if (visitedCave[idx]) continue;
+                if (pixels[idx].a != 0) continue;       // no es aire
+                if (exteriorAir[idx]) continue;          // es aire exterior, no cueva
+
+                caveQueue.Clear();
+                caveQueue.Enqueue(idx);
+                visitedCave[idx] = true;
+
+                int minX = textureWidth, maxX = -1;
+                int chunkPixelCount = 0;
+                var topByCol = new Dictionary<int, int>();
+                var bottomByCol = new Dictionary<int, int>();
+
+                while (caveQueue.Count > 0)
+                {
+                    int p = caveQueue.Dequeue();
+                    int py = p / textureWidth;
+                    int px = p - py * textureWidth;
+
+                    chunkPixelCount++;
+                    if (px < minX) minX = px;
+                    if (px > maxX) maxX = px;
+                    if (!topByCol.TryGetValue(px, out int t) || py > t) topByCol[px] = py;
+                    if (!bottomByCol.TryGetValue(px, out int b) || py < b) bottomByCol[px] = py;
+
+                    if (py + 1 < textureHeight)
+                    {
+                        int n = p + textureWidth;
+                        if (!visitedCave[n] && pixels[n].a == 0 && !exteriorAir[n])
+                        { visitedCave[n] = true; caveQueue.Enqueue(n); }
+                    }
+                    if (py - 1 >= 0)
+                    {
+                        int n = p - textureWidth;
+                        if (!visitedCave[n] && pixels[n].a == 0 && !exteriorAir[n])
+                        { visitedCave[n] = true; caveQueue.Enqueue(n); }
+                    }
+                    if (px - 1 >= 0)
+                    {
+                        int n = p - 1;
+                        if (!visitedCave[n] && pixels[n].a == 0 && !exteriorAir[n])
+                        { visitedCave[n] = true; caveQueue.Enqueue(n); }
+                    }
+                    if (px + 1 < textureWidth)
+                    {
+                        int n = p + 1;
+                        if (!visitedCave[n] && pixels[n].a == 0 && !exteriorAir[n])
+                        { visitedCave[n] = true; caveQueue.Enqueue(n); }
+                    }
+                }
+
+                if (chunkPixelCount < minCavePixels) continue;
+
+                // Contorno UN SOLO POLÍGONO por cueva (top de izq→der, bottom
+                // de der→izq). Simple y RÁPIDO — captura la forma general de
+                // la cueva sin explotar el vertex count.
+                // Compromiso: cuevas con formas MUY complejas (S, 8) pueden
+                // quedar aproximadas, pero el 99% de las del terreno procedural
+                // son cámaras simples que este algoritmo captura perfectamente.
+                var upper = new List<Vector2>();
+                var lower = new List<Vector2>();
+                for (int x = minX; x <= maxX; x++)
+                {
+                    if (!topByCol.TryGetValue(x, out int top)) continue;
+                    int bot = bottomByCol[x];
+                    upper.Add(new Vector2(x / pixelsPerUnit, (top + 1f) / pixelsPerUnit));
+                    lower.Add(new Vector2(x / pixelsPerUnit, bot / pixelsPerUnit));
+                }
+                if (upper.Count < 2) continue;
+
+                var closed = new List<Vector2>(upper.Count + lower.Count);
+                closed.AddRange(upper);
+                for (int i = lower.Count - 1; i >= 0; i--) closed.Add(lower[i]);
+
+                // Simplificación con RDP — reduce vértices manteniendo la forma.
+                var simplified = RamerDouglasPeucker(closed, 2f / pixelsPerUnit);
+                if (simplified.Count < 3) continue;
+
+                result.Add(simplified.ToArray());
+            }
+
+            return result;
         }
 
         /// <summary>

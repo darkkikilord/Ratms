@@ -4,6 +4,7 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using Ratms.World;
 
 namespace Ratms.Networking
 {
@@ -85,6 +86,20 @@ namespace Ratms.Networking
         [Tooltip("Mínimo de jugadores para poder empezar (por defecto 2 — host + 1).")]
         [SerializeField] private int minPlayersToStart = 2;
 
+        [Header("Nombre del jugador")]
+        [Tooltip("Input donde el jugador escribe su nombre (max 16 chars). Se guarda en PlayerPrefs " +
+                 "y se sincroniza por red al conectarse. Se muestra en la etiqueta de vida y en la " +
+                 "pantalla de victoria.")]
+        [SerializeField] private TMP_InputField playerNameInput;
+
+        [Header("Selector de bioma (solo host)")]
+        [Tooltip("Dropdown TMP con los biomas disponibles. Solo el HOST puede tocarlo. " +
+                 "Al elegir, se guarda en BiomeManager.SelectedBiomeType antes de cargar la escena.")]
+        [SerializeField] private TMP_Dropdown biomeDropdown;
+
+        [Tooltip("Etiqueta que muestra al cliente el bioma elegido por el host (readonly).")]
+        [SerializeField] private TMP_Text biomeLabelForClient;
+
         // ----------------------------------------------------------------
         private bool isBusy;
 
@@ -103,8 +118,22 @@ namespace Ratms.Networking
             if (btnStartGame           != null) btnStartGame.onClick.AddListener(OnStartGameClicked);
             if (btnCancelLobby         != null) btnCancelLobby.onClick.AddListener(OnCancelLobbyClicked);
 
-            // Arranque limpio: solo el main panel visible.
-            ShowMain();
+            // Rellenamos el dropdown de biomas y suscribimos su cambio
+            InitializeBiomeDropdown();
+
+            // Rellenamos el input de nombre con el guardado + escuchamos cambios
+            InitializePlayerNameInput();
+
+            // Arranque: si venimos de una partida (ya estamos conectados a una
+            // sala vía NGO), mostramos el LOBBY directamente en lugar del menú
+            // principal. Así al terminar una partida y "Volver al lobby",
+            // los jugadores no se ven en el menú principal desconectados.
+            var nm = NetworkManager.Singleton;
+            bool alreadyConnected = nm != null && (nm.IsHost || nm.IsClient);
+            if (alreadyConnected)
+                ShowLobby();
+            else
+                ShowMain();
             SetStatus("");
         }
 
@@ -303,6 +332,8 @@ namespace Ratms.Networking
             var nm = NetworkManager.Singleton;
             if (nm == null) return;
 
+            RefreshBiomeVisibility();
+
             // Código de sala (solo el host tiene uno real; el cliente ya lo metió él).
             if (lobbyCodeText != null)
             {
@@ -344,6 +375,87 @@ namespace Ratms.Networking
         private void SetStatus(string msg)
         {
             if (statusText != null) statusText.text = msg;
+        }
+
+        // ================================================================
+        // NOMBRE DEL JUGADOR
+        // ================================================================
+        private void InitializePlayerNameInput()
+        {
+            if (playerNameInput == null) return;
+
+            playerNameInput.characterLimit = 16;
+            playerNameInput.text = PlayerNameRegistry.LocalName;
+            playerNameInput.onEndEdit.AddListener(OnPlayerNameChanged);
+        }
+
+        private void OnPlayerNameChanged(string newName)
+        {
+            PlayerNameRegistry.LocalName = newName;   // guarda en PlayerPrefs + memoria
+            // Refrescamos el input por si el registry sanitizó el texto (trim, max length)
+            if (playerNameInput != null && playerNameInput.text != PlayerNameRegistry.LocalName)
+                playerNameInput.text = PlayerNameRegistry.LocalName;
+        }
+
+        // ================================================================
+        // BIOMA (selector solo para el host)
+        // ================================================================
+        private void InitializeBiomeDropdown()
+        {
+            if (biomeDropdown == null) return;
+
+            biomeDropdown.ClearOptions();
+            var options = new System.Collections.Generic.List<string> { "Pradera", "Alcantarilla" };
+            biomeDropdown.AddOptions(options);
+            biomeDropdown.value = 0;
+
+            biomeDropdown.onValueChanged.AddListener(OnBiomeDropdownChanged);
+            // Aplicamos el valor inicial (Meadow) para que el static ya tenga algo
+            OnBiomeDropdownChanged(0);
+        }
+
+        private void OnBiomeDropdownChanged(int index)
+        {
+            // DOBLE SEGURIDAD: si por lo que sea un cliente logra cambiar el
+            // dropdown (bug de UI, atajo de teclado, etc.), IGNORAMOS el cambio.
+            // Solo el host puede setear el bioma que se cargará en la partida.
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsClient && !nm.IsHost)
+            {
+                // Revertir visualmente al valor del BiomeManager (si es que
+                // hay uno), y no tocar SelectedBiomeType.
+                Debug.Log("[MultiplayerMenu] Cliente intentó cambiar bioma — ignorado.");
+                return;
+            }
+
+            // El índice mapea directamente al enum BiomeType (0=Meadow, 1=Sewer)
+            BiomeManager.SelectedBiomeType = (BiomeType)index;
+        }
+
+        /// <summary>
+        ///  Ocultamos el dropdown a los clientes (solo el host elige el bioma)
+        ///  y mostramos una etiqueta con un mensaje readonly. Al cargar la escena
+        ///  de juego, el BiomeSyncer sincronizará el bioma real elegido por el host.
+        /// </summary>
+        private void RefreshBiomeVisibility()
+        {
+            var nm = NetworkManager.Singleton;
+            bool isHost = nm != null && nm.IsHost;
+            bool isClient = nm != null && nm.IsClient && !nm.IsHost;
+
+            if (biomeDropdown != null)
+            {
+                // Doble protección: dropdown oculto Y no interactivo para clientes.
+                biomeDropdown.gameObject.SetActive(isHost);
+                biomeDropdown.interactable = isHost;
+            }
+            if (biomeLabelForClient != null)
+            {
+                biomeLabelForClient.gameObject.SetActive(isClient);
+                // Mensaje readonly claro: el cliente sabrá el bioma exacto al
+                // arrancar la partida (el BiomeSyncer lo revelará entonces).
+                biomeLabelForClient.text = "Bioma: lo elige el host";
+            }
         }
     }
 }

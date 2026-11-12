@@ -1,12 +1,18 @@
 using UnityEngine;
+using Ratms.Networking;
 
+/// <summary>
+///  Vida en SINGLE-PLAYER (legacy).
+///
+///  En multijugador la vida la lleva NetworkHealth.cs â€” este componente
+///  solo sigue aquÃ­ para que las viejas escenas single-player no se rompan.
+///  Cuando recibe daÃ±o, muestra un WorldDamagePopup (mismo sistema que el
+///  multi) para que no aparezca la "T" del antiguo DamagePopup en Canvas.
+/// </summary>
 public class Health : MonoBehaviour
 {
     [SerializeField] private float maxHealth = 100f;
     private float currentHealth;
-
-    [Header("Feedback de daño")]
-    [SerializeField] private GameObject damagePopupPrefab;
 
     void Awake()
     {
@@ -16,28 +22,17 @@ public class Health : MonoBehaviour
     public void TakeDamage(float amount)
     {
         currentHealth -= amount;
-        Debug.Log($"{gameObject.name} recibió {amount} de daño. Vida restante: {currentHealth}");
+        Debug.Log($"{gameObject.name} recibiÃ³ {amount} de daÃ±o. Vida restante: {currentHealth}");
 
-        ShowDamagePopup(amount);
+        // Popup flotante (mismo sistema que el multijugador, sin Canvas).
+        WorldDamagePopup.Spawn(
+            transform.position + Vector3.up * 0.5f,
+            Mathf.RoundToInt(amount),
+            DamageType.Generic);
 
         if (currentHealth <= 0f)
         {
             Die();
-        }
-    }
-
-    void ShowDamagePopup(float amount)
-    {
-        if (damagePopupPrefab != null)
-        {
-            Vector3 spawnPos = transform.position + Vector3.up * 1.5f;
-            GameObject popup = Instantiate(damagePopupPrefab, spawnPos, Quaternion.identity);
-
-            DamagePopup damageScript = popup.GetComponent<DamagePopup>();
-            if (damageScript != null)
-            {
-                damageScript.Setup(amount);
-            }
         }
     }
 

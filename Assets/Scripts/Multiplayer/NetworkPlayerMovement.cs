@@ -19,22 +19,36 @@ namespace Ratms.Networking
     {
         [Header("Movimiento")]
         [Tooltip("Velocidad tope al andar (unidades/s).")]
-        [SerializeField] private float maxSpeed = 6f;
+        [SerializeField] private float maxSpeed = 2f;
 
-        [Tooltip("Cuánto tarda en acelerar desde 0 hasta maxSpeed al pulsar A/D (unidades/s²). 40 = llega a 6 u/s en 0.15s — se nota responsivo pero no brusco.")]
-        [SerializeField] private float moveAcceleration = 40f;
+        [Tooltip("Cuánto tarda en acelerar desde 0 hasta maxSpeed al pulsar A/D (unidades/s²). " +
+                 "Valores bajos = arranque más suave/gradual (menos brusco). 18 = arranque smooth estilo Worms.")]
+        [SerializeField] private float moveAcceleration = 18f;
 
-        [Tooltip("Cuánto tarda en frenar al soltar las teclas (unidades/s²). Ligeramente mayor que la aceleración para que la rata se detenga rápido pero no clavada.")]
-        [SerializeField] private float moveDeceleration = 55f;
+        [Tooltip("Cuánto tarda en frenar al soltar las teclas (unidades/s²). " +
+                 "Ligeramente mayor que la aceleración para que la rata se detenga rápido pero no clavada.")]
+        [SerializeField] private float moveDeceleration = 22f;
 
         // Campos viejos mantenidos por compatibilidad; ya no se usan en la
         // lógica nueva, pero evitan que el Inspector marque valores perdidos
-        // si alguien los tenía editados.
+        // si alguien los tenía editados. Suprimimos el warning CS0414 (asignado
+        // pero nunca leído) — es intencional.
+#pragma warning disable CS0414
         [HideInInspector, SerializeField] private float moveForce = 20f;
         [HideInInspector, SerializeField] private float linearDrag = 4f;
+#pragma warning restore CS0414
 
         [Header("Salto")]
-        [SerializeField] private float jumpForce = 10f;
+        [Tooltip("Velocidad inicial vertical del salto (unidades/seg). Tunear según tamaño del personaje:\n" +
+                 "  · Rata pequeña: 3.5-5 (lo que tenemos ahora)\n" +
+                 "  · Personaje humano normal: 8-10\n" +
+                 "  · Salto Mario-style alto: 12-15\n" +
+                 "Recomendado bajarlo si los saltos parecen poco realistas para el tamaño del personaje.")]
+        [SerializeField] private float jumpForce = 2f;
+
+        [Header("Asistencia de cuestas")]
+        [Tooltip("Radio de redondeo de las esquinas del BoxCollider2D de la rata. Se aplica EN RUNTIME — no toca el prefab. Las esquinas redondeadas evitan que la rata se enganche en cada bumpcito del polígono procedural y la deja subir cuestas espinadas con suavidad. Valores típicos: 0.04-0.10. Si lo subes mucho, la rata 'flota' un pelín sobre el suelo. Si lo bajas a 0, recuperas el comportamiento original (con enganches).")]
+        [SerializeField] private float colliderEdgeRadius = 0.06f;
         [SerializeField] private Transform groundCheck;
         [SerializeField] private float groundRadius = 0.15f;
         [SerializeField] private LayerMask groundMask;
@@ -72,8 +86,35 @@ namespace Ratms.Networking
         [Tooltip("Velocidad de apuntado (grados por segundo).")]
         [SerializeField] private float aimSpeed = 200f;
 
-        [Tooltip("Segundos de retardo entre el disparo y pasar el turno al siguiente jugador.")]
-        [SerializeField] private float endTurnDelay = 0.6f;
+        [Tooltip("Segundos MÁXIMOS que esperamos entre el disparo y pasar el turno. Es un fallback: si el misil/granada explota antes, el propio proyectil llama a ShortenEndTurnClientRpc() y acorta este timer a ~1s para que el receptor no pueda huir mientras el proyectil vuela hacia él.")]
+        [SerializeField] private float endTurnDelay = 3.5f;
+
+        [Header("Feel del salto")]
+        [Tooltip("Multiplicador de gravedad cuando la rata está CAYENDO (velocidad Y negativa). " +
+                 "1 = sin cambio. 1.5-2 = cae más rápido que sube → salto se siente con más peso y menos 'flotante'. " +
+                 "Técnica clásica de platformer para un salto smooth y satisfactorio.")]
+        [SerializeField] private float fallGravityMultiplier = 1.8f;
+
+        [Tooltip("Multiplicador de gravedad cuando la rata está SUBIENDO y sueltas la flecha Up antes de " +
+                 "llegar arriba (short jump). Permite saltos cortos o largos según cuánto mantengas la tecla. " +
+                 "1 = sin efecto. 2 = corta el salto rápido cuando sueltas.")]
+        [SerializeField] private float lowJumpMultiplier = 1.6f;
+
+        [Header("Daño por caída")]
+        [Tooltip("Altura mínima (unidades) para empezar a recibir daño al aterrizar. " +
+                 "Un salto normal es ~3 unidades, así que 5 es un margen seguro para no dañar por saltar.")]
+        [SerializeField] private float fallDamageThreshold = 5f;
+
+        [Tooltip("Puntos de daño por unidad de caída por encima del threshold. " +
+                 "Ej: threshold=5, damagePerUnit=6 → caer desde 10u = (10-5)*6 = 30 daño.")]
+        [SerializeField] private float fallDamagePerUnit = 6f;
+
+        [Tooltip("Daño MÁXIMO por caída de una sola vez. Sin límite = caídas letales instantáneas al vacío.")]
+        [SerializeField] private int fallDamageMax = 80;
+
+        [Tooltip("Si está en KNOCKBACK activo (explosión te tira volando), el peakY solo se cuenta " +
+                 "desde el peak REAL alcanzado — así explosión + gran caída = mucho daño.")]
+        [SerializeField] private bool trackFallDuringKnockback = true;
 
         // --- Privadas ---
         private Rigidbody2D rb;
@@ -83,6 +124,10 @@ namespace Ratms.Networking
         private Vector3 weaponHolderDefaultPos;
         private bool weaponHolderPosCached;
         private float endTurnTimer = -1f;
+
+        // Tracking de caída para daño
+        private float peakYSinceLastGround = float.MinValue;
+        private bool wasGroundedLastFrame = true;
 
         // Cooldown para evitar saltos dobles: tras saltar, no se puede volver
         // a saltar hasta que pasa un poquito Y se vuelva a tocar suelo de verdad.
@@ -253,6 +298,15 @@ namespace Ratms.Networking
             // Re-resuelve las refs visuales por si el prefab las tiene mal cacheadas
             ResolveVisualReferences();
 
+            // ASISTENCIA DE CUESTAS: redondea las esquinas del BoxCollider2D
+            // de la rata. Esto se aplica en runtime — el prefab queda intacto.
+            // Por qué: nuestro polígono procedural tiene micro-bumps en cada
+            // vértice del skyline. Una box collider con esquinas cuadradas se
+            // engancha en cada bump y la rata "se atasca" subiendo cuestas.
+            // Con edgeRadius > 0 las esquinas son curvas → la rata rueda
+            // suavemente sobre los bumps, igual que un personaje de Worms.
+            ApplyColliderEdgeRadius();
+
             // Aplica el flip inicial al spawnear (importante para clientes que
             // entran después y ven al jugador ya girado)
             ApplyFlipVisual(facingRight.Value);
@@ -368,7 +422,13 @@ namespace Ratms.Networking
                 wasGrounded = grounded;
             }
 
-            bool jumpKeyDown = Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow);
+            // ==============================================
+            //  DAÑO POR CAÍDA — solo el OWNER trackea y solicita
+            // ==============================================
+            if (IsOwner) TrackFallDamage(grounded);
+
+            // Salto: SOLO Flecha Arriba. W queda libre para apuntar arriba.
+            bool jumpKeyDown = Input.GetKeyDown(KeyCode.UpArrow);
             if (jumpKeyDown) jumpRequestedTime = Time.time;
 
             bool canCoyoteJump = (Time.time - lastGroundedTime) <= coyoteTime;
@@ -429,7 +489,12 @@ namespace Ratms.Networking
         // ==================================================================
         private void HandleAimInput()
         {
-            float v = Input.GetAxisRaw("Vertical");
+            // Apuntado: W sube el ángulo, S lo baja. Las flechas arriba/abajo
+            // ya NO apuntan — la flecha arriba es saltar, y la flecha abajo
+            // queda libre por si en el futuro queremos agacharse o algo así.
+            float v = 0f;
+            if (Input.GetKey(KeyCode.W)) v = 1f;
+            else if (Input.GetKey(KeyCode.S)) v = -1f;
             if (Mathf.Abs(v) < 0.1f) return;
 
             // Rango SEMIcírculo del lado al que mira la rata:
@@ -526,6 +591,74 @@ namespace Ratms.Networking
             endTurnTimer = endTurnDelay;
         }
 
+        /// <summary>
+        ///  Trackea la altura máxima que alcanza la rata mientras está en el aire.
+        ///  Al aterrizar, si ha caído desde muy alto, solicita daño al servidor.
+        ///
+        ///  Solo lo llama el OWNER (una vez por frame). El servidor confía en el
+        ///  cliente para simplicidad — es un juego pequeño, no vale la pena
+        ///  server-authoritative para esto. Si en el futuro hay problemas de
+        ///  cheating, se podría mover al servidor observando transform.position.
+        /// </summary>
+        private void TrackFallDamage(bool grounded)
+        {
+            // Reset del peak si acabamos de tocar suelo (aterrizaje)
+            if (grounded)
+            {
+                if (!wasGroundedLastFrame && peakYSinceLastGround > float.MinValue)
+                {
+                    // ATERRIZAJE detectado — calcular caída y solicitar daño
+                    float currentY = transform.position.y;
+                    float fallHeight = peakYSinceLastGround - currentY;
+
+                    if (fallHeight > fallDamageThreshold)
+                    {
+                        float rawDmg = (fallHeight - fallDamageThreshold) * fallDamagePerUnit;
+                        int dmg = Mathf.Clamp(Mathf.RoundToInt(rawDmg), 1, fallDamageMax);
+                        RequestFallDamageServerRpc(dmg);
+                    }
+                }
+                // Reset — próximo salto empieza a trackear desde aquí
+                peakYSinceLastGround = transform.position.y;
+            }
+            else
+            {
+                // En el aire — actualiza peak si supera el máximo
+                if (transform.position.y > peakYSinceLastGround)
+                    peakYSinceLastGround = transform.position.y;
+            }
+
+            wasGroundedLastFrame = grounded;
+        }
+
+        [ServerRpc]
+        private void RequestFallDamageServerRpc(int amount)
+        {
+            var hp = GetComponent<NetworkHealth>();
+            if (hp == null || hp.IsDead.Value) return;
+            hp.ApplyDamageServer(amount, transform.position, DamageType.Fall);
+            Debug.Log($"[NetworkPlayerMovement] Daño por caída aplicado a clientId={OwnerClientId}: {amount}");
+        }
+
+        /// <summary>
+        ///  Lo llama el proyectil (desde el servidor) al explotar/impactar, para
+        ///  acortar el temporizador de fin de turno. La idea: el fallback largo
+        ///  (endTurnDelay = 3.5s) cubre los casos raros (misil perdido, granada
+        ///  con fusible), pero cuando el proyectil SÍ impacta, no queremos hacer
+        ///  esperar más al siguiente jugador — con 1s (para ver la explosión
+        ///  y el focus de cámara) es suficiente.
+        ///
+        ///  Solo tiene efecto en el Owner (que es quien está corriendo el
+        ///  temporizador local). Y solo acorta — nunca alarga.
+        /// </summary>
+        [ClientRpc]
+        public void ShortenEndTurnClientRpc(float seconds)
+        {
+            if (!IsOwner) return;
+            if (endTurnTimer < 0f) return; // no había timer activo, nada que hacer
+            if (endTurnTimer > seconds) endTurnTimer = seconds;
+        }
+
         private void TickEndTurnTimer()
         {
             if (endTurnTimer < 0f) return;
@@ -581,6 +714,26 @@ namespace Ratms.Networking
             float accel = Mathf.Abs(targetVx) > 0.01f ? moveAcceleration : moveDeceleration;
             float newVx = Mathf.MoveTowards(rb.linearVelocity.x, targetVx, accel * Time.fixedDeltaTime);
             rb.linearVelocity = new Vector2(newVx, rb.linearVelocity.y);
+
+            // ==========================================================
+            //  ASYMMETRIC GRAVITY — hace el salto MUCHO más satisfactorio
+            //  · Cayendo → aplicamos gravedad extra → cae rápido, no flota
+            //  · Subiendo Y sueltas la tecla → cortamos el salto (short jump)
+            // ==========================================================
+            Vector2 vel = rb.linearVelocity;
+            float extraGravity = Physics2D.gravity.y * rb.gravityScale;   // negativo
+
+            if (vel.y < 0f)
+            {
+                // Cae con MÁS gravedad que la de subir
+                vel.y += extraGravity * (fallGravityMultiplier - 1f) * Time.fixedDeltaTime;
+            }
+            else if (vel.y > 0.01f && !Input.GetKey(KeyCode.UpArrow))
+            {
+                // Sube pero no está pulsando salto → cortar el salto
+                vel.y += extraGravity * (lowJumpMultiplier - 1f) * Time.fixedDeltaTime;
+            }
+            rb.linearVelocity = vel;
         }
 
         /// <summary>
@@ -741,8 +894,13 @@ namespace Ratms.Networking
                 // el terreno procedural — siempre lo detectamos.
                 int maskValue = ~0;
 
+                // Unity 6 marcó esta API como deprecated pero funciona perfectamente
+                // y hacer el cambio a la nueva (que usa List<T> gestionada) implicaría
+                // allocations extra en cada frame. Suprimimos el warning.
+#pragma warning disable CS0618
                 int count = Physics2D.OverlapCircleNonAlloc(
                     groundCheck.position, groundRadius, groundHits, maskValue);
+#pragma warning restore CS0618
 
                 for (int i = 0; i < count; i++)
                 {
@@ -778,7 +936,9 @@ namespace Ratms.Networking
                 origin = (Vector2)transform.position + Vector2.up * startInside;
             }
 
+#pragma warning disable CS0618
             int rayCount = Physics2D.RaycastNonAlloc(origin, Vector2.down, groundRayHits, groundRaycastDistance);
+#pragma warning restore CS0618
             for (int i = 0; i < rayCount; i++)
             {
                 var c = groundRayHits[i].collider;
@@ -789,6 +949,43 @@ namespace Ratms.Networking
             }
 
             return false;
+        }
+
+        // ==================================================================
+        // ASISTENCIA DE CUESTAS — redondeo de esquinas del BoxCollider2D
+        // ==================================================================
+        /// <summary>
+        ///  Pone un edgeRadius en el BoxCollider2D de la rata. Esto convierte
+        ///  las esquinas duras en curvas, evitando que la rata se enganche
+        ///  con los micro-vértices del polígono del terreno procedural.
+        ///
+        ///  Aplica también una pequeña reducción al tamaño del box para
+        ///  COMPENSAR el grosor que añade el edgeRadius — así la rata
+        ///  conserva las mismas dimensiones efectivas y no flota encima
+        ///  del suelo. (Unity infla la caja por edgeRadius en cada lado.)
+        /// </summary>
+        private void ApplyColliderEdgeRadius()
+        {
+            if (colliderEdgeRadius <= 0f) return;
+
+            var box = GetComponent<BoxCollider2D>();
+            if (box == null) return;
+
+            // Si ya tiene un edgeRadius (porque ya lo aplicamos antes en
+            // este ciclo de vida), no hacemos nada para no encoger el box
+            // dos veces y quedarnos con un collider minúsculo.
+            if (box.edgeRadius > 0.001f) return;
+
+            float r = colliderEdgeRadius;
+            // Encogemos el size original por 2*r (uno por cada lado) para
+            // que el collider efectivo (size + 2r de halo) coincida con el
+            // size original. min size 0.05 para no degenerarlo si la box
+            // era muy pequeña.
+            Vector2 newSize = box.size - new Vector2(r * 2f, r * 2f);
+            newSize.x = Mathf.Max(0.05f, newSize.x);
+            newSize.y = Mathf.Max(0.05f, newSize.y);
+            box.size = newSize;
+            box.edgeRadius = r;
         }
 
         // ==================================================================

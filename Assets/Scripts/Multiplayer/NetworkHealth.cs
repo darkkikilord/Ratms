@@ -11,28 +11,22 @@ namespace Ratms.Networking
     ///     bajársela (así nadie puede hacer trampa aunque modifique su cliente).
     ///   • <see cref="CurrentHealth"/> e <see cref="IsDead"/> son NetworkVariables:
     ///     el servidor las escribe, todos los clientes las leen y reaccionan.
-    ///   • El feedback (popup de daño flotante) se propaga con un ClientRpc
-    ///     para que todos lo vean, no solo quien recibió el golpe.
+    ///   • El feedback (popup de daño flotante + numerito de vida) lo gestionan
+    ///     <see cref="WorldDamagePopup"/> y <see cref="RatHealthLabel"/>. Ambos
+    ///     son scripts programáticos — NO necesitan prefab — así nos quitamos
+    ///     de encima los problemas que dieron los TMP_UI dentro de Canvas.
     ///
     ///  Flujo normal de daño:
-    ///   1. Un misil (ya en el servidor) detecta colisión/explosión.
-    ///   2. Llama a <see cref="ApplyDamageServer"/> sobre cada NetworkHealth
-    ///      dentro del radio.
+    ///   1. Un misil/granada (en el servidor) detecta colisión/explosión.
+    ///   2. Llama a <see cref="ApplyDamageServer"/> con el tipo de daño.
     ///   3. El servidor actualiza CurrentHealth y dispara el popup en todos
     ///      los clientes vía <see cref="ShowDamagePopupClientRpc"/>.
-    ///   4. Si la vida llega a 0, el servidor marca IsDead=true y el
-    ///      callback deja KO a la rata en TODOS los clientes.
+    ///   4. Si la vida llega a 0, el servidor marca IsDead=true.
     /// </summary>
     public class NetworkHealth : NetworkBehaviour
     {
         [Header("Vida")]
         [SerializeField] private int maxHealth = 100;
-
-        [Header("Feedback de daño")]
-        [Tooltip("Prefab del DamagePopup del mundo (TextMeshPro flotante).")]
-        [SerializeField] private GameObject damagePopupPrefab;
-        [Tooltip("Offset sobre el punto de impacto donde aparece el popup.")]
-        [SerializeField] private Vector3 popupOffset = new Vector3(0f, 0.5f, -4f);
 
         [Header("Muerte")]
         [Tooltip("Si está ON, al morir desactiva el GameObject (como el single-player). Si está OFF, solo oculta visuales.")]
@@ -75,6 +69,10 @@ namespace Ratms.Networking
 
             IsDead.OnValueChanged += OnDeathStateChanged;
 
+            // Auto-añadir el numerito de vida flotante en TODOS los clientes
+            // (host incluido). Es solo visual, no toca lógica.
+            EnsureHealthLabel();
+
             // Late-join safety: si un cliente entra y esta rata ya estaba muerta,
             // que no aparezca viva por un frame.
             if (IsDead.Value) ApplyDeathVisual();
@@ -85,13 +83,34 @@ namespace Ratms.Networking
             IsDead.OnValueChanged -= OnDeathStateChanged;
         }
 
+        /// <summary>
+        ///  Añade el componente RatHealthLabel si no estaba ya. Así no hay
+        ///  que tocar el prefab de la rata para tener el numerito de vida.
+        /// </summary>
+        private void EnsureHealthLabel()
+        {
+            var label = GetComponent<RatHealthLabel>();
+            if (label == null) label = gameObject.AddComponent<RatHealthLabel>();
+            label.Init(this);
+        }
+
         // ==============================================================
         // DAÑO
         // ==============================================================
         /// <summary>
-        ///  Aplica daño. SOLO el servidor puede llamarlo (lo usa el misil).
+        ///  Aplica daño. SOLO el servidor puede llamarlo.
+        ///  Versión por defecto (compatible hacia atrás): tipo = Generic.
         /// </summary>
         public void ApplyDamageServer(int amount, Vector3 hitPoint)
+        {
+            ApplyDamageServer(amount, hitPoint, DamageType.Generic);
+        }
+
+        /// <summary>
+        ///  Aplica daño con un tipo específico — explosión, agua, fuego...
+        ///  El popup pintará el color/símbolo correspondiente.
+        /// </summary>
+        public void ApplyDamageServer(int amount, Vector3 hitPoint, DamageType type)
         {
             if (!IsServer) return;
             if (IsDead.Value || amount <= 0) return;
@@ -99,8 +118,9 @@ namespace Ratms.Networking
             int newHp = Mathf.Max(0, CurrentHealth.Value - amount);
             CurrentHealth.Value = newHp;
 
-            // Propagamos el popup a todos los clientes (incluido el dueño)
-            ShowDamagePopupClientRpc(amount, hitPoint);
+            // Propagamos el popup a todos los clientes (incluido el dueño).
+            // Mandamos el tipo como byte para minimizar el tamaño del paquete.
+            ShowDamagePopupClientRpc(amount, hitPoint, (byte)type);
 
             if (newHp <= 0)
             {
@@ -116,7 +136,7 @@ namespace Ratms.Networking
         [ServerRpc(RequireOwnership = false)]
         public void TakeDamageServerRpc(int amount, Vector3 hitPoint)
         {
-            ApplyDamageServer(amount, hitPoint);
+            ApplyDamageServer(amount, hitPoint, DamageType.Generic);
         }
 
         // ==============================================================
@@ -166,21 +186,16 @@ namespace Ratms.Networking
         // ==============================================================
         // POPUPS
         // ==============================================================
+        /// <summary>
+        ///  Spawnea el popup flotante en TODOS los clientes (cada uno lo crea
+        ///  en su escena, no es un objeto en red). El "type" llega como byte
+        ///  por la red — lo casteamos a DamageType al llegar.
+        /// </summary>
         [ClientRpc]
-        private void ShowDamagePopupClientRpc(int amount, Vector3 hitPoint)
+        private void ShowDamagePopupClientRpc(int amount, Vector3 hitPoint, byte typeByte)
         {
-            if (damagePopupPrefab == null) return;
-
-            Vector3 spawnPos = hitPoint + popupOffset;
-            GameObject popup = Instantiate(damagePopupPrefab, spawnPos, Quaternion.identity);
-
-            // Mismo truco que el missile single: reparentar al WorldCanvas si existe
-            GameObject canvasGO = GameObject.FindWithTag("WorldCanvas");
-            if (canvasGO != null)
-                popup.transform.SetParent(canvasGO.transform, worldPositionStays: true);
-
-            var script = popup.GetComponent<DamagePopup>();
-            if (script != null) script.Setup(amount);
+            DamageType type = (DamageType)typeByte;
+            WorldDamagePopup.Spawn(hitPoint, amount, type);
         }
 
         // ==============================================================

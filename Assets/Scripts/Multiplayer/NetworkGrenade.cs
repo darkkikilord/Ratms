@@ -46,7 +46,7 @@ namespace Ratms.Networking
 
         [Header("Impacto — empujón y cámara")]
         [Tooltip("Fuerza máxima del empujón en el centro de la explosión. Cae con la distancia igual que el daño.")]
-        [SerializeField] private float knockbackForce = 24f;
+        [SerializeField] private float knockbackForce = 9.4f;
 
         [Tooltip("Amplitud del temblor de cámara (unidades de mundo).")]
         [SerializeField] private float shakeAmplitude = 0.35f;
@@ -187,13 +187,18 @@ namespace Ratms.Networking
                 int dmg = Mathf.CeilToInt(maxDamage * t);
                 if (dmg <= 0) continue;
 
-                nh.ApplyDamageServer(dmg, col.transform.position);
+                nh.ApplyDamageServer(dmg, col.transform.position, DamageType.Explosion);
 
                 // KNOCKBACK con falloff y componente vertical para "saltar".
                 // La granada empuja más que el misil — es un arma de control de zona.
                 Vector2 away = (Vector2)col.transform.position - (Vector2)at;
                 if (away.sqrMagnitude < 0.0001f) away = Vector2.up;
-                Vector2 push = (away.normalized + Vector2.up * 0.8f).normalized * (knockbackForce * t);
+
+                // KNOCKBACK PROPORCIONAL AL DAÑO (sqrt para que la curva sea suave):
+                //   · 25 dmg → 1.0× | · 50 dmg → 1.41× | · 100 dmg → 2.0×
+                float damageScale = Mathf.Sqrt(Mathf.Max(1, dmg) / 25f);
+                Vector2 push = (away.normalized + Vector2.up * 0.8f).normalized
+                               * (knockbackForce * t * damageScale);
                 nh.ApplyKnockbackClientRpc(push);
             }
 
@@ -207,6 +212,16 @@ namespace Ratms.Networking
 
             // Cámara: temblor + pausa sobre el punto de impacto.
             ExplosionCameraFxClientRpc(at, shakeAmplitude, shakeDuration, impactPauseSeconds);
+
+            // Aviso al dueño: "ya he explotado, acorta tu timer de fin de
+            // turno". Con la granada esto importa MUCHO porque el fusible es
+            // de 3s + rebotes: si no lo acortamos, el turno cambiaría antes
+            // de la explosión y el receptor podría escapar.
+            if (ownerNetObj != null)
+            {
+                var ownerMove = ownerNetObj.GetComponent<NetworkPlayerMovement>();
+                if (ownerMove != null) ownerMove.ShortenEndTurnClientRpc(1f);
+            }
 
             // Fuera del mundo
             if (NetworkObject != null && NetworkObject.IsSpawned)
@@ -223,6 +238,10 @@ namespace Ratms.Networking
 
             if (explosionSfx != null)
                 AudioSource.PlayClipAtPoint(explosionSfx, at, explosionSfxVolume);
+
+            // POPUP DE IMPACTO: feedback visual fijo aunque la granada
+            // no le pegue a ninguna rata.
+            WorldDamagePopup.SpawnImpact(at, "POW!", new Color(0.9f, 0.4f, 0.2f));
         }
 
         [ClientRpc]

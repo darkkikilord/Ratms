@@ -7,7 +7,7 @@ El usuario habla español: responde, comenta el código y escribe los commits en
 - **Unity 6000.0.50f1**, URP 17.0.4, 2D (Rigidbody2D, sprites, PPU=32 en el terreno).
 - **Netcode for GameObjects 2.1.1** + **Unity Relay** (Authentication 3.3.3, Relay 1.1.1).
 - Input: API clásica `Input.GetAxisRaw` / `GetKeyDown` (el paquete Input System está instalado pero no se usa en los scripts).
-- No hay Unity ni .NET SDK accesibles desde la terminal → **no se puede compilar aquí**. Tras cambiar C#, pide al usuario que abra Unity y revise la consola.
+- Tras cambiar C#, **compila en batchmode** (comando en la sección Git) y corrige los `error CS` antes de commitear. Lo que no se puede verificar compilando (sensación de juego, multijugador real) se apunta para que el usuario lo pruebe.
 
 ## Estructura (`Assets/Scripts`)
 | Carpeta | Namespace | Qué hay |
@@ -42,6 +42,8 @@ Tipos de daño: `DamageType` (Generic, Explosion, Fire*, Water, Fall, Melee*). *
 
 ## Git
 - Rama de trabajo: `Main` (sigue a `origin/Main`, repo `darkkikilord/Ratms`).
+- **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
+- Compilar sin abrir Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
 - Commits con versión: `Ratms 0.X: resumen`. Último: 0.10.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.

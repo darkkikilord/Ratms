@@ -21,7 +21,7 @@ param(
     [switch]$SkipBuild,
     [string]$Biome = "",
     [string]$UnityExe = "B:\Juegos\6000.0.50f1\Editor\Unity.exe",
-    [int]$TimeoutSeconds = 180
+    [int]$TimeoutSeconds = 320
 )
 
 $ErrorActionPreference = "Stop"

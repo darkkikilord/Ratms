@@ -41,6 +41,23 @@ namespace Ratms.Networking
         [Tooltip("Pequeño retardo entre un turno que acaba y el siguiente que empieza.")]
         [SerializeField] private float transitionDelay = 1.5f;
 
+        [Header("Viento")]
+        [Tooltip("Si está OFF, nunca hay viento (Wind siempre 0).")]
+        [SerializeField] private bool windEnabled = true;
+
+        [Tooltip("Probabilidad (0-1) de que un turno salga SIN viento (calma).")]
+        [Range(0f, 1f)] [SerializeField] private float calmChance = 0.15f;
+
+        [Tooltip("Aceleración horizontal (u/s²) que sufre un proyectil con windFactor=1 cuando el viento está al MÁXIMO (Wind = ±1). " +
+                 "Referencia: la gravedad es 9.81. Con 3.5 un misil a media potencia se desvía unas 2-4 unidades.")]
+        [SerializeField] private float maxWindAcceleration = 3.5f;
+
+        /// <summary>Aceleración del viento al máximo (u/s²). La leen los proyectiles.</summary>
+        public float MaxWindAcceleration => maxWindAcceleration;
+
+        /// <summary>Segundos totales de cada turno (para la barra del HUD).</summary>
+        public float TurnDuration => turnDuration;
+
         // =========================================================
         // Estado sincronizado
         // =========================================================
@@ -87,6 +104,25 @@ namespace Ratms.Networking
             readPerm: NetworkVariableReadPermission.Everyone,
             writePerm: NetworkVariableWritePermission.Server);
 
+        /// <summary>
+        ///  Viento del turno actual, de -1 (máximo hacia la IZQUIERDA) a +1
+        ///  (máximo hacia la DERECHA). 0 = calma. Lo decide el servidor al
+        ///  empezar cada turno; todos lo ven igual. Los proyectiles lo
+        ///  convierten en fuerza con <see cref="WindAcceleration"/>.
+        /// </summary>
+        public readonly NetworkVariable<float> Wind = new(
+            value: 0f,
+            readPerm: NetworkVariableReadPermission.Everyone,
+            writePerm: NetworkVariableWritePermission.Server);
+
+        /// <summary>
+        ///  Aceleración del viento AHORA (u/s², positiva = hacia la derecha)
+        ///  para un proyectil con factor 1. Atajo estático para los
+        ///  proyectiles: 0 si no hay TurnManager.
+        /// </summary>
+        public static float WindAcceleration =>
+            Instance != null ? Instance.Wind.Value * Instance.maxWindAcceleration : 0f;
+
         // =========================================================
         // Estado interno del servidor
         // =========================================================
@@ -101,6 +137,12 @@ namespace Ratms.Networking
         public override void OnNetworkSpawn()
         {
             Instance = this;
+
+            // HUD de turno (cuenta atrás + viento). Si la escena no tiene uno,
+            // lo creamos aquí: así funciona en cualquier escenario sin tener
+            // que montarlo a mano en el Editor. Es solo visual (local).
+            if (FindFirstObjectByType<TurnHUD>() == null)
+                gameObject.AddComponent<TurnHUD>();
 
             if (IsServer)
             {
@@ -246,6 +288,22 @@ namespace Ratms.Networking
             currentTurnIndex = (currentTurnIndex + 1) % turnOrder.Count;
             CurrentTurnClientId.Value = turnOrder[currentTurnIndex];
             TurnTimeRemaining.Value = turnDuration;
+            Wind.Value = RollWind();
+        }
+
+        /// <summary>
+        ///  Viento nuevo para el turno: a veces calma, si no un valor entre
+        ///  -1 y 1 redondeado a décimas (para que el HUD muestre niveles
+        ///  claros). Elevamos al cuadrado la magnitud para que los vientos
+        ///  flojos sean más comunes que los huracanes.
+        /// </summary>
+        private float RollWind()
+        {
+            if (!windEnabled || Random.value < calmChance) return 0f;
+            float magnitude = Mathf.Max(0.1f, Random.value * Random.value * 1.4f);
+            magnitude = Mathf.Min(1f, magnitude);
+            float sign = Random.value < 0.5f ? -1f : 1f;
+            return Mathf.Round(sign * magnitude * 10f) / 10f;
         }
 
         // =========================================================

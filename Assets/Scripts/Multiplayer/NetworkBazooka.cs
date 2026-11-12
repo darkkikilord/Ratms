@@ -112,8 +112,11 @@ namespace Ratms.Networking
             // ocultamos nosotros cuando el arma es None (desenfundado).
             if (!IsBazookaEquipped)
             {
+                // La granada pinta su propia trayectoria. Cualquier OTRA arma
+                // (ninguna, dinamita, bate...) no tiene parábola → ocultamos,
+                // o se quedarían los puntos congelados en pantalla.
                 if (weaponsMenu != null &&
-                    weaponsMenu.SelectedWeapon == WeaponsMenuUI.WeaponId.None)
+                    weaponsMenu.SelectedWeapon != WeaponsMenuUI.WeaponId.Grenade)
                 {
                     trajectoryDots.Hide();
                 }

@@ -428,7 +428,7 @@ MonoBehaviour:
   target: {fileID: 0}
   offset: {x: 0, y: 2.2, z: -10}
   posSmooth: 0.15
-  targetZoom: 9
+  targetZoom: 6
   zoomSpeed: 1
 --- !u!81 &379989437
 AudioListener:

@@ -28,7 +28,8 @@ namespace Ratms.Networking
             Bazooka   = 0,
             Grenade   = 1,
             Dynamite  = 2,
-            Shotgun   = 3
+            Shotgun   = 3,
+            Bat       = 4
         }
 
         private struct WeaponEntry
@@ -43,7 +44,7 @@ namespace Ratms.Networking
         [SerializeField] private KeyCode toggleKey = KeyCode.Tab;
 
         [Header("Panel")]
-        [SerializeField] private Vector2 panelSize = new Vector2(280f, 280f);
+        [SerializeField] private Vector2 panelSize = new Vector2(300f, 320f);
         [Tooltip("Offset desde la esquina inferior izquierda.")]
         [SerializeField] private Vector2 panelOffset = new Vector2(20f, 20f);
 
@@ -68,8 +69,9 @@ namespace Ratms.Networking
             new WeaponEntry { id = WeaponId.None,     displayName = "Ninguna (guardar arma)",     implemented = true,  shortcut = KeyCode.Alpha0 },
             new WeaponEntry { id = WeaponId.Bazooka,  displayName = "Bazooka",                    implemented = true,  shortcut = KeyCode.Alpha1 },
             new WeaponEntry { id = WeaponId.Grenade,  displayName = "Granada",                    implemented = true,  shortcut = KeyCode.Alpha2 },
-            new WeaponEntry { id = WeaponId.Dynamite, displayName = "Dinamita (próximamente)",    implemented = false, shortcut = KeyCode.Alpha3 },
+            new WeaponEntry { id = WeaponId.Dynamite, displayName = "Dinamita (ESPACIO = soltar)", implemented = true,  shortcut = KeyCode.Alpha3 },
             new WeaponEntry { id = WeaponId.Shotgun,  displayName = "Escopeta (próximamente)",    implemented = false, shortcut = KeyCode.Alpha4 },
+            new WeaponEntry { id = WeaponId.Bat,      displayName = "Bate (ESPACIO = golpear)",   implemented = true,  shortcut = KeyCode.Alpha5 },
         };
 
         /// <summary>Arma actualmente seleccionada (leído por NetworkBazooka y demás).</summary>

@@ -77,6 +77,9 @@ namespace Ratms.Networking
         [Tooltip("Referencia al NetworkGrenadeThrower en la propia rata (se auto-resuelve si está vacío).")]
         [SerializeField] private NetworkGrenadeThrower grenadeThrower;
 
+        [Tooltip("Bate (cuerpo a cuerpo) de la propia rata (se auto-resuelve).")]
+        [SerializeField] private NetworkBat bat;
+
         [Tooltip("Menú de armas de la propia rata (se auto-resuelve). Sirve para saber qué arma está equipada y disparar la correcta.")]
         [SerializeField] private WeaponsMenuUI weaponsMenu;
 
@@ -114,7 +117,9 @@ namespace Ratms.Networking
 
         [Tooltip("Si está en KNOCKBACK activo (explosión te tira volando), el peakY solo se cuenta " +
                  "desde el peak REAL alcanzado — así explosión + gran caída = mucho daño.")]
+#pragma warning disable CS0414   // reservado: hoy el comportamiento ya es siempre este
         [SerializeField] private bool trackFallDuringKnockback = true;
+#pragma warning restore CS0414
 
         // --- Privadas ---
         private Rigidbody2D rb;
@@ -147,13 +152,29 @@ namespace Ratms.Networking
         [Tooltip("Si la velocidad vertical de la rata supera este valor (positivo = subiendo), no se considera 'en el suelo'. Antes era 0.5 — demasiado bajo, los rebotes diminutos del collider procedural anulaban el groundcheck. 2 perdona los micro-rebotes pero detecta de verdad un salto en marcha.")]
         [SerializeField] private float groundCheckMaxRiseVy = 2f;
 
-        [Tooltip("Si está ON, escupe en consola un Debug.Log cada vez que IsGrounded() detecta o pierde suelo, y otro al pulsar saltar con todas las condiciones. PUESTO ON POR DEFECTO mientras afinamos el salto — quítalo cuando funcione.")]
-        [SerializeField] private bool debugGroundCheck = true;
+        [Tooltip("Si está ON, escupe en consola un Debug.Log cada vez que IsGrounded() detecta o pierde suelo, y otro al pulsar saltar con todas las condiciones. Solo para depurar el salto: llena la consola y cuesta rendimiento.")]
+        [SerializeField] private bool debugGroundCheck = false;
 
         [Tooltip("Distancia (unidades de mundo) hacia abajo del raycast de respaldo del groundcheck. " +
                  "Es independiente del groundMask: detecta CUALQUIER collider que no sea de la rata. " +
                  "Sirve de fallback cuando el groundCheck Transform no está bien colocado o el groundMask está mal configurado.")]
         [SerializeField] private float groundRaycastDistance = 0.40f;
+
+        [Header("Quieta en cuestas")]
+        [Tooltip("Si ON, cuando la rata está quieta y apoyada en el suelo (sin pulsar nada) se 'aparca': " +
+                 "se anula su gravedad para que NO resbale cuesta abajo. Se desactiva sola en cuanto anda, " +
+                 "salta, pierde el suelo o recibe un empujón.")]
+        [SerializeField] private bool holdOnSlopes = true;
+
+        [Tooltip("Velocidad por debajo de la cual se considera que la rata está 'quieta' y se puede aparcar (u/s).")]
+        [SerializeField] private float parkMaxSpeed = 0.5f;
+
+        [Tooltip("Inclinación mínima de la normal del contacto para contar como 'suelo' (0 = pared vertical, 1 = suelo plano).")]
+        [SerializeField] private float footNormalMinY = 0.45f;
+
+        private bool parked;
+        private float defaultGravityScale = -1f;
+        private readonly ContactPoint2D[] footContacts = new ContactPoint2D[8];
 
         private float nextJumpAllowedTime = -1f;
         // Buffer reutilizable para el OverlapCircleNonAlloc (evita allocs por frame).
@@ -212,6 +233,73 @@ namespace Ratms.Networking
             writePerm: NetworkVariableWritePermission.Owner);
 
         // ==================================================================
+        // ENGANCHES PARA LA PRUEBA AUTOMÁTICA (Ratms.Testing.AutoPlayTest)
+        // ==================================================================
+        // En partidas normales nadie los toca: valen null/false y todo el
+        // input viene del teclado como siempre.
+
+        /// <summary>Si tiene valor, sustituye al eje A/D (-1..1). Solo lo usa AutoPlayTest.</summary>
+        public float? TestInputX { get; set; }
+
+        /// <summary>Simula mantener pulsada la flecha arriba (salto largo). Solo AutoPlayTest.</summary>
+        public bool TestJumpHeld { get; set; }
+
+        private bool testJumpPressed;
+
+        /// <summary>Simula pulsar la flecha arriba este frame. Solo AutoPlayTest.</summary>
+        public void TestPressJump() => testJumpPressed = true;
+
+        private bool ConsumeTestJump()
+        {
+            if (!testJumpPressed) return false;
+            testJumpPressed = false;
+            return true;
+        }
+
+        private bool testFireDown, testFireUp;
+
+        /// <summary>Simula pulsar ESPACIO este frame. Solo AutoPlayTest.</summary>
+        public void TestPressFire() => testFireDown = true;
+
+        /// <summary>Simula soltar ESPACIO este frame. Solo AutoPlayTest.</summary>
+        public void TestReleaseFire() => testFireUp = true;
+
+        /// <summary>Fija el ángulo de apuntado (-90 abajo … +90 arriba). Solo AutoPlayTest.</summary>
+        public void TestSetAim(float degrees)
+        {
+            if (IsOwner) aimAngle.Value = Mathf.Clamp(degrees, -90f, 90f);
+        }
+
+        // ==================================================================
+        // Lectura pública (armas, HUD, pruebas)
+        // ==================================================================
+        /// <summary>true = la rata mira a la derecha.</summary>
+        public bool FacingRight => facingRight.Value;
+
+        /// <summary>Dirección del arma en el mundo (apuntado + lado al que mira).</summary>
+        public Vector2 WeaponForward => GetWeaponForward();
+
+        /// <summary>true si ya has usado un arma en este turno (solo se puede una vez por turno).</summary>
+        public bool FiredThisTurn => firedThisTurn;
+
+        // Un arma por turno: tras disparar puedes moverte (huir), pero no
+        // volver a disparar. Antes, durante los segundos entre el disparo y
+        // el fin de turno, se podía disparar OTRA vez.
+        private bool firedThisTurn;
+        private bool couldControlLastFrame;
+
+        /// <summary>
+        ///  Si se pone a true justo antes de spawnear una rata en el servidor,
+        ///  esa rata nace como "DIANA" de pruebas: no lee input, no mueve la
+        ///  cámara y su muerte NO cuenta para los turnos ni la victoria.
+        ///  Solo lo usa AutoPlayTest.
+        /// </summary>
+        public static bool SpawnNextAsTestDummy;
+
+        /// <summary>true = rata diana de la prueba automática (ver <see cref="SpawnNextAsTestDummy"/>).</summary>
+        public bool IsTestDummy { get; private set; }
+
+        // ==================================================================
         // CICLO DE VIDA
         // ==================================================================
         private void Awake()
@@ -223,6 +311,7 @@ namespace Ratms.Networking
             // Auto-resolución de referencias en la propia rata
             if (bazooka == null) bazooka = GetComponentInChildren<NetworkBazooka>();
             if (grenadeThrower == null) grenadeThrower = GetComponentInChildren<NetworkGrenadeThrower>();
+            if (bat == null) bat = GetComponentInChildren<NetworkBat>();
             if (weaponsMenu == null) weaponsMenu = GetComponentInChildren<WeaponsMenuUI>();
             if (health == null) health = GetComponent<NetworkHealth>();
 
@@ -295,6 +384,12 @@ namespace Ratms.Networking
 
         public override void OnNetworkSpawn()
         {
+            if (IsServer && SpawnNextAsTestDummy)
+            {
+                IsTestDummy = true;
+                SpawnNextAsTestDummy = false;
+            }
+
             // Re-resuelve las refs visuales por si el prefab las tiene mal cacheadas
             ResolveVisualReferences();
 
@@ -306,6 +401,19 @@ namespace Ratms.Networking
             // Con edgeRadius > 0 las esquinas son curvas → la rata rueda
             // suavemente sobre los bumps, igual que un personaje de Worms.
             ApplyColliderEdgeRadius();
+
+            // SUAVIDAD: el dueño es quien simula la física de su rata.
+            //  · Interpolate → Unity dibuja la rata entre dos pasos de física,
+            //    así no va "a tirones" cuando los FPS no coinciden con los
+            //    50 Hz de la física (la cámara la sigue en LateUpdate y se
+            //    notaba mucho el temblor).
+            //  · Continuous → a las velocidades de un empujón de explosión la
+            //    rata ya no puede atravesar paredes finas del terreno.
+            if (IsOwner && rb != null)
+            {
+                rb.interpolation = RigidbodyInterpolation2D.Interpolate;
+                rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+            }
 
             // Aplica el flip inicial al spawnear (importante para clientes que
             // entran después y ven al jugador ya girado)
@@ -319,17 +427,18 @@ namespace Ratms.Networking
             aimAngle.OnValueChanged += OnAimChanged;
 
             // Cuando esta rata muera EN EL SERVIDOR, sacarla de los turnos
-            if (IsServer && health != null)
+            // (la diana de pruebas no participa en los turnos).
+            if (IsServer && health != null && !IsTestDummy)
                 health.OnDiedServer += HandleDiedServer;
 
             // Etiqueta en la jerarquía para depurar
-            gameObject.name = IsOwner
-                ? $"Rat_{OwnerClientId}_(yo)"
+            gameObject.name = IsTestDummy ? "Rat_DIANA"
+                : IsOwner ? $"Rat_{OwnerClientId}_(yo)"
                 : $"Rat_{OwnerClientId}";
 
             // Si SOY yo, que la cámara me siga (y recuerde a quién volver
             // tras seguir un proyectil o tras una pausa de impacto).
-            if (IsOwner)
+            if (IsOwner && !IsTestDummy)
             {
                 var cam = CameraFollow.Instance != null
                     ? CameraFollow.Instance
@@ -367,7 +476,7 @@ namespace Ratms.Networking
         /// </summary>
         private bool CanControl()
         {
-            if (!IsOwner) return false;
+            if (!IsOwner || IsTestDummy) return false;
             if (!respectTurns) return true;
 
             var tm = NetworkTurnManager.Instance;
@@ -381,7 +490,13 @@ namespace Ratms.Networking
             // para que el servidor efectivamente avance el turno.
             TickEndTurnTimer();
 
-            if (!CanControl())
+            // Al EMPEZAR un turno nuevo (pasamos de no controlar a controlar),
+            // se recupera el derecho a usar un arma.
+            bool canControlNow = CanControl();
+            if (canControlNow && !couldControlLastFrame) firedThisTurn = false;
+            couldControlLastFrame = canControlNow;
+
+            if (!canControlNow)
             {
                 // Si pierdo el turno mientras me movía, dejo de empujar y cancelo
                 // cualquier carga en curso (bazooka o granada).
@@ -391,7 +506,7 @@ namespace Ratms.Networking
                 return;
             }
 
-            inputX = Input.GetAxisRaw("Horizontal");
+            inputX = TestInputX ?? Input.GetAxisRaw("Horizontal");
 
             // Salto — acepta W o la flecha arriba (lo que cada quien prefiera).
             // ESPACIO se queda reservado para disparar.
@@ -428,7 +543,7 @@ namespace Ratms.Networking
             if (IsOwner) TrackFallDamage(grounded);
 
             // Salto: SOLO Flecha Arriba. W queda libre para apuntar arriba.
-            bool jumpKeyDown = Input.GetKeyDown(KeyCode.UpArrow);
+            bool jumpKeyDown = Input.GetKeyDown(KeyCode.UpArrow) || ConsumeTestJump();
             if (jumpKeyDown) jumpRequestedTime = Time.time;
 
             bool canCoyoteJump = (Time.time - lastGroundedTime) <= coyoteTime;
@@ -556,13 +671,41 @@ namespace Ratms.Networking
         {
             WeaponsMenuUI.WeaponId equipped = CurrentWeapon();
 
+            bool fireDown = Input.GetKeyDown(KeyCode.Space) || testFireDown;
+            bool fireUp   = Input.GetKeyUp(KeyCode.Space)   || testFireUp;
+            testFireDown = testFireUp = false;
+
+            // Ya usaste tu arma este turno → solo puedes moverte (huir).
+            if (firedThisTurn) return;
+
             // === START: al pulsar ESPACIO, arrancamos la carga del arma correspondiente ===
-            if (Input.GetKeyDown(KeyCode.Space))
+            if (fireDown)
             {
                 if (equipped == WeaponsMenuUI.WeaponId.Bazooka && bazooka != null)
                     bazooka.StartCharging();
                 else if (equipped == WeaponsMenuUI.WeaponId.Grenade && grenadeThrower != null)
                     grenadeThrower.StartCharging();
+                // Armas SIN carga: actúan al pulsar.
+                else if (equipped == WeaponsMenuUI.WeaponId.Dynamite && grenadeThrower != null)
+                {
+                    if (grenadeThrower.PlaceDynamite(facingRight.Value))
+                    {
+                        firedThisTurn = true;
+                        // El turno dura lo que la mecha + margen: ese es tu
+                        // tiempo para huir. La explosión lo acorta a 1 s.
+                        ScheduleEndTurn(grenadeThrower.DynamiteFuse + 1.5f);
+                    }
+                    return;
+                }
+                else if (equipped == WeaponsMenuUI.WeaponId.Bat && bat != null)
+                {
+                    if (bat.Swing(GetWeaponForward()))
+                    {
+                        firedThisTurn = true;
+                        ScheduleEndTurn();
+                    }
+                    return;
+                }
             }
 
             // === TICK: mientras se mantiene pulsado, sube la fuerza ===
@@ -574,7 +717,7 @@ namespace Ratms.Networking
                 grenadeThrower.TickCharging(Time.deltaTime, dir);
 
             // === RELEASE: al soltar ESPACIO, disparamos ===
-            if (Input.GetKeyUp(KeyCode.Space))
+            if (fireUp)
             {
                 bool fired = false;
                 if (bazooka != null && bazooka.IsCharging)
@@ -582,13 +725,19 @@ namespace Ratms.Networking
                 if (!fired && grenadeThrower != null && grenadeThrower.IsCharging)
                     fired = grenadeThrower.ReleaseShot(dir);
 
-                if (fired) ScheduleEndTurn();
+                if (fired)
+                {
+                    firedThisTurn = true;
+                    ScheduleEndTurn();
+                }
             }
         }
 
-        private void ScheduleEndTurn()
+        private void ScheduleEndTurn() => ScheduleEndTurn(endTurnDelay);
+
+        private void ScheduleEndTurn(float seconds)
         {
-            endTurnTimer = endTurnDelay;
+            endTurnTimer = seconds;
         }
 
         /// <summary>
@@ -675,6 +824,13 @@ namespace Ratms.Networking
         {
             if (rb == null) return;
 
+            // APARCADO en cuestas (solo el dueño simula su física).
+            if (IsOwner)
+            {
+                UpdateParking(CanControl() && Mathf.Abs(inputX) > 0.01f);
+                if (parked) return;   // quieta del todo: nada más que hacer este paso
+            }
+
             // Durante la ventana de "vuelo libre" tras una explosión, quitamos
             // la fricción y NO clampamos la velocidad. Así el empujón se siente
             // de verdad en vez de frenarse en medio segundo.
@@ -691,8 +847,22 @@ namespace Ratms.Networking
 
             if (!CanControl())
             {
-                // No controlamos → no tocamos la velocidad. Dejamos que la
-                // física (gravedad, colisiones) haga lo suyo.
+                // Sin control (turno ajeno, transición, o tras disparar).
+                // Antes no tocábamos nada y pasaban dos cosas raras:
+                //  · Si se acababa el turno andando, la rata seguía PATINANDO
+                //    con la velocidad que llevaba.
+                //  · La caída pesaba distinto dentro y fuera de tu turno (la
+                //    gravedad extra solo se aplicaba con control).
+                // Solo el dueño simula su física, así que solo él corrige.
+                if (IsOwner)
+                {
+                    Vector2 v = rb.linearVelocity;
+                    if (IsGrounded())
+                        v.x = Mathf.MoveTowards(v.x, 0f, moveDeceleration * Time.fixedDeltaTime);
+                    if (v.y < 0f)
+                        v.y += Physics2D.gravity.y * rb.gravityScale * (fallGravityMultiplier - 1f) * Time.fixedDeltaTime;
+                    rb.linearVelocity = v;
+                }
                 return;
             }
 
@@ -728,12 +898,61 @@ namespace Ratms.Networking
                 // Cae con MÁS gravedad que la de subir
                 vel.y += extraGravity * (fallGravityMultiplier - 1f) * Time.fixedDeltaTime;
             }
-            else if (vel.y > 0.01f && !Input.GetKey(KeyCode.UpArrow))
+            else if (vel.y > 0.01f && !(Input.GetKey(KeyCode.UpArrow) || TestJumpHeld))
             {
                 // Sube pero no está pulsando salto → cortar el salto
                 vel.y += extraGravity * (lowJumpMultiplier - 1f) * Time.fixedDeltaTime;
             }
             rb.linearVelocity = vel;
+        }
+
+        /// <summary>
+        ///  "Aparca" la rata cuando está quieta sobre el suelo: velocidad 0 y
+        ///  gravedad 0, para que no resbale por las cuestas (con la fricción
+        ///  por defecto, en pendientes de ~25° o más se deslizaba sola, y al
+        ///  aterrizar de un salto en cuesta seguía bajando sin parar).
+        ///
+        ///  Se suelta (gravedad normal) en cuanto: hay input de andar, la
+        ///  velocidad sube (salto, empujón), entra en vuelo por knockback o
+        ///  deja de tocar suelo (p. ej. le vuelan el terreno de debajo).
+        ///
+        ///  Usamos los CONTACTOS reales del Rigidbody (no el groundCheck por
+        ///  radio) para no aparcarla flotando a unos milímetros del suelo.
+        /// </summary>
+        private void UpdateParking(bool hasMoveInput)
+        {
+            if (defaultGravityScale < 0f) defaultGravityScale = rb.gravityScale;
+
+            bool shouldPark = holdOnSlopes
+                              && !hasMoveInput
+                              && !InKnockbackFlight
+                              && rb.linearVelocity.sqrMagnitude < parkMaxSpeed * parkMaxSpeed
+                              && HasFootContact();
+
+            if (shouldPark)
+            {
+                if (!parked)
+                {
+                    parked = true;
+                    rb.gravityScale = 0f;
+                }
+                rb.linearVelocity = Vector2.zero;
+                rb.linearDamping = 0f;
+            }
+            else if (parked)
+            {
+                parked = false;
+                rb.gravityScale = defaultGravityScale;
+            }
+        }
+
+        /// <summary>¿Está tocando físicamente algo que hace de suelo (normal hacia arriba)?</summary>
+        private bool HasFootContact()
+        {
+            int n = rb.GetContacts(footContacts);
+            for (int i = 0; i < n; i++)
+                if (footContacts[i].normal.y >= footNormalMinY) return true;
+            return false;
         }
 
         /// <summary>
@@ -744,6 +963,13 @@ namespace Ratms.Networking
         public void BeginKnockbackFlight(float seconds)
         {
             knockbackFlightUntil = Time.time + Mathf.Max(0.05f, seconds);
+            // Si estaba aparcada, la soltamos YA (gravedad normal) para que
+            // el empujón la lance en parábola desde el primer paso de física.
+            if (parked && rb != null)
+            {
+                parked = false;
+                rb.gravityScale = defaultGravityScale >= 0f ? defaultGravityScale : 1f;
+            }
         }
 
         /// <summary>

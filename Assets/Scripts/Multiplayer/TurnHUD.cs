@@ -4,65 +4,171 @@ using UnityEngine;
 namespace Ratms.Networking
 {
     /// <summary>
-    ///  HUD de turnos. Un panel IMGUI arriba-centro que muestra:
-    ///   • De quién es el turno
-    ///   • Cuánto tiempo le queda
-    ///   • Una marquita si ES TU turno para que lo veas claro
+    ///  HUD del turno, arriba en el centro de la pantalla:
+    ///   • De quién es el turno (con su nombre) — "¡TU TURNO!" si es el tuyo.
+    ///   • CUENTA ATRÁS grande. En los últimos <see cref="warningSeconds"/>
+    ///     segundos se pone roja y "late" para meter prisa.
+    ///   • Barra de tiempo que se vacía.
+    ///   • VIENTO: flechas hacia el lado al que sopla, más flechas = más fuerte.
     ///
-    ///  Como el NetworkBootstrap, esto es "de andamio". En Fase 5 lo haremos
-    ///  con UI Toolkit/uGUI bonita. Por ahora sirve para jugar con amigos.
+    ///  No hace falta ponerlo en la escena: si no hay ninguno,
+    ///  <see cref="NetworkTurnManager"/> lo añade solo al arrancar.
+    ///
+    ///  Está hecho con IMGUI (OnGUI) a propósito: cero prefabs, cero Canvas,
+    ///  se escala con la resolución. Los estilos son PROPIOS (no tocamos
+    ///  GUI.skin global, que afectaría a otros OnGUI como el menú de armas).
     /// </summary>
     public class TurnHUD : MonoBehaviour
     {
         [Header("Apariencia")]
-        [SerializeField] private Vector2 panelSize = new Vector2(420f, 90f);
-        [SerializeField] private float topMargin = 16f;
+        [SerializeField] private Vector2 panelSize = new Vector2(440f, 138f);
+        [SerializeField] private float topMargin = 14f;
+        [Tooltip("Resolución vertical de referencia: a esta altura de pantalla la escala es 1.")]
         [SerializeField] private float referenceHeight = 1080f;
+
+        [Header("Cuenta atrás")]
+        [Tooltip("Segundos finales en los que el número se pone rojo y late.")]
+        [SerializeField] private float warningSeconds = 5f;
+        [SerializeField] private Color normalColor = new Color(1f, 1f, 1f);
+        [SerializeField] private Color myTurnColor = new Color(0.55f, 1f, 0.55f);
+        [SerializeField] private Color warningColor = new Color(1f, 0.3f, 0.25f);
+
+        [Header("Viento")]
+        [SerializeField] private Color windColor = new Color(0.6f, 0.85f, 1f);
+
+        private GUIStyle whoStyle, timeStyle, windStyle;
+        private Texture2D panelTex, barBackTex, barFillTex;
+        private float stylesForScale = -1f;
 
         private void OnGUI()
         {
-            // No dibujamos nada si no hay conexión o no hay TurnManager
-            if (NetworkManager.Singleton == null) return;
-            if (!(NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsServer)) return;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !(nm.IsClient || nm.IsServer)) return;
 
             var tm = NetworkTurnManager.Instance;
-            if (tm == null) return;
+            if (tm == null || tm.GameEnded.Value) return;
 
-            // Escalado por resolución, igual que hace NetworkBootstrap
-            float scale = Mathf.Max(0.8f, Screen.height / referenceHeight);
+            float scale = Mathf.Max(0.6f, Screen.height / referenceHeight);
+            EnsureStyles(scale);
+
             Matrix4x4 previous = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
 
-            // Centramos el panel arriba
             float virtualWidth = Screen.width / scale;
-            float x = (virtualWidth - panelSize.x) * 0.5f;
-            GUILayout.BeginArea(new Rect(x, topMargin, panelSize.x, panelSize.y), GUI.skin.box);
+            var panel = new Rect((virtualWidth - panelSize.x) * 0.5f, topMargin, panelSize.x, panelSize.y);
+            GUI.DrawTexture(panel, panelTex);
 
-            GUI.skin.label.fontSize = 20;
-            GUI.skin.label.alignment = TextAnchor.MiddleCenter;
+            // --- Fila 1: de quién es el turno -------------------------
+            string who;
+            bool myTurn = false;
+            float remaining = Mathf.Max(0f, tm.TurnTimeRemaining.Value);
 
-            if (tm.InTransition.Value)
-            {
-                GUILayout.Label("— Cambiando de turno —");
-            }
-            else if (tm.CurrentTurnClientId.Value == ulong.MaxValue)
-            {
-                GUILayout.Label("Esperando para empezar...");
-            }
+            if (tm.InTransition.Value) who = "— Cambiando de turno —";
+            else if (tm.CurrentTurnClientId.Value == ulong.MaxValue) who = "Esperando para empezar...";
             else
             {
                 ulong turnOf = tm.CurrentTurnClientId.Value;
-                ulong me = NetworkManager.Singleton.LocalClientId;
-                bool myTurn = turnOf == me;
+                myTurn = turnOf == nm.LocalClientId;
+                who = myTurn ? "¡TU TURNO!" : $"Turno de {PlayerNameRegistry.GetName(turnOf)}";
+            }
+            whoStyle.normal.textColor = myTurn ? myTurnColor : normalColor;
+            GUI.Label(new Rect(panel.x, panel.y + 6f, panel.width, 26f), who, whoStyle);
 
-                string who = myTurn ? "¡TU TURNO!" : $"Turno del Jugador {turnOf}";
-                string time = $"{Mathf.CeilToInt(tm.TurnTimeRemaining.Value)}s";
+            // --- Fila 2: cuenta atrás grande ---------------------------
+            bool active = !tm.InTransition.Value && tm.CurrentTurnClientId.Value != ulong.MaxValue;
+            if (active)
+            {
+                int seconds = Mathf.CeilToInt(remaining);
+                bool warning = remaining <= warningSeconds;
 
-                GUILayout.Label($"{who}   —   {time}");
+                // Latido: en los últimos segundos el número crece y encoge
+                // una vez por segundo (justo al cambiar de número).
+                float pulse = 1f;
+                if (warning)
+                {
+                    float frac = remaining - Mathf.Floor(remaining);   // 1→0 dentro de cada segundo
+                    pulse = 1f + 0.35f * Mathf.Clamp01((frac - 0.6f) / 0.4f);
+                }
+                timeStyle.normal.textColor = warning ? warningColor : (myTurn ? myTurnColor : normalColor);
+                timeStyle.fontSize = Mathf.RoundToInt(46f * pulse);
+                GUI.Label(new Rect(panel.x, panel.y + 30f, panel.width, 56f), seconds.ToString(), timeStyle);
+
+                // Barra de tiempo
+                float total = Mathf.Max(1f, tm.TurnDuration);
+                var bar = new Rect(panel.x + 20f, panel.y + 88f, panel.width - 40f, 8f);
+                GUI.DrawTexture(bar, barBackTex);
+                var fill = new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(remaining / total), bar.height);
+                var prevColor = GUI.color;
+                GUI.color = warning ? warningColor : (myTurn ? myTurnColor : normalColor);
+                GUI.DrawTexture(fill, barFillTex);
+                GUI.color = prevColor;
             }
 
-            GUILayout.EndArea();
+            // --- Fila 3: viento ----------------------------------------
+            GUI.Label(new Rect(panel.x, panel.y + 102f, panel.width, 28f), WindText(tm.Wind.Value), windStyle);
+
             GUI.matrix = previous;
+        }
+
+        /// <summary>
+        ///  Texto del viento: flechas hacia donde sopla. 1 flecha = flojo,
+        ///  5 = huracán. "Viento: calma" si es 0.
+        /// </summary>
+        public static string WindText(float wind)
+        {
+            float mag = Mathf.Abs(wind);
+            if (mag < 0.05f) return "Viento: calma";
+            int arrows = Mathf.Clamp(Mathf.CeilToInt(mag * 5f), 1, 5);
+            // ASCII a propósito: la fuente por defecto de IMGUI no garantiza
+            // los caracteres de flecha Unicode en todas las plataformas.
+            return wind < 0f
+                ? $"{new string('<', arrows)}  Viento  {new string(' ', arrows)}"
+                : $"{new string(' ', arrows)}  Viento  {new string('>', arrows)}";
+        }
+
+        private void EnsureStyles(float scale)
+        {
+            if (whoStyle != null && Mathf.Approximately(stylesForScale, scale)) return;
+            stylesForScale = scale;
+
+            panelTex   = MakeTex(new Color(0f, 0f, 0f, 0.55f));
+            barBackTex = MakeTex(new Color(1f, 1f, 1f, 0.15f));
+            barFillTex = MakeTex(Color.white);
+
+            whoStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 20,
+                fontStyle = FontStyle.Bold,
+            };
+            timeStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 46,
+                fontStyle = FontStyle.Bold,
+            };
+            windStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 18,
+                fontStyle = FontStyle.Bold,
+            };
+            windStyle.normal.textColor = windColor;
+        }
+
+        private static Texture2D MakeTex(Color c)
+        {
+            var t = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave };
+            t.SetPixel(0, 0, c);
+            t.Apply();
+            return t;
+        }
+
+        private void OnDestroy()
+        {
+            if (panelTex != null) Destroy(panelTex);
+            if (barBackTex != null) Destroy(barBackTex);
+            if (barFillTex != null) Destroy(barFillTex);
         }
     }
 }

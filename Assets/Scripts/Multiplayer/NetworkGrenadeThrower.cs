@@ -50,6 +50,25 @@ namespace Ratms.Networking
         [Tooltip("Fuerza de previsualización cuando tienes la granada equipada pero aún no has pulsado ESPACIO.")]
         [SerializeField] private float previewForce = 6.5f;
 
+        [Header("Dinamita (usa el mismo prefab que la granada)")]
+        [Tooltip("Segundos de mecha. Es también tu tiempo para HUIR: el turno no acaba hasta que explota.")]
+        [SerializeField] private float dynamiteFuse = 5f;
+        [SerializeField] private int dynamiteDamage = 90;
+        [Tooltip("Radio de la explosión (daño y cráter). La granada usa 3.5, el misil 2.5. " +
+                 "Ojo: la rata anda a ~1.8 u/s, así que con 5 s de mecha puede alejarse ~4-6 u si no hay obstáculos.")]
+        [SerializeField] private float dynamiteRadius = 4f;
+
+        /// <summary>Radio de la explosión de la dinamita (lo usa la prueba automática).</summary>
+        public float DynamiteRadius => dynamiteRadius;
+        [Tooltip("Empujón en el centro de la explosión (la granada usa 9.4).")]
+        [SerializeField] private float dynamiteKnockback = 14f;
+
+        /// <summary>Segundos de mecha de la dinamita (NetworkPlayerMovement lo usa para alargar el turno).</summary>
+        public float DynamiteFuse => dynamiteFuse;
+
+        public bool IsDynamiteEquipped =>
+            weaponsMenu != null && weaponsMenu.SelectedWeapon == WeaponsMenuUI.WeaponId.Dynamite;
+
         // Estado local del dueño
         private bool charging;
         private float currentForce;
@@ -200,6 +219,55 @@ namespace Ratms.Networking
             Vector2 r = new Vector2(v.x, v.y);
             if (r.sqrMagnitude < 0.0001f) return Vector2.right;
             return r.normalized;
+        }
+
+        // ==============================================================
+        // DINAMITA: se deja caer a los pies, sin cargar
+        // ==============================================================
+        /// <summary>
+        ///  Deja la dinamita en el suelo, un pelín por delante de la rata.
+        ///  Devuelve true si se ha pedido al servidor (para que el movimiento
+        ///  programe el fin de turno con tiempo de huida).
+        /// </summary>
+        public bool PlaceDynamite(bool facingRight)
+        {
+            if (!IsOwner || !IsDynamiteEquipped) return false;
+            // A los PIES de la rata, un pelín por delante. Usamos el collider
+            // del cuerpo: el pivote del prefab está ~0.8 u bajo el suelo y
+            // la dinamita aparecía enterrada.
+            var body = GetComponentInParent<NetworkHealth>();
+            var col = body != null ? body.GetComponent<Collider2D>() : null;
+            Vector3 feet = col != null
+                ? new Vector3(col.bounds.center.x, col.bounds.min.y, 0f)
+                : transform.position;
+            Vector3 pos = feet + new Vector3(facingRight ? 0.18f : -0.18f, 0.15f, 0f);
+            DropDynamiteServerRpc(pos);
+            return true;
+        }
+
+        [ServerRpc]
+        private void DropDynamiteServerRpc(Vector3 pos, ServerRpcParams rpcParams = default)
+        {
+            if (!IsServer || grenadePrefab == null) return;
+
+            var tm = NetworkTurnManager.Instance;
+            if (tm != null && !tm.IsTurnOf(rpcParams.Receive.SenderClientId))
+                return;
+
+            GameObject go = Instantiate(grenadePrefab, pos, Quaternion.identity);
+            var no = go.GetComponent<NetworkObject>();
+            var grenade = go.GetComponent<NetworkGrenade>();
+            if (no == null || grenade == null)
+            {
+                Debug.LogError("[NetworkGrenadeThrower] grenadePrefab no sirve para dinamita (falta NetworkObject o NetworkGrenade).");
+                Destroy(go);
+                return;
+            }
+
+            // Configurar ANTES de Spawn → los clientes la reciben ya como dinamita.
+            grenade.PrepareAsDynamite(dynamiteFuse, dynamiteDamage, dynamiteRadius, dynamiteKnockback);
+            no.Spawn(destroyWithScene: true);
+            grenade.ServerInit(NetworkObject, Vector2.zero);   // sin impulso: cae donde la dejas
         }
 
         // ==============================================================

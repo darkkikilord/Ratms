@@ -483,21 +483,24 @@ namespace Ratms.World
             foreach (var rat in rats)
             {
                 if (rat == null) continue;
-                if (rat.transform.position.y >= waterY) continue;
-
-                // Cae al vacío → matar de un golpe.
                 var hp = rat.GetComponent<NetworkHealth>();
                 if (hp == null) continue;
                 if (hp.IsDead.Value) continue;
 
+                // Usamos el CENTRO DEL CUERPO: el pivote del prefab está ~0.8 u
+                // por debajo, así que antes la rata moría con el cuerpo todavía
+                // por encima del agua. Ahora muere cuando se hunde de verdad.
+                Vector2 body = hp.BodyCenter;
+                if (body.y >= waterY) continue;
+
                 // 9999 fuerza la muerte aunque la vida máxima sea menor.
                 // Tipo Water → el popup saldrá en azul con texto "AGUA!".
-                hp.ApplyDamageServer(9999, rat.transform.position, DamageType.Water);
+                hp.ApplyDamageServer(9999, body, DamageType.Water);
 
                 if (debugLog)
                 {
                     Debug.Log($"[WaterDeathZone] Rata clientId={rat.OwnerClientId} " +
-                              $"cayó al agua (Y={rat.transform.position.y:F2} < {waterY:F2}) → muerte instantánea.");
+                              $"cayó al agua (Y cuerpo={body.y:F2} < {waterY:F2}) → muerte instantánea.");
                 }
             }
         }

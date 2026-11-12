@@ -126,8 +126,15 @@ namespace Ratms.Networking
         }
 
         /// <summary>
-        ///  Genera un sprite de círculo blanco suave 32x32 por código para que
-        ///  el efecto funcione sin depender de assets que haya que configurar.
+        ///  Genera un sprite de círculo 32x32 por código: centro blanco (se
+        ///  tiñe con dotColor) y un BORDE OSCURO que no se tiñe del todo, para
+        ///  que los puntos se lean igual sobre cielo claro que sobre tierra.
+        ///
+        ///  OJO con el PPU: lo creamos con PPU = tamaño en píxeles, así el
+        ///  sprite mide EXACTAMENTE 1 unidad y <see cref="dotWorldSize"/> es
+        ///  de verdad el tamaño en el mundo. Antes usaba PPU 100 → el sprite
+        ///  medía 0.32 u y los puntos salían 3 veces más pequeños de lo
+        ///  configurado (casi invisibles).
         /// </summary>
         private Sprite BuildCircleSprite()
         {
@@ -137,6 +144,7 @@ namespace Ratms.Networking
             tex.wrapMode = TextureWrapMode.Clamp;
 
             float r = size * 0.5f;
+            const float border = 4.5f;   // grosor del borde oscuro en píxeles
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
@@ -145,11 +153,14 @@ namespace Ratms.Networking
                     float dy = y - r + 0.5f;
                     float d = Mathf.Sqrt(dx * dx + dy * dy);
                     float alpha = Mathf.Clamp01((r - d) / 1.5f);
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                    // 1 = interior blanco, 0 = borde oscuro (con transición suave)
+                    float inner = Mathf.Clamp01((r - border - d) / 1.5f);
+                    float shade = Mathf.Lerp(0.12f, 1f, inner);
+                    tex.SetPixel(x, y, new Color(shade, shade, shade, alpha));
                 }
             }
             tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
         }
 
         // ==============================================================
@@ -157,10 +168,12 @@ namespace Ratms.Networking
         // ==============================================================
         public void Show(float force, Vector2 dir)
         {
+            // LateUpdate decide qué puntos se ven (se cortan contra el terreno),
+            // así que aquí solo activamos al pasar de oculto a visible.
+            if (!visible) SetAllActive(true);
             visible = true;
             cachedForce = Mathf.Max(0.01f, force);
             cachedDir = dir.sqrMagnitude > 0.0001f ? dir.normalized : Vector2.right;
-            SetAllActive(true);
         }
 
         public void Preview(Vector2 dir) => Show(previewForce, dir);
@@ -174,22 +187,65 @@ namespace Ratms.Networking
                 if (d != null) d.gameObject.SetActive(false);
         }
 
+        [Header("Corte contra el terreno")]
+        [Tooltip("Si ON, la trayectoria se corta donde choca con algo (terreno, otra rata...) en vez de atravesarlo.")]
+        public bool stopAtObstacles = true;
+
+        private readonly RaycastHit2D[] segmentHits = new RaycastHit2D[6];
+        private Transform ownerRoot;
+
         // ==============================================================
         private void LateUpdate()
         {
             if (!visible || firePoint == null) return;
+            if (ownerRoot == null)
+            {
+                var no = GetComponentInParent<Unity.Netcode.NetworkObject>();
+                ownerRoot = no != null ? no.transform : transform.root;
+            }
 
             Vector2 start = firePoint.position;
             Vector2 vel = cachedDir * cachedForce;
+            Vector2 prev = start;
+            bool blocked = false;
 
             for (int i = 0; i < dots.Count; i++)
             {
+                if (dots[i] == null) continue;
+
                 float t = i * timeStep;
                 float dx = vel.x * t;
                 float dy = vel.y * t - 0.5f * gravity * t * t;
-                Vector3 p = new Vector3(start.x + dx, start.y + dy, firePoint.position.z);
-                if (dots[i] != null) dots[i].position = p;
+                Vector2 p = new Vector2(start.x + dx, start.y + dy);
+
+                // ¿El tramo desde el punto anterior atraviesa algo? Entonces
+                // ese es el final de la trayectoria: los puntos que quedan
+                // se ocultan (estilo Worms: ves dónde va a pegar).
+                if (stopAtObstacles && !blocked && i > 0 && SegmentBlocked(prev, p))
+                    blocked = true;
+
+                bool show = !blocked;
+                if (dots[i].gameObject.activeSelf != show) dots[i].gameObject.SetActive(show);
+                if (show) dots[i].position = new Vector3(p.x, p.y, firePoint.position.z);
+                prev = p;
             }
+        }
+
+        /// <summary>¿Hay algún collider (que no sea de nuestra propia rata) entre a y b?</summary>
+        private bool SegmentBlocked(Vector2 a, Vector2 b)
+        {
+            var filter = new ContactFilter2D();
+            filter.NoFilter();            // todas las capas...
+            filter.useTriggers = false;   // ...pero sin triggers
+            int n = Physics2D.Linecast(a, b, filter, segmentHits);
+            for (int k = 0; k < n; k++)
+            {
+                var c = segmentHits[k].collider;
+                if (c == null || c.isTrigger) continue;
+                if (ownerRoot != null && c.transform.IsChildOf(ownerRoot)) continue;
+                return true;
+            }
+            return false;
         }
 
         private void SetAllActive(bool active)

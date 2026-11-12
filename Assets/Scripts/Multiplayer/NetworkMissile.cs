@@ -35,6 +35,10 @@ namespace Ratms.Networking
         [Tooltip("Layers que recibirán daño por la explosión.")]
         [SerializeField] private LayerMask damageMask = ~0;
 
+        [Header("Viento")]
+        [Tooltip("Cuánto le afecta el viento del turno (0 = nada, 1 = todo). El misil es ligero y vuela mucho rato: 1.")]
+        [SerializeField] private float windFactor = 1f;
+
         [Header("Safety")]
         [SerializeField] private float selfDestructSeconds = 8f;
         [SerializeField] private float ownerIgnoreTime = 0.5f;
@@ -120,6 +124,19 @@ namespace Ratms.Networking
                 Explode(transform.position);
         }
 
+        /// <summary>
+        ///  VIENTO: solo el servidor simula el misil, así que solo él empuja.
+        ///  Multiplicamos por la masa para que sea una ACELERACIÓN (igual
+        ///  para todos los proyectiles, pesen lo que pesen).
+        /// </summary>
+        private void FixedUpdate()
+        {
+            if (!IsServer || exploded || rb == null || !rb.simulated) return;
+            float accel = NetworkTurnManager.WindAcceleration * windFactor;
+            if (Mathf.Abs(accel) > 0.0001f)
+                rb.AddForce(new Vector2(accel * rb.mass, 0f), ForceMode2D.Force);
+        }
+
         // ==============================================================
         // COLISIÓN
         // ==============================================================
@@ -175,13 +192,15 @@ namespace Ratms.Networking
                 if (ownerHealth != null && nh == ownerHealth) continue; // no auto-daño
                 alreadyDamaged.Add(nh);
 
-                float dist = Vector2.Distance((Vector2)at, (Vector2)col.transform.position);
+                // Distancia al CUERPO (no al pivote del prefab, que está bajo el suelo).
+                Vector2 body = nh.BodyCenter;
+                float dist = Vector2.Distance((Vector2)at, body);
                 float t = Mathf.Clamp01(1f - (dist / explosionRadius));
                 int dmg = Mathf.CeilToInt(maxDamage * t);
                 if (dmg <= 0) continue;
 
                 Debug.Log($"[NetworkMissile] → Aplicando {dmg} de daño a {nh.gameObject.name} (dist={dist:F2}, t={t:F2})");
-                nh.ApplyDamageServer(dmg, col.transform.position, DamageType.Explosion);
+                nh.ApplyDamageServer(dmg, body, DamageType.Explosion);
 
                 // KNOCKBACK: empuja a la rata alejándola del centro de la explosión.
                 // Falloff SQRT (mucho más notorio a media distancia que el lineal):
@@ -190,7 +209,7 @@ namespace Ratms.Networking
                 //   · borde:  t ≈ 0        → solo queda minKnockback
                 // Sumamos componente hacia arriba (+0.8) para que "salga volando"
                 // en parábola en vez de raspar por el suelo — estilo Worms.
-                Vector2 away = (Vector2)col.transform.position - (Vector2)at;
+                Vector2 away = body - (Vector2)at;
                 if (away.sqrMagnitude < 0.0001f) away = Vector2.up;
                 float kbT = Mathf.Sqrt(t);
                 float magnitude = Mathf.Max(minKnockback, knockbackForce * kbT);

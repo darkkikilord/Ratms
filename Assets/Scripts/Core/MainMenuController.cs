@@ -31,6 +31,11 @@ namespace Ratms.UI
         [Tooltip("Si está marcado, el botón 'Jugar' abre DIRECTAMENTE el panel multijugador (como si fuera Multijugador). Útil si el MainMenu solo tiene un botón Jugar.")]
         [SerializeField] private bool playGoesToMultiplayer = false;
 
+        [Header("Fondo")]
+        [Tooltip("Imagen de fondo del menú. Si se deja vacío, se busca un objeto llamado 'Background'. " +
+                 "Se le añade UIImageCover para que llene la pantalla sin bandas a los lados.")]
+        [SerializeField] private Image backgroundImage;
+
         [Header("Config")]
         [Tooltip("Escena single-player que carga el botón 'Jugar' cuando NO va a multijugador.")]
         [SerializeField] private string firstLevelSceneName = "Level_01";
@@ -45,6 +50,25 @@ namespace Ratms.UI
             if (btnMultiplayer) btnMultiplayer.onClick.AddListener(OnMultiplayer);
             if (btnOptions) btnOptions.onClick.AddListener(ShowOptions);
             if (btnQuit) btnQuit.onClick.AddListener(OnQuit);
+
+            SetupBackgroundCover();
+        }
+
+        /// <summary>
+        ///  Hace que el fondo cubra toda la pantalla (sin bandas azules en
+        ///  pantallas más anchas que la imagen). Ver <see cref="UIImageCover"/>.
+        /// </summary>
+        private void SetupBackgroundCover()
+        {
+            if (backgroundImage == null)
+            {
+                var go = GameObject.Find("Background");
+                if (go != null) backgroundImage = go.GetComponent<Image>();
+            }
+            if (backgroundImage == null) return;
+
+            if (backgroundImage.GetComponent<UIImageCover>() == null)
+                backgroundImage.gameObject.AddComponent<UIImageCover>();
         }
 
         public void ShowMain()

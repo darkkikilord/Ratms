@@ -49,6 +49,27 @@ namespace Ratms.Networking
 
         public int MaxHealth => maxHealth;
 
+        private Collider2D bodyCollider;
+
+        /// <summary>
+        ///  Centro REAL del cuerpo de la rata (centro de su collider).
+        ///
+        ///  ¡OJO! El pivote del prefab (transform.position) está ~0.8 u POR
+        ///  DEBAJO del cuerpo, dentro del suelo. Para distancias de explosión,
+        ///  popups, golpes o "¿ha tocado el agua?" hay que usar esto, no
+        ///  transform.position.
+        /// </summary>
+        public Vector2 BodyCenter
+        {
+            get
+            {
+                if (bodyCollider == null) bodyCollider = GetComponent<Collider2D>();
+                return bodyCollider != null && bodyCollider.enabled
+                    ? (Vector2)bodyCollider.bounds.center
+                    : (Vector2)transform.position;
+            }
+        }
+
         /// <summary>
         ///  Evento que se dispara EN EL SERVIDOR cuando la rata muere.
         ///  El NetworkTurnManager lo escucha para sacar al jugador de la rotación

@@ -165,12 +165,13 @@ MonoBehaviour:
   firePoint: {fileID: 41456701478922600}
   dotCount: 18
   timeStep: 0.06
-  dotWorldSize: 0.1
+  dotWorldSize: 0.12
   dotColor: {r: 1, g: 1, b: 1, a: 0.9}
   dotSprite: {fileID: 0}
   sortingLayerName: Default
   sortingOrder: 100
   previewForce: 7
+  stopAtObstacles: 1
 --- !u!1 &5137819827010454982
 GameObject:
   m_ObjectHideFlags: 0
@@ -372,6 +373,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -2253911629886400664, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
       insertIndex: -1
       addedObject: {fileID: -4556110893004899887}
+    - targetCorrespondingSourceObject: {fileID: -2253911629886400664, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2094197168486976101}
   m_SourcePrefab: {fileID: -8435245712485981826, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
 --- !u!95 &1190916561255911831 stripped
 Animator:
@@ -513,7 +517,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  GlobalObjectIdHash: 3973673703
+  GlobalObjectIdHash: 2046137119
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -594,16 +598,23 @@ MonoBehaviour:
   health: {fileID: 3613967885074546661}
   bazooka: {fileID: 162731094326890126}
   grenadeThrower: {fileID: -4067887177151130670}
+  bat: {fileID: 0}
   weaponsMenu: {fileID: -556532409093688157}
   weaponHolder: {fileID: 5163334998011194808}
   aimSpeed: 200
   endTurnDelay: 3.5
+  fallGravityMultiplier: 1.8
+  lowJumpMultiplier: 1.6
+  fallDamageThreshold: 5
+  fallDamagePerUnit: 6
+  fallDamageMax: 80
+  trackFallDuringKnockback: 1
   jumpCooldown: 0.25
   groundCheckIgnoreTags: []
   coyoteTime: 0.1
   jumpBufferTime: 0.1
   groundCheckMaxRiseVy: 2
-  debugGroundCheck: 1
+  debugGroundCheck: 0
   groundRaycastDistance: 0.4
 --- !u!114 &3613967885074546661
 MonoBehaviour:
@@ -655,7 +666,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
   toggleKey: 9
-  panelSize: {x: 260, y: 240}
+  panelSize: {x: 300, y: 320}
   panelOffset: {x: 20, y: 20}
   defaultWeapon: -1
 --- !u!114 &-4067887177151130670
@@ -679,6 +690,10 @@ MonoBehaviour:
   chargeRate: 9
   maxForce: 14
   previewForce: 6.5
+  dynamiteFuse: 5
+  dynamiteDamage: 90
+  dynamiteRadius: 4
+  dynamiteKnockback: 14
 --- !u!114 &-4556110893004899887
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -692,6 +707,27 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
+--- !u!114 &2094197168486976101
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6927920246332017463}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 556d9437614f0b145a84679504425a79, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShowTopMostFoldoutHeaderGroup: 1
+  damage: 50
+  reach: 0.32
+  hitRadius: 0.3
+  knockbackForce: 14
+  upwardBias: 0.45
+  freeFlightSeconds: 1
+  swingSeconds: 0.22
+  swingArc: 120
 --- !u!4 &7910872146381693778 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7878350319992209165, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}

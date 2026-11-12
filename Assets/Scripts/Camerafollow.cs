@@ -21,13 +21,27 @@ public class CameraFollow : MonoBehaviour
     [Header("Seguimiento normal")]
     public Transform target;
     public Vector3 offset = new(0, 0, -10);
+    [Tooltip("Suavizado del seguimiento: fracción del camino que recorre la cámara en cada frame A 60 FPS. " +
+             "Se corrige internamente según los FPS reales, así se siente igual a 30, 60 o 144 FPS.")]
     public float posSmooth = .15f;
 
     [Header("Zoom")]
     public float targetZoom = 5f;
     public float zoomSpeed = 5f;
 
+    [Tooltip("Permite acercar/alejar la cámara con la rueda del ratón.")]
+    public bool scrollZoom = true;
+    [Tooltip("Zoom mínimo (más cerca) y máximo (más lejos) con la rueda.")]
+    public float minZoom = 4f;
+    public float maxZoom = 14f;
+    [Tooltip("Cuánto cambia el zoom por cada 'clic' de la rueda.")]
+    public float scrollStep = 0.8f;
+
     private Camera cam;
+    // Posición "limpia" de la cámara (sin temblor). El temblor se suma
+    // encima solo al pintar, así no se acumula frame a frame.
+    private Vector3 basePosition;
+    private bool hasBasePosition;
 
     // ---------- Estado dinámico (shake, focus, follow externo) ----------
     private Transform originalTarget;   // al que vuelve tras seguir un proyectil
@@ -108,24 +122,34 @@ public class CameraFollow : MonoBehaviour
         if (cam == null) cam = Camera.main;
         if (cam == null) return;
 
+        if (!hasBasePosition) { basePosition = transform.position; hasBasePosition = true; }
+
         // 1) Decidir el target efectivo este frame.
         Vector3 desired = ComputeDesiredPosition();
 
         // 2) Mover la cámara suave hacia el target.
-        transform.position = Vector3.Lerp(transform.position, desired, posSmooth);
+        //    Un Lerp con factor fijo depende de los FPS (a 144 FPS la cámara
+        //    "llega" mucho antes que a 30). Convertimos posSmooth (pensado
+        //    para 60 FPS) a un factor equivalente para el deltaTime real.
+        float k = 1f - Mathf.Pow(1f - Mathf.Clamp01(posSmooth), Time.deltaTime * 60f);
+        basePosition = Vector3.Lerp(basePosition, desired, k);
 
-        // 3) Aplicar shake encima (suma un desplazamiento aleatorio).
+        // 3) Shake: se suma SOLO al pintar. Antes se sumaba a la posición y el
+        //    Lerp siguiente partía de la posición temblada → deriva acumulada.
+        Vector3 shakeOffset = Vector3.zero;
         if (Time.time < shakeUntil && shakeAmp > 0f)
-        {
-            Vector2 offsetShake = Random.insideUnitCircle * shakeAmp;
-            transform.position += (Vector3)offsetShake;
-        }
+            shakeOffset = (Vector3)(Random.insideUnitCircle * shakeAmp);
         else
-        {
             shakeAmp = 0f;
-        }
+        transform.position = basePosition + shakeOffset;
 
-        // 4) Zoom suave.
+        // 4) Zoom: rueda del ratón (opcional) + transición suave.
+        if (scrollZoom)
+        {
+            float wheel = Input.mouseScrollDelta.y;
+            if (Mathf.Abs(wheel) > 0.01f)
+                targetZoom = Mathf.Clamp(targetZoom - wheel * scrollStep, minZoom, maxZoom);
+        }
         cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetZoom, Time.deltaTime * zoomSpeed);
     }
 

@@ -66,9 +66,32 @@ namespace Ratms.Networking
         [SerializeField] private float bounceSfxVolume = 0.35f;
 
         [Header("Contador visible")]
-        [Tooltip("Si está ON, el dueño ve encima de la granada el tiempo restante.")]
+        [Tooltip("Si está ON, todos ven encima de la granada/dinamita el tiempo que le queda.")]
         [SerializeField] private bool showCountdown = true;
         [SerializeField] private Color countdownColor = new Color(1f, 0.9f, 0.2f);
+
+        [Header("Viento")]
+        [Tooltip("Cuánto le afecta el viento a la GRANADA (0-1). Es pesada: poco. La dinamita ignora el viento.")]
+        [SerializeField] private float windFactor = 0.25f;
+
+        // ==============================================================
+        // Estado sincronizado
+        // ==============================================================
+        /// <summary>
+        ///  true = este proyectil es una DINAMITA (mismo prefab que la
+        ///  granada, distinta configuración y dibujo). Lo pone el servidor
+        ///  ANTES de spawnear, así llega a todos con el estado inicial.
+        /// </summary>
+        public readonly NetworkVariable<bool> IsDynamite = new(
+            value: false,
+            readPerm: NetworkVariableReadPermission.Everyone,
+            writePerm: NetworkVariableWritePermission.Server);
+
+        /// <summary>Duración de la mecha en segundos (para que los CLIENTES pinten bien la cuenta atrás).</summary>
+        private readonly NetworkVariable<float> fuseNet = new(
+            value: 3f,
+            readPerm: NetworkVariableReadPermission.Everyone,
+            writePerm: NetworkVariableWritePermission.Server);
 
         private Rigidbody2D rb;
         private NetworkObject ownerNetObj;
@@ -76,24 +99,124 @@ namespace Ratms.Networking
         private float timeRemaining;
         private bool exploded;
         private int bounceCount;
+        private GameObject dynamiteVisual;
+        private bool pendingDynamite;   // solo servidor: PrepareAsDynamite antes del Spawn
 
         // ==============================================================
+        /// <summary>
+        ///  SOLO SERVIDOR, ANTES de <c>NetworkObject.Spawn()</c>: convierte
+        ///  esta granada en DINAMITA. No rebota, no la empuja el viento, la
+        ///  cámara no la sigue (el jugador tiene que huir) y explota más fuerte.
+        /// </summary>
+        public void PrepareAsDynamite(float fuse, int damage, float radius, float knockback)
+        {
+            // La NetworkVariable NO se puede escribir antes del Spawn (NGO avisa):
+            // lo apuntamos y se escribe en OnNetworkSpawn del servidor, que es
+            // justo antes de mandar el estado inicial a los clientes.
+            pendingDynamite = true;
+            fuseSeconds = fuse;
+            maxDamage = damage;
+            explosionRadius = radius;
+            knockbackForce = knockback;
+            windFactor = 0f;
+
+            rb = GetComponent<Rigidbody2D>();
+            if (rb != null)
+            {
+                rb.linearDamping = 3f;
+                rb.angularDamping = 10f;
+                rb.constraints = RigidbodyConstraints2D.FreezeRotation;   // se queda de pie
+            }
+            // Sin rebote: material "pegajoso" en todos los colliders.
+            var sticky = new PhysicsMaterial2D("DynamiteNoBounce") { bounciness = 0f, friction = 1f };
+            if (rb != null) rb.sharedMaterial = sticky;
+            foreach (var c in GetComponentsInChildren<Collider2D>()) c.sharedMaterial = sticky;
+        }
+
         public override void OnNetworkSpawn()
         {
             rb = GetComponent<Rigidbody2D>();
             spawnTime = Time.time;
-            timeRemaining = fuseSeconds;
+
+            if (IsServer)
+            {
+                fuseNet.Value = fuseSeconds;
+                if (pendingDynamite) IsDynamite.Value = true;
+            }
+            timeRemaining = fuseNet.Value;
 
             // En los clientes NO simulamos física (la autoridad es el servidor).
             // El NetworkTransform se encarga de interpolar la posición.
             if (!IsServer && rb != null)
                 rb.simulated = false;
 
+            if (IsDynamite.Value) ApplyDynamiteVisual();
+            IsDynamite.OnValueChanged += OnDynamiteChanged;
+
             // Pedimos a todas las cámaras que sigan a la granada mientras vuela
-            // y rebota. Al explotar/destruirse la granada, la cámara vuelve sola
-            // a la rata del dueño.
-            if (IsServer)
+            // y rebota. La DINAMITA no: el jugador tiene que ver a su rata para
+            // huir mientras arde la mecha.
+            if (IsServer && !IsDynamite.Value)
                 FollowWithCameraClientRpc(fuseSeconds + 0.5f);
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            IsDynamite.OnValueChanged -= OnDynamiteChanged;
+        }
+
+        private void OnDynamiteChanged(bool _, bool now)
+        {
+            if (now) ApplyDynamiteVisual();
+        }
+
+        /// <summary>
+        ///  Dibujo de la dinamita, generado por código (cero assets): cartucho
+        ///  rojo con dos bandas, mecha marrón y chispa amarilla. Oculta el
+        ///  sprite de granada del prefab.
+        /// </summary>
+        private void ApplyDynamiteVisual()
+        {
+            if (dynamiteVisual != null) return;
+
+            foreach (var sr in GetComponentsInChildren<SpriteRenderer>()) sr.enabled = false;
+
+            const int W = 8, H = 22;
+            var tex = new Texture2D(W, H, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
+            var px = new Color32[W * H];
+            var clear = new Color32(0, 0, 0, 0);
+            var red = new Color32(200, 40, 35, 255);
+            var redDark = new Color32(140, 25, 25, 255);
+            var band = new Color32(235, 210, 150, 255);
+            var fuse = new Color32(90, 60, 30, 255);
+            var spark = new Color32(255, 230, 80, 255);
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    Color32 c = clear;
+                    if (y < 16)                                   // cartucho
+                    {
+                        c = (x == 0 || x == W - 1) ? redDark : red;
+                        if (y == 3 || y == 12) c = band;          // bandas de papel
+                    }
+                    else if (x == 4 && y < 20) c = fuse;          // mecha
+                    else if ((x == 4 || x == 3 || x == 5) && y >= 20) c = spark;   // chispa
+                    px[y * W + x] = c;
+                }
+            tex.SetPixels32(px);
+            tex.Apply();
+
+            const float ppu = 80f;   // 8x22 px → 0.1 x 0.275 u (como la rata de alta)
+            var sprite = Sprite.Create(tex, new Rect(0, 0, W, H), new Vector2(0.5f, 0.2f), ppu);
+
+            dynamiteVisual = new GameObject("DynamiteVisual");
+            dynamiteVisual.transform.SetParent(transform, worldPositionStays: false);
+            // Compensamos la escala del prefab para que mida lo mismo siempre.
+            float s = Mathf.Max(0.0001f, Mathf.Abs(transform.lossyScale.x));
+            dynamiteVisual.transform.localScale = Vector3.one / s;
+            var dsr = dynamiteVisual.AddComponent<SpriteRenderer>();
+            dsr.sprite = sprite;
+            dsr.sortingOrder = 50;
         }
 
         [ClientRpc]
@@ -118,12 +241,22 @@ namespace Ratms.Networking
 
         private void Update()
         {
-            if (!IsServer || exploded) return;
+            // Todos descuentan (para pintar la cuenta atrás); solo el
+            // servidor decide la explosión.
+            timeRemaining = fuseNet.Value - (Time.time - spawnTime);
 
-            // Contador de fusible
-            timeRemaining -= Time.deltaTime;
+            if (!IsServer || exploded) return;
             if (timeRemaining <= 0f)
                 Explode(transform.position);
+        }
+
+        /// <summary>VIENTO (solo servidor, que es quien simula). Ver NetworkMissile.</summary>
+        private void FixedUpdate()
+        {
+            if (!IsServer || exploded || rb == null || !rb.simulated) return;
+            float accel = NetworkTurnManager.WindAcceleration * windFactor;
+            if (Mathf.Abs(accel) > 0.0001f)
+                rb.AddForce(new Vector2(accel * rb.mass, 0f), ForceMode2D.Force);
         }
 
         // ==============================================================
@@ -137,6 +270,7 @@ namespace Ratms.Networking
             // Nosotros solo contamos cuántos rebotes llevamos para frenarla
             // en seco tras el último, y hacer un FX de bote en los clientes.
             bounceCount++;
+            if (IsDynamite.Value) return;   // la dinamita no "rebota": ni FX ni conteo
 
             Vector3 at = collision.contactCount > 0
                 ? (Vector3)collision.GetContact(0).point
@@ -174,6 +308,7 @@ namespace Ratms.Networking
             // mismo — es parte de la gracia del arma.
             var hits = Physics2D.OverlapCircleAll(at, explosionRadius, damageMask);
             var alreadyDamaged = new HashSet<NetworkHealth>();
+            Debug.Log($"[NetworkGrenade] {(IsDynamite.Value ? "Dinamita" : "Granada")} explota en ({at.x:F2},{at.y:F2}) r={explosionRadius} → {hits.Length} colliders");
 
             foreach (var col in hits)
             {
@@ -182,16 +317,19 @@ namespace Ratms.Networking
                 if (nh == null || alreadyDamaged.Contains(nh)) continue;
                 alreadyDamaged.Add(nh);
 
-                float dist = Vector2.Distance((Vector2)at, (Vector2)col.transform.position);
+                // Distancia al CUERPO (no al pivote del prefab, que está bajo el suelo).
+                Vector2 body = nh.BodyCenter;
+                float dist = Vector2.Distance((Vector2)at, body);
                 float t = Mathf.Clamp01(1f - (dist / explosionRadius));
                 int dmg = Mathf.CeilToInt(maxDamage * t);
+                Debug.Log($"[NetworkGrenade] {(IsDynamite.Value ? "Dinamita" : "Granada")} → {nh.gameObject.name} dist={dist:F2} dmg={dmg}");
                 if (dmg <= 0) continue;
 
-                nh.ApplyDamageServer(dmg, col.transform.position, DamageType.Explosion);
+                nh.ApplyDamageServer(dmg, body, DamageType.Explosion);
 
                 // KNOCKBACK con falloff y componente vertical para "saltar".
                 // La granada empuja más que el misil — es un arma de control de zona.
-                Vector2 away = (Vector2)col.transform.position - (Vector2)at;
+                Vector2 away = body - (Vector2)at;
                 if (away.sqrMagnitude < 0.0001f) away = Vector2.up;
 
                 // KNOCKBACK PROPORCIONAL AL DAÑO (sqrt para que la curva sea suave):
@@ -241,7 +379,10 @@ namespace Ratms.Networking
 
             // POPUP DE IMPACTO: feedback visual fijo aunque la granada
             // no le pegue a ninguna rata.
-            WorldDamagePopup.SpawnImpact(at, "POW!", new Color(0.9f, 0.4f, 0.2f));
+            if (IsDynamite.Value)
+                WorldDamagePopup.SpawnImpact(at, "KABOOM!", new Color(1f, 0.25f, 0.1f));
+            else
+                WorldDamagePopup.SpawnImpact(at, "POW!", new Color(0.9f, 0.4f, 0.2f));
         }
 
         [ClientRpc]
@@ -257,11 +398,12 @@ namespace Ratms.Networking
         // ==============================================================
         private void OnGUI()
         {
-            if (!showCountdown) return;
-            if (ownerNetObj == null) return;
+            // Antes solo lo veía el que la lanzaba, y además solo en el HOST
+            // (ownerNetObj solo existe en el servidor y el fusible solo se
+            // descontaba allí). Ahora lo ven TODOS: es información de la
+            // partida (¿me da tiempo a huir?), como en Worms.
+            if (!showCountdown || exploded) return;
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsClient) return;
-            // Solo se lo dibujamos al jugador que la lanzó
-            if (ownerNetObj.OwnerClientId != NetworkManager.Singleton.LocalClientId) return;
             if (Camera.main == null) return;
 
             float t = Mathf.Max(0f, timeRemaining);

@@ -330,9 +330,49 @@ namespace Ratms.World
             sr.sortingLayerName = "Default";
             go.transform.localPosition = new Vector3(0f, yOffset, 0f);
 
+            BuildSilhouetteBase(go.transform, color, height / 32f, sortingOrder);
+
             if (debugLog)
                 Debug.Log($"[BackgroundManager] {name} creado. size={sr.size}, sortingOrder={sortingOrder}, worldPos={go.transform.position}");
             return go;
+        }
+
+        /// <summary>
+        ///  "Pie" de la silueta: un rectángulo del mismo color que continúa
+        ///  HACIA ABAJO desde el borde inferior del sprite.
+        ///
+        ///  Por qué: el sprite de montañas acaba en una línea recta horizontal.
+        ///  Por debajo volvía a verse el cielo claro, y esa franja clara
+        ///  cortada en recto se leía como un LAGO a la altura del suelo (la
+        ///  rata parecía estar metida en el agua). Con el pie, las montañas
+        ///  "bajan" hasta perderse detrás del terreno.
+        /// </summary>
+        private void BuildSilhouetteBase(Transform parent, Color color, float spriteHeightUnits, int sortingOrder)
+        {
+            var tex = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+            tex.SetPixel(0, 0, Color.white);
+            tex.Apply();
+            // Pivot arriba-centro → al escalar, crece solo hacia abajo.
+            var sprite = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 1f), 1f);
+
+            // Mismo tono medio que el interior del sprite (que mezcla el color
+            // base con uno un 12% más oscuro según ruido) para que no se note
+            // la junta. Los edificios son de color plano.
+            Color fill = biome.parallaxStyle == ParallaxStyle.Buildings
+                ? color
+                : Color.Lerp(color, DarkenColor(color, 0.12f), 0.25f);
+            fill.a = color.a;
+
+            var baseGo = new GameObject("Base");
+            baseGo.transform.SetParent(parent, worldPositionStays: false);
+            var sr = baseGo.AddComponent<SpriteRenderer>();
+            sr.sprite = sprite;
+            sr.color = fill;
+            sr.sortingOrder = sortingOrder;
+            sr.sortingLayerName = "Default";
+            // Justo en el borde inferior del sprite (pivot del sprite = centro).
+            baseGo.transform.localPosition = new Vector3(0f, -spriteHeightUnits * 0.5f, 0f);
+            baseGo.transform.localScale = new Vector3(bgWidth, bgHeight, 1f);
         }
 
         /// <summary>

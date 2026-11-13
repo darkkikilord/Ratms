@@ -93,7 +93,8 @@ namespace Ratms.Networking
                 // Risa de rata: "ji-ji-ji-ji" agudo y descendente
                 Id.Laugh => Chain(new[] { 1500f, 1380f, 1260f, 1150f, 1050f }, 0.075f, 0.035f, 0.35f),
                 // Chof húmedo: ruido grave y corto + golpe
-                Id.Splat => Mix(Noise(0.28f, 14f, 0.8f, lowpass: 0.12f), Sine(0.12f, 120f, 50f, 0.6f)),
+                Id.Splat => Mix(Mix(Noise(0.32f, 12f, 0.9f, lowpass: 0.12f), Sine(0.14f, 130f, 45f, 0.7f)),
+                                Delay(Chain(new[] { 300f, 240f, 200f }, 0.04f, 0.03f, 0.25f), 0.06f)),   // chof + chapoteo
                 // Quejido corto al recibir daño
                 Id.Ouch => Sine(0.14f, 900f, 600f, 0.3f, tremolo: 25f),
                 _ => null,
@@ -124,8 +125,20 @@ namespace Ratms.Networking
                 float cutoff = Mathf.Lerp(0.35f, 0.04f, t / seconds);        // se va apagando (más grave)
                 lp += (Rnd() - lp) * cutoff;
                 float thump = Mathf.Sin(2f * Mathf.PI * thumpHz * t * (1f - t * 0.4f)) * Mathf.Exp(-t * 7f);
-                d[i] = Mathf.Clamp((lp * 1.8f + thump * 0.9f) * env * gain, -1f, 1f);
+                // Sub-grave que cae de tono (el "pecho" de la explosión)
+                float sub = Mathf.Sin(2f * Mathf.PI * (thumpHz * 0.55f) * t * (1f - t * 0.6f)) * Mathf.Exp(-t * 3.5f);
+                d[i] = (lp * 1.8f + thump * 0.9f + sub * 0.5f) * env * gain;
             }
+            // Crepitar de cascotes cayendo en la cola
+            for (int k = 0; k < 40; k++)
+            {
+                float t0 = 0.12f + (float)rng.NextDouble() * (seconds - 0.2f);
+                int off = (int)(t0 * Rate), len = (int)(0.012f * Rate);
+                float amp = 0.35f * gain * Mathf.Exp(-t0 * 2.5f);
+                for (int i = 0; i < len && off + i < n; i++) d[off + i] += Rnd() * amp * (1f - i / (float)len);
+            }
+            // Saturación suave (más "gordo" sin clipear)
+            for (int i = 0; i < n; i++) d[i] = (float)System.Math.Tanh(d[i] * 1.4f);
             return d;
         }
 

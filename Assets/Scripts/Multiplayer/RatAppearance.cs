@@ -56,6 +56,14 @@ namespace Ratms.Networking
         private Vector3 lastPos;
         private float vx, vy, airTime, animTime, nextBlink, blinkUntil;
 
+        /// <summary>Color de la franja del casco (equipo).</summary>
+        public Color32 Team { get; private set; }
+
+        private float flashUntil;
+
+        /// <summary>Al recibir un golpe: parpadeo rojo y "aplastón" un instante.</summary>
+        public void HitFlash() => flashUntil = Time.time + 0.22f;
+
         public void Init(NetworkPlayerMovement m, ulong ownerId, bool isDummy)
         {
             movement = m;
@@ -64,6 +72,7 @@ namespace Ratms.Networking
             originalBody = m.GetComponent<SpriteRenderer>();
 
             var team = isDummy ? DummyColor : TeamColors[(int)(ownerId % (ulong)TeamColors.Length)];
+            Team = team;
             frames = GetFrames(team);
 
             var go = new GameObject("RatBody");
@@ -108,6 +117,10 @@ namespace Ratms.Networking
             sr.sprite = frames[(int)f];
             sr.flipX = !movement.FacingRight;
 
+            // --- Golpe: parpadeo rojo/blanco ---
+            float flash = Mathf.Clamp01((flashUntil - Time.time) / 0.22f);
+            sr.color = flash > 0f && ((int)(Time.time * 28f) % 2 == 0) ? new Color(1f, 0.3f, 0.3f, 1f) : Color.white;
+
             // --- Posición: los PIES del dibujo sobre el fondo del collider ---
             if (col != null && col.enabled)
             {
@@ -117,7 +130,9 @@ namespace Ratms.Networking
             }
             // El hijo no debe heredar escalas raras del prefab.
             Vector3 ls = transform.lossyScale;
-            sr.transform.localScale = new Vector3(1f / Mathf.Max(0.0001f, Mathf.Abs(ls.x)), 1f / Mathf.Max(0.0001f, Mathf.Abs(ls.y)), 1f);
+            float squash = flash * flash;   // se aplasta y recupera
+            sr.transform.localScale = new Vector3((1f + 0.22f * squash) / Mathf.Max(0.0001f, Mathf.Abs(ls.x)),
+                                                  (1f - 0.18f * squash) / Mathf.Max(0.0001f, Mathf.Abs(ls.y)), 1f);
         }
 
         private void OnDisable()

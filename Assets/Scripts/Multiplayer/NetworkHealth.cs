@@ -99,6 +99,17 @@ namespace Ratms.Networking
             if (IsDead.Value) ApplyDeathVisual();
         }
 
+        // Rata malherida (< 35 % de vida): va dejando gotas de sangre (local).
+        private float nextDrip;
+        private void Update()
+        {
+            if (!IsSpawned || IsDead.Value || maxHealth <= 0) return;
+            float hp = CurrentHealth.Value / (float)maxHealth;
+            if (hp >= 0.35f || Time.time < nextDrip) return;
+            nextDrip = Time.time + Mathf.Lerp(0.15f, 0.7f, hp / 0.35f) * Random.Range(0.7f, 1.3f);
+            Fx.Drip(BodyCenter + Vector2.down * 0.15f);
+        }
+
         public override void OnNetworkDespawn()
         {
             IsDead.OnValueChanged -= OnDeathStateChanged;
@@ -223,6 +234,8 @@ namespace Ratms.Networking
             // GORE: salpicón de sangre hacia fuera del golpe (mancha el suelo).
             Vector2 away = BodyCenter - (Vector2)hitPoint;
             Fx.Blood(BodyCenter, away.sqrMagnitude > 0.0004f ? away : Vector2.up, amount);
+            var look = GetComponent<RatAppearance>();
+            if (look != null) look.HitFlash();
             if (!lethal)
             {
                 Sfx.Play(Sfx.Id.Ouch, 0.7f, 0.15f);
@@ -284,7 +297,9 @@ namespace Ratms.Networking
             if (lastDamageType != DamageType.Water)
             {
                 Vector2 b = BodyCenter;
-                Fx.Gibs(b);
+                var look = GetComponent<RatAppearance>();
+                Fx.Gibs(b, look != null ? look.Team : (Color32?)null);
+                if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.25f, 0.35f);
                 Sfx.Play(Sfx.Id.Splat);
                 Fx.Gravestone(b);
                 WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.3f, Pick(DeathQuips), new Color(0.95f, 0.25f, 0.2f));

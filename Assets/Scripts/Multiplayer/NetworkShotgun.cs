@@ -132,8 +132,10 @@ namespace Ratms.Networking
             Destroy(go, 0.09f);
 
             Sfx.Play(Sfx.Id.Shot);
-            Fx.Sparks(from, 6, new Color(1f, 0.9f, 0.5f, 1f), 1.5f, 3.5f);   // fogonazo de la boca
-            Fx.Sparks(to, hitRat ? 10 : 7, new Color(1f, 0.85f, 0.4f, 1f), 2f, 5f);
+            Vector2 dir = (to - from).normalized;
+            Fx.MuzzleFlash(from, dir);                                        // fogonazo de la boca
+            Fx.Sparks(to, hitRat ? 8 : 6, new Color(1f, 0.85f, 0.4f, 1f), 2f, 5f);
+            if (!hitRat) Fx.Dust(to, -dir, 8);                                // tierra que salta del impacto
             WorldDamagePopup.SpawnImpact(to, hitRat ? "¡PUM!" : "pum", new Color(1f, 0.85f, 0.35f));
             if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.08f, 0.12f);
         }

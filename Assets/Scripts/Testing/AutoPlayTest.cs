@@ -269,6 +269,7 @@ namespace Ratms.Testing
             yield return ShotgunTest(nm, rat);
             yield return TeleportTest(nm, rat);
             yield return RopeTest(nm, rat);
+            yield return GoreShowcase(rat);
             yield return WaterTest(rat);
             yield return CountdownTest(nm);
 
@@ -942,6 +943,67 @@ namespace Ratms.Testing
         }
 
         /// <summary>Una diana tirada al agua debe morir sin acabar la partida.</summary>
+        /// <summary>
+        ///  ESCAPARATE de efectos (solo visual, local): salpicón de sangre,
+        ///  rata reventando y explosión, con capturas de cerca en varios
+        ///  instantes para revisar cómo se ven.
+        /// </summary>
+        private IEnumerator GoreShowcase(NetworkPlayerMovement rat)
+        {
+            var cam = Camera.main;
+            var follow = CameraFollow.Instance;
+            var gen = FindFirstObjectByType<TerrainGenerator>();
+            if (cam == null || gen == null || rat == null) { Log("Gore: sin cámara/terreno/rata, no hay escaparate."); yield break; }
+
+            float x = rat.transform.position.x;
+            float? sy = null;
+            foreach (float dx in new[] { -4f, 4f, -6f, 6f, -3f, 3f })
+            {
+                sy = CurrentSurfaceY(gen, x + dx);
+                if (sy.HasValue) { x += dx; break; }
+            }
+            if (!sy.HasValue) { Log("Gore: no encuentro suelo para el escaparate."); yield break; }
+            Vector2 at = new Vector2(x, sy.Value + 0.45f);
+
+            bool followWasOn = follow != null && follow.enabled;
+            if (follow != null) follow.enabled = false;
+            float prevSize = cam.orthographicSize;
+            Vector3 prevPos = cam.transform.position;
+            cam.transform.position = new Vector3(at.x, at.y + 0.8f, prevPos.z);
+            cam.orthographicSize = 2.6f;
+
+            Fx.Blood(at + Vector2.left * 1.2f, Vector2.left, 45f);
+            yield return new WaitForSeconds(0.12f);
+            yield return Capture("G01_sangre");
+            yield return new WaitForSeconds(0.8f);
+            yield return Capture("G02_sangre_manchas");
+
+            Fx.Gibs(at, new Color32(214, 58, 58, 255));
+            Sfx.Play(Sfx.Id.Splat);
+            yield return new WaitForSeconds(0.06f);
+            yield return Capture("G03_revienta");
+            yield return new WaitForSeconds(0.3f);
+            yield return Capture("G04_trozos_volando");
+            yield return new WaitForSeconds(1.8f);
+            yield return Capture("G05_trozos_en_suelo");
+
+            cam.orthographicSize = 4f;
+            Fx.Explosion(at + Vector2.right * 2.5f, 2.5f);
+            Sfx.Play(Sfx.Id.Explosion);
+            yield return new WaitForSeconds(0.05f);
+            yield return Capture("G06_explosion_fogonazo");
+            yield return new WaitForSeconds(0.25f);
+            yield return Capture("G07_explosion_fuego");
+            yield return new WaitForSeconds(1.0f);
+            yield return Capture("G08_explosion_humo");
+            Log("Gore/explosión: escaparate capturado (G01–G08).");
+
+            cam.orthographicSize = prevSize;
+            cam.transform.position = prevPos;
+            if (follow != null) follow.enabled = followWasOn;
+            yield return new WaitForSeconds(0.2f);
+        }
+
         private IEnumerator WaterTest(NetworkPlayerMovement rat)
         {
             if (finished) yield break;

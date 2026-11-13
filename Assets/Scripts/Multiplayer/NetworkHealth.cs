@@ -141,7 +141,7 @@ namespace Ratms.Networking
 
             // Propagamos el popup a todos los clientes (incluido el dueño).
             // Mandamos el tipo como byte para minimizar el tamaño del paquete.
-            ShowDamagePopupClientRpc(amount, hitPoint, (byte)type);
+            ShowDamagePopupClientRpc(amount, hitPoint, (byte)type, newHp <= 0);
 
             if (newHp <= 0)
             {
@@ -213,12 +213,60 @@ namespace Ratms.Networking
         ///  por la red — lo casteamos a DamageType al llegar.
         /// </summary>
         [ClientRpc]
-        private void ShowDamagePopupClientRpc(int amount, Vector3 hitPoint, byte typeByte)
+        private void ShowDamagePopupClientRpc(int amount, Vector3 hitPoint, byte typeByte, bool lethal)
         {
             DamageType type = (DamageType)typeByte;
             lastDamageType = type;
             WorldDamagePopup.Spawn(hitPoint, amount, type);
-            if (type == DamageType.Water) { Fx.Splash(hitPoint); Sfx.Play(Sfx.Id.Splash); }
+            if (type == DamageType.Water) { Fx.Splash(hitPoint); Sfx.Play(Sfx.Id.Splash); return; }
+
+            // GORE: salpicón de sangre hacia fuera del golpe (mancha el suelo).
+            Vector2 away = BodyCenter - (Vector2)hitPoint;
+            Fx.Blood(BodyCenter, away.sqrMagnitude > 0.0004f ? away : Vector2.up, amount);
+            if (!lethal)
+            {
+                Sfx.Play(Sfx.Id.Ouch, 0.7f, 0.15f);
+                if (Random.value < 0.35f)
+                    WorldDamagePopup.SpawnImpact(BodyCenter + Vector2.up * 0.9f, Pick(HurtQuips), new Color(1f, 0.75f, 0.6f));
+            }
+
+            // RISA: la rata que tiene el turno se ríe de su víctima (siempre si
+            // la mata, a veces si solo la hiere). Humor negro de trinchera.
+            var attacker = CurrentTurnRat();
+            if (attacker != null && attacker.gameObject != gameObject && (lethal || Random.value < 0.45f))
+            {
+                var ah = attacker.GetComponent<NetworkHealth>();
+                Vector2 at = (ah != null ? ah.BodyCenter : (Vector2)attacker.transform.position) + Vector2.up * 0.95f;
+                WorldDamagePopup.SpawnImpact(at, Pick(Laughs), new Color(1f, 0.9f, 0.35f));
+                Sfx.Play(Sfx.Id.Laugh, lethal ? 1f : 0.75f, 0.1f);
+            }
+        }
+
+        private static readonly string[] HurtQuips =
+        {
+            "¡Mi cola!", "¡Eso escuece!", "¡Mis bigotes!", "¡Que me desangro!", "¡Auch, cabrón!",
+            "¡Ratas!", "¡Mamáaa!", "¡Me has dejado tuerta!", "¡Eso no se hace!", "¡Uy, la víscera!",
+        };
+        private static readonly string[] Laughs =
+        {
+            "¡JA, JA, JA!", "¡JIJIJIJI!", "¡Chúpate esa!", "¡Toma ya!", "¡Al hoyo!", "¡Ñiec, ñiec!", "¡JE, JE!",
+        };
+        private static readonly string[] DeathQuips =
+        {
+            "¡Al queso eterno!", "Fiambre de trinchera", "Otra para el foso", "Ratatouille", "Se acabó la guerra para esta",
+            "Tanto queso para esto...", "Directa al hoyo", "Requiescat in pizza", "Carne de cañón", "¡Adiós, mundo cruel!",
+        };
+
+        private static string Pick(string[] arr) => arr[Random.Range(0, arr.Length)];
+
+        /// <summary>Rata (no diana) del jugador que tiene el turno ahora mismo.</summary>
+        private static NetworkPlayerMovement CurrentTurnRat()
+        {
+            var tm = NetworkTurnManager.Instance;
+            if (tm == null || tm.CurrentTurnClientId.Value == ulong.MaxValue) return null;
+            foreach (var m in FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None))
+                if (m.OwnerClientId == tm.CurrentTurnClientId.Value && !m.IsTestDummy && m.isActiveAndEnabled) return m;
+            return null;
         }
 
         // Último tipo de daño recibido (en cada cliente): para saber si la
@@ -231,8 +279,16 @@ namespace Ratms.Networking
         private void OnDeathStateChanged(bool oldValue, bool newValue)
         {
             if (!newValue) return;
-            // Lápida donde ha caído (muy Worms). En el agua no: ya hay salpicadura.
-            if (lastDamageType != DamageType.Water) Fx.Gravestone(BodyCenter);
+            // Muerte en tierra: REVIENTA (gore) + lápida + frase de humor negro.
+            // En el agua no: ya hay salpicadura.
+            if (lastDamageType != DamageType.Water)
+            {
+                Vector2 b = BodyCenter;
+                Fx.Gibs(b);
+                Sfx.Play(Sfx.Id.Splat);
+                Fx.Gravestone(b);
+                WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.3f, Pick(DeathQuips), new Color(0.95f, 0.25f, 0.2f));
+            }
             Sfx.Play(Sfx.Id.Squeak, 0.8f);
             ApplyDeathVisual();
         }

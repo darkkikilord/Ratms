@@ -23,7 +23,70 @@ namespace Ratms.Networking
             public Vector2 pos, vel;
             public float age, life, gravity, drag, s0, s1;
             public Color c0, c1;
+            public bool stains;       // gota de sangre: al tocar tierra la mancha
         }
+
+        /// <summary>
+        ///  ¿Gore activado? (PlayerPrefs "opt_gore", 1 por defecto). Con 0 no
+        ///  hay sangre ni vísceras: las ratas sueltan "pelusa" gris.
+        /// </summary>
+        public static bool GoreOn => PlayerPrefs.GetInt("opt_gore", 1) == 1;
+
+        // ============================================================
+        //  GORE
+        // ============================================================
+        /// <summary>
+        ///  Salpicón de sangre: gotas que salen en <paramref name="dir"/> (y
+        ///  hacia arriba) y, al caer sobre la tierra, la dejan MANCHADA para
+        ///  el resto de la partida. <paramref name="amount"/> ≈ daño recibido.
+        /// </summary>
+        public static void Blood(Vector2 at, Vector2 dir, float amount)
+        {
+            var fx = I;
+            int n = Mathf.Clamp(Mathf.RoundToInt(amount * 0.45f), 4, 40);
+            Vector2 baseDir = (dir.sqrMagnitude > 0.01f ? dir.normalized : Vector2.up) + Vector2.up * 0.6f;
+            for (int i = 0; i < n; i++)
+            {
+                Vector2 v = (baseDir.normalized + Random.insideUnitCircle * 0.8f) * Random.Range(1.5f, 5.5f);
+                Color c = BloodColor();
+                float size = Random.Range(1.5f, 3.5f) / 32f;
+                fx.Emit(at + Random.insideUnitCircle * 0.08f, v, Random.Range(0.8f, 1.6f), 9.8f, 0.3f, size, size, c, c, square,
+                        fadeLate: true, stains: true);
+            }
+            // Bruma roja en el punto del impacto
+            fx.Emit(at, Vector2.up * 0.2f, 0.35f, 0f, 1f, 0.15f, 0.5f, new Color(0.7f, 0.05f, 0.05f, 0.55f), new Color(0.4f, 0f, 0f, 0f), soft);
+        }
+
+        /// <summary>
+        ///  Muerte en tierra: la rata REVIENTA. Mucha sangre, trozos de carne,
+        ///  huesecillos y algún pelo, todo volando en todas direcciones.
+        /// </summary>
+        public static void Gibs(Vector2 at)
+        {
+            var fx = I;
+            Blood(at, Vector2.up, 90f);
+            for (int i = 0; i < 14; i++)
+            {
+                Vector2 v = (Random.insideUnitCircle + Vector2.up * 0.9f).normalized * Random.Range(3f, 8f);
+                bool bone = i % 4 == 0;
+                Color c = !GoreOn ? new Color(0.45f, 0.42f, 0.38f, 1f)
+                        : bone ? new Color(0.9f, 0.86f, 0.75f, 1f)
+                        : (i % 2 == 0 ? new Color(0.55f, 0.08f, 0.1f, 1f) : new Color(0.78f, 0.38f, 0.38f, 1f));   // carne / tripa
+                float size = Random.Range(3f, 6f) / 32f;
+                fx.Emit(at, v, Random.Range(1.4f, 2.4f), 9.8f, 0.2f, size, size * 0.8f, c, c, square, fadeLate: true, stains: !bone);
+            }
+            // Mechones de pelo
+            for (int i = 0; i < 8; i++)
+            {
+                Vector2 v = Random.insideUnitCircle * 3f + Vector2.up * 2f;
+                fx.Emit(at, v, Random.Range(1.2f, 2f), 2.5f, 1.5f, 0.06f, 0.05f, new Color(0.44f, 0.39f, 0.34f, 1f),
+                        new Color(0.44f, 0.39f, 0.34f, 0f), square);
+            }
+        }
+
+        private static Color BloodColor() => GoreOn
+            ? new Color(Random.Range(0.45f, 0.75f), Random.Range(0f, 0.05f), Random.Range(0f, 0.05f), 1f)
+            : new Color(0.55f, 0.52f, 0.5f, 1f);   // sin gore: pelusa gris
 
         private const int SortingOrder = 200;
         private static Fx instance;
@@ -137,7 +200,7 @@ namespace Ratms.Networking
         //  Motor de partículas mínimo
         // ============================================================
         private void Emit(Vector2 pos, Vector2 vel, float life, float gravity, float drag, float s0, float s1,
-                          Color c0, Color c1, Sprite sprite, bool fadeLate = false)
+                          Color c0, Color c1, Sprite sprite, bool fadeLate = false, bool stains = false)
         {
             if (live.Count > 900) return;   // tope de seguridad
             if (soft == null) BuildSprites();
@@ -145,7 +208,8 @@ namespace Ratms.Networking
             sr.sprite = sprite == null ? soft : sprite;
             sr.gameObject.SetActive(true);
             if (fadeLate) c1 = new Color(c1.r, c1.g, c1.b, -1f);   // marca: se desvanece solo al final
-            live.Add(new P { sr = sr, pos = pos, vel = vel, life = life, gravity = gravity, drag = drag, s0 = s0, s1 = s1, c0 = c0, c1 = c1 });
+            live.Add(new P { sr = sr, pos = pos, vel = vel, life = life, gravity = gravity, drag = drag, s0 = s0, s1 = s1, c0 = c0, c1 = c1,
+                             stains = stains && GoreOn });
             Apply(live[live.Count - 1], 0f);
         }
 
@@ -175,6 +239,18 @@ namespace Ratms.Networking
                 p.vel.y -= p.gravity * dt;
                 p.vel *= 1f / (1f + p.drag * dt);
                 p.pos += p.vel * dt;
+
+                // Gota de sangre que toca tierra → mancha el suelo y desaparece.
+                if (p.stains && p.age > 0.04f && DestructibleTerrain.IsSolidAtWorld(p.pos))
+                {
+                    Color c = p.c0;
+                    DestructibleTerrain.StainAtWorld(p.pos, new Color32((byte)(c.r * 255), (byte)(c.g * 255), (byte)(c.b * 255), 255),
+                                                     p.s0 > 0.12f ? 2 : 1, 0.8f);
+                    p.sr.gameObject.SetActive(false);
+                    pool.Push(p.sr);
+                    live.RemoveAt(i);
+                    continue;
+                }
                 live[i] = p;
                 Apply(p, p.age / p.life);
             }

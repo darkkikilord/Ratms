@@ -239,6 +239,46 @@ namespace Ratms.World
             {
                 Rebuild();
                 dirty = false;
+                visualDirty = false;
+            }
+            else if (visualDirty && tex != null)
+            {
+                // Solo cambió el COLOR (manchas de sangre): subimos la textura,
+                // sin recalcular el collider (que es lo caro).
+                tex.SetPixels32(pixels);
+                tex.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+                visualDirty = false;
+            }
+        }
+
+        private bool visualDirty;
+
+        /// <summary>
+        ///  Mancha la tierra en un punto del mundo (sangre, quemaduras...).
+        ///  Solo cambia el color de píxeles SÓLIDOS que ya existen: no añade
+        ///  ni quita terreno, así que no toca la física. Se pinta un pegote
+        ///  de <paramref name="radiusPx"/> píxeles mezclado con <paramref name="strength"/>.
+        /// </summary>
+        public static void StainAtWorld(Vector2 worldPos, Color32 color, int radiusPx = 1, float strength = 0.75f)
+        {
+            for (int i = 0; i < s_all.Count; i++)
+            {
+                var t = s_all[i];
+                if (t == null || t.pixels == null) continue;
+                Vector3 local = t.transform.InverseTransformPoint(worldPos);
+                int cx = Mathf.FloorToInt(local.x * t.pixelsPerUnit), cy = Mathf.FloorToInt(local.y * t.pixelsPerUnit);
+                for (int y = cy - radiusPx; y <= cy + radiusPx; y++)
+                    for (int x = cx - radiusPx; x <= cx + radiusPx; x++)
+                    {
+                        if (x < 0 || y < 0 || x >= t.textureWidth || y >= t.textureHeight) continue;
+                        if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > radiusPx * radiusPx + 1) continue;
+                        int idx = y * t.textureWidth + x;
+                        var c = t.pixels[idx];
+                        if (!IsSolidPixel(c)) continue;
+                        t.pixels[idx] = new Color32((byte)Mathf.Lerp(c.r, color.r, strength), (byte)Mathf.Lerp(c.g, color.g, strength),
+                                                   (byte)Mathf.Lerp(c.b, color.b, strength), c.a);
+                        t.visualDirty = true;
+                    }
             }
         }
 

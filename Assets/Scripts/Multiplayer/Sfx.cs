@@ -18,7 +18,7 @@ namespace Ratms.Networking
     /// </summary>
     public class Sfx : MonoBehaviour
     {
-        public enum Id { Explosion, BigExplosion, Shot, Whack, Swish, Launch, Throw, Splash, Teleport, Rope, Jump, TurnStart, Tick, Victory, Squeak }
+        public enum Id { Explosion, BigExplosion, Shot, Whack, Swish, Launch, Throw, Splash, Teleport, Rope, Jump, TurnStart, Tick, Victory, Squeak, Laugh, Splat, Ouch }
 
         private const int Rate = 44100;
         private static Sfx instance;
@@ -90,6 +90,12 @@ namespace Ratms.Networking
                 Id.Tick => Sine(0.04f, 1200f, 1100f, 0.35f),
                 Id.Victory => Arpeggio(new[] { 523f, 659f, 784f, 1047f }, 0.13f, 0.4f),
                 Id.Squeak => Sine(0.3f, 1100f, 380f, 0.4f, tremolo: 18f),
+                // Risa de rata: "ji-ji-ji-ji" agudo y descendente
+                Id.Laugh => Chain(new[] { 1500f, 1380f, 1260f, 1150f, 1050f }, 0.075f, 0.035f, 0.35f),
+                // Chof húmedo: ruido grave y corto + golpe
+                Id.Splat => Mix(Noise(0.28f, 14f, 0.8f, lowpass: 0.12f), Sine(0.12f, 120f, 50f, 0.6f)),
+                // Quejido corto al recibir daño
+                Id.Ouch => Sine(0.14f, 900f, 600f, 0.3f, tremolo: 25f),
                 _ => null,
             };
             if (d == null) return null;
@@ -192,6 +198,21 @@ namespace Ratms.Networking
             for (int k = 0; k < notes.Length; k++)
             {
                 var s = Sine(k == notes.Length - 1 ? 0.5f : step * 1.6f, notes[k], notes[k], gain);
+                int off = (int)(k * step * Rate);
+                for (int i = 0; i < s.Length && off + i < n; i++) d[off + i] += s[i];
+            }
+            return d;
+        }
+
+        /// <summary>Sílabas cortas seguidas (para la risa).</summary>
+        private static float[] Chain(float[] pitches, float syllable, float gap, float gain)
+        {
+            float step = syllable + gap;
+            int n = (int)((step * pitches.Length + 0.05f) * Rate);
+            var d = new float[n];
+            for (int k = 0; k < pitches.Length; k++)
+            {
+                var s = Sine(syllable, pitches[k] * 1.15f, pitches[k] * 0.85f, gain, tremolo: 45f);
                 int off = (int)(k * step * Rate);
                 for (int i = 0; i < s.Length && off + i < n; i++) d[off + i] += s[i];
             }

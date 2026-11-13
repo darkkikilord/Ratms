@@ -107,7 +107,31 @@ namespace Ratms.Networking
             // --- Fila 3: viento ----------------------------------------
             GUI.Label(new Rect(panel.x, panel.y + 102f, panel.width, 28f), WindText(tm.Wind.Value), windStyle);
 
+            // --- Debajo del panel: tu arma (solo en tu turno) ----------
+            if (myTurn)
+            {
+                var menu = LocalWeaponsMenu();
+                string weapon = menu != null ? WeaponsMenuUI.ShortName(menu.SelectedWeapon) : "?";
+                GUI.Label(new Rect(panel.x, panel.y + panelSize.y + 2f, panel.width, 24f),
+                          $"Arma: {weapon}   (1-5 o TAB)", windStyle);
+            }
+
             GUI.matrix = previous;
+        }
+
+        private WeaponsMenuUI cachedLocalMenu;
+
+        /// <summary>Menú de armas de MI rata (la que controlo).</summary>
+        private WeaponsMenuUI LocalWeaponsMenu()
+        {
+            if (cachedLocalMenu != null && cachedLocalMenu.IsOwner && cachedLocalMenu.isActiveAndEnabled) return cachedLocalMenu;
+            cachedLocalMenu = null;
+            foreach (var m in FindObjectsByType<WeaponsMenuUI>(FindObjectsSortMode.None))
+            {
+                var move = m.GetComponentInParent<NetworkPlayerMovement>();
+                if (m.IsOwner && (move == null || !move.IsTestDummy)) { cachedLocalMenu = m; break; }
+            }
+            return cachedLocalMenu;
         }
 
         /// <summary>

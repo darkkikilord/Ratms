@@ -74,6 +74,17 @@ namespace Ratms.Networking
             new WeaponEntry { id = WeaponId.Bat,      displayName = "Bate (ESPACIO = golpear)",   implemented = true,  shortcut = KeyCode.Alpha5 },
         };
 
+        /// <summary>Nombre corto del arma para el HUD.</summary>
+        public static string ShortName(WeaponId id) => id switch
+        {
+            WeaponId.Bazooka  => "Bazooka",
+            WeaponId.Grenade  => "Granada",
+            WeaponId.Dynamite => "Dinamita",
+            WeaponId.Shotgun  => "Escopeta",
+            WeaponId.Bat      => "Bate",
+            _                 => "Ninguna",
+        };
+
         /// <summary>Arma actualmente seleccionada (leído por NetworkBazooka y demás).</summary>
         public WeaponId SelectedWeapon => (WeaponId)SelectedIndexNet.Value;
         public bool IsBazookaEquipped => SelectedWeapon == WeaponId.Bazooka;

@@ -22,6 +22,10 @@ namespace Ratms.Networking
     ///
     ///  Va en la RAÍZ del prefab de la rata (junto a NetworkPlayerMovement).
     /// </summary>
+    // Orden 100: nuestro LateUpdate corre DESPUÉS del de NetworkPlayerMovement
+    // (que corrige giro y apuntado tras el Animator). Si no, leíamos la
+    // dirección del arma "a medio corregir" y el bate apuntaba al revés.
+    [DefaultExecutionOrder(100)]
     public class NetworkBat : NetworkBehaviour
     {
         [Header("Golpe")]
@@ -97,10 +101,9 @@ namespace Ratms.Networking
             // Pivot en el mango (izquierda): así rota desde la mano.
             var sprite = Sprite.Create(tex, new Rect(0, 0, W, H), new Vector2(0f, 0.5f), 64f);   // 24 px → 0.375 u
 
+            // SIN padre: vive en el mundo, así no hereda escalas ni volteos de
+            // la rata. Lo colocamos y giramos nosotros cada frame.
             var go = new GameObject("BatVisual");
-            go.transform.SetParent(transform, worldPositionStays: false);
-            float s = Mathf.Max(0.0001f, Mathf.Abs(transform.lossyScale.x));
-            go.transform.localScale = Vector3.one / s;
             visualRenderer = go.AddComponent<SpriteRenderer>();
             visualRenderer.sprite = sprite;
             visualRenderer.sortingOrder = 60;
@@ -108,8 +111,83 @@ namespace Ratms.Networking
             go.SetActive(false);
         }
 
+        // ==============================================================
+        // MIRA DEL BATE (solo la ve el dueño)
+        // ==============================================================
+        [Header("Mira")]
+        [Tooltip("Si ON, el dueño ve un círculo donde golpeará el bate y unos puntos hacia donde saldrá volando la víctima.")]
+        [SerializeField] private bool showAimIndicator = true;
+        [SerializeField] private Color aimColor = new Color(1f, 0.85f, 0.25f, 0.9f);
+
+        private Transform aimRing;
+        private readonly Transform[] aimDots = new Transform[4];
+
+        private void UpdateAimIndicator()
+        {
+            bool show = showAimIndicator && IsOwner && IsBatEquipped && movement != null && !movement.FiredThisTurn
+                        && (NetworkTurnManager.Instance == null || NetworkTurnManager.Instance.IsTurnOf(OwnerClientId));
+            if (aimRing == null)
+            {
+                if (!show) return;
+                aimRing = MakeMarker("BatAimRing", WeaponSprites.Ring(), hitRadius * 2f, 0.85f);
+                for (int i = 0; i < aimDots.Length; i++)
+                    aimDots[i] = MakeMarker($"BatAimDot{i}", WeaponSprites.Dot(), Mathf.Lerp(0.085f, 0.05f, i / 3f), 1f - i * 0.18f);
+            }
+            if (aimRing.gameObject.activeSelf != show)
+            {
+                aimRing.gameObject.SetActive(show);
+                foreach (var d in aimDots) d.gameObject.SetActive(show);
+            }
+            if (!show) return;
+
+            // Misma cuenta que el golpe del servidor (centro del cuerpo + alcance).
+            Vector2 dir = movement.WeaponForward;
+            Vector2 origin = ownHealth != null ? ownHealth.BodyCenter : (Vector2)transform.position;
+            Vector2 center = origin + dir * reach;
+            aimRing.position = new Vector3(center.x, center.y, transform.position.z);
+
+            // Puntos: hacia dónde saldrá volando la víctima (misma fórmula que el golpe).
+            Vector2 push = (dir + Vector2.up * upwardBias).normalized;
+            for (int i = 0; i < aimDots.Length; i++)
+            {
+                Vector2 p = center + push * (hitRadius + 0.12f + i * 0.14f);
+                aimDots[i].position = new Vector3(p.x, p.y, transform.position.z);
+            }
+        }
+
+        /// <summary>Crea un marcador en el mundo (sin padre: así no hereda escalas raras de la rata).</summary>
+        private Transform MakeMarker(string name, Sprite sprite, float worldSize, float alpha)
+        {
+            var go = new GameObject(name);
+            go.transform.localScale = Vector3.one * worldSize;
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = sprite;
+            var c = aimColor; c.a *= alpha;
+            sr.color = c;
+            sr.sortingOrder = 900;
+            return go.transform;
+        }
+
+        public override void OnDestroy()
+        {
+            if (aimRing != null) Destroy(aimRing.gameObject);
+            foreach (var d in aimDots) if (d != null) Destroy(d.gameObject);
+            if (visual != null) Destroy(visual.gameObject);
+            base.OnDestroy();
+        }
+
+        private void OnDisable()
+        {
+            // Rata muerta (se desactiva) → que no se quede nada flotando
+            // (el bate y la mira viven en el mundo, no cuelgan de la rata).
+            if (aimRing != null) aimRing.gameObject.SetActive(false);
+            foreach (var d in aimDots) if (d != null) d.gameObject.SetActive(false);
+            if (visual != null) visual.gameObject.SetActive(false);
+        }
+
         private void LateUpdate()
         {
+            UpdateAimIndicator();
             if (visual == null) return;
             bool show = IsBatEquipped || swingRoutine != null;
             if (visual.gameObject.activeSelf != show) visual.gameObject.SetActive(show);
@@ -119,8 +197,9 @@ namespace Ratms.Networking
             Vector2 fwd = movement.WeaponForward;
             bool right = fwd.x >= 0f;
             float angle = Mathf.Atan2(fwd.y, fwd.x) * Mathf.Rad2Deg + (right ? swingOffset : -swingOffset);
-            Vector2 body = ownHealth != null ? ownHealth.BodyCenter : (Vector2)transform.position;
-            visual.position = new Vector3(body.x + (right ? 0.06f : -0.06f), body.y - 0.02f, transform.position.z);
+            // El mango en la MANO de la rata (donde sujeta el bazooka).
+            Vector3 hand = movement.HandPosition;
+            visual.position = new Vector3(hand.x, hand.y, transform.position.z);
             visual.rotation = Quaternion.Euler(0f, 0f, angle);
             // Si mira a la izquierda, volteamos en Y para que el bate no quede "boca abajo".
             visualRenderer.flipY = !right;

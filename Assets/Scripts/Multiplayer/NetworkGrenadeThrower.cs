@@ -20,6 +20,9 @@ namespace Ratms.Networking
     ///     de la rata — solo uno se activa a la vez según el arma seleccionada).
     ///   • El mismo API: StartCharging / TickCharging / ReleaseShot / CancelCharging.
     /// </summary>
+    // Orden 100: el LateUpdate de la dinamita-en-la-mano corre DESPUÉS del de
+    // NetworkPlayerMovement (que coloca bien la mano tras el Animator).
+    [DefaultExecutionOrder(100)]
     public class NetworkGrenadeThrower : NetworkBehaviour
     {
         [Header("Referencias — lanzamiento")]
@@ -117,6 +120,54 @@ namespace Ratms.Networking
 
             // La trayectoria-preview solo la renderiza el dueño.
             if (IsOwner) UpdateTrajectoryPreview();
+        }
+
+        // ==============================================================
+        // DINAMITA EN LA MANO (visual, todos los clientes)
+        // ==============================================================
+        private Transform heldDynamite;
+        private NetworkPlayerMovement ownerMovement;
+
+        /// <summary>
+        ///  Con la dinamita equipada, la rata la SUJETA delante (inclinada hacia
+        ///  donde mira). Antes no se veía nada en la mano y no quedaba claro
+        ///  qué arma llevabas. La ven todos los jugadores.
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (ownerMovement == null) ownerMovement = GetComponentInParent<NetworkPlayerMovement>();
+            // Tras soltarla ya no la llevas en la mano (FiredThisTurn solo lo
+            // conoce el dueño; en los demás clientes se ve hasta el cambio de arma).
+            bool show = IsDynamiteEquipped && !(ownerMovement != null && ownerMovement.FiredThisTurn);
+            if (heldDynamite == null)
+            {
+                if (!show) return;
+                // SIN padre (vive en el mundo): no hereda escalas/volteos de la rata.
+                var go = new GameObject("HeldDynamite");
+                var sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = WeaponSprites.Dynamite();
+                sr.sortingOrder = 60;
+                heldDynamite = go.transform;
+            }
+            if (heldDynamite.gameObject.activeSelf != show) heldDynamite.gameObject.SetActive(show);
+            if (!show) return;
+
+            bool right = ownerMovement == null || ownerMovement.FacingRight;
+            // En la MANO (el mismo punto donde sujeta el bazooka), un poco inclinada.
+            Vector3 hand = ownerMovement != null ? ownerMovement.HandPosition : transform.position;
+            heldDynamite.position = new Vector3(hand.x, hand.y - 0.05f, transform.position.z);
+            heldDynamite.rotation = Quaternion.Euler(0f, 0f, right ? -20f : 20f);
+        }
+
+        private void OnDisable()
+        {
+            if (heldDynamite != null) heldDynamite.gameObject.SetActive(false);   // rata muerta
+        }
+
+        public override void OnDestroy()
+        {
+            if (heldDynamite != null) Destroy(heldDynamite.gameObject);
+            base.OnDestroy();
         }
 
         /// <summary>Enciende/apaga el sprite de la granada en la mano según arma equipada.</summary>

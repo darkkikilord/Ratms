@@ -49,6 +49,12 @@ namespace Ratms.Networking
         [Header("Asistencia de cuestas")]
         [Tooltip("Radio de redondeo de las esquinas del BoxCollider2D de la rata. Se aplica EN RUNTIME — no toca el prefab. Las esquinas redondeadas evitan que la rata se enganche en cada bumpcito del polígono procedural y la deja subir cuestas espinadas con suavidad. Valores típicos: 0.04-0.10. Si lo subes mucho, la rata 'flota' un pelín sobre el suelo. Si lo bajas a 0, recuperas el comportamiento original (con enganches).")]
         [SerializeField] private float colliderEdgeRadius = 0.06f;
+
+        [Tooltip("Cuánto BAJAMOS el collider (y el groundCheck) para que su fondo coincida con las PATAS del dibujo (u). " +
+                 "Medido con la prueba automática: el dibujo de la rata quedaba ~0.19 u por debajo del collider, así que las " +
+                 "patas se metían en la hierba y la rata parecía hundida. Se aplica en runtime; el prefab no se toca. 0 = sin ajuste.")]
+        [SerializeField] private float colliderDropToFeet = 0.19f;
+        private bool feetAligned;
         [SerializeField] private Transform groundCheck;
         [SerializeField] private float groundRadius = 0.15f;
         [SerializeField] private LayerMask groundMask;
@@ -172,6 +178,21 @@ namespace Ratms.Networking
         [Tooltip("Inclinación mínima de la normal del contacto para contar como 'suelo' (0 = pared vertical, 1 = suelo plano).")]
         [SerializeField] private float footNormalMinY = 0.45f;
 
+        [Header("Subir escalones")]
+        [Tooltip("Si ON, al andar contra un bordillo bajo (más bajo que stepHeight) la rata lo sube sola con un saltito, " +
+                 "en vez de quedarse empujando contra él. Ayuda mucho a salir de cráteres y a moverse por terreno roto.")]
+        [SerializeField] private bool stepAssist = true;
+
+        [Tooltip("Altura máxima (u) de escalón que se sube sola. La rata mide ~0.25 u.")]
+        [SerializeField] private float stepHeight = 0.2f;
+
+        [Tooltip("Velocidad vertical del saltito de escalón (u/s). Ojo: al no pulsar saltar se aplica la gravedad de 'salto corto' " +
+                 "(lowJumpMultiplier), así que 2.7 sube ~0.23 u.")]
+        [SerializeField] private float stepUpVelocity = 2.7f;
+
+        private float nextStepTime;
+        private readonly RaycastHit2D[] stepHits = new RaycastHit2D[6];
+
         private bool parked;
         private float defaultGravityScale = -1f;
         private readonly ContactPoint2D[] footContacts = new ContactPoint2D[8];
@@ -264,6 +285,17 @@ namespace Ratms.Networking
         /// <summary>Simula soltar ESPACIO este frame. Solo AutoPlayTest.</summary>
         public void TestReleaseFire() => testFireUp = true;
 
+        /// <summary>
+        ///  Olvida la altura máxima registrada para el daño por caída. Úsalo
+        ///  tras TELETRANSPORTAR la rata (si no, un teletransporte hacia abajo
+        ///  cuenta como una caída enorme). Solo AutoPlayTest.
+        /// </summary>
+        public void TestResetFallTracking()
+        {
+            peakYSinceLastGround = transform.position.y;
+            wasGroundedLastFrame = false;
+        }
+
         /// <summary>Fija el ángulo de apuntado (-90 abajo … +90 arriba). Solo AutoPlayTest.</summary>
         public void TestSetAim(float degrees)
         {
@@ -278,6 +310,14 @@ namespace Ratms.Networking
 
         /// <summary>Dirección del arma en el mundo (apuntado + lado al que mira).</summary>
         public Vector2 WeaponForward => GetWeaponForward();
+
+        /// <summary>
+        ///  Punto de la MANO en el mundo (donde la rata sujeta las armas: el
+        ///  weaponHolder). Léelo en un LateUpdate que corra DESPUÉS del de este
+        ///  script (ver [DefaultExecutionOrder] de las armas), porque aquí se
+        ///  corrige lo que el Animator pisa cada frame.
+        /// </summary>
+        public Vector3 HandPosition => weaponHolder != null ? weaponHolder.position : transform.position;
 
         /// <summary>true si ya has usado un arma en este turno (solo se puede una vez por turno).</summary>
         public bool FiredThisTurn => firedThisTurn;
@@ -401,6 +441,7 @@ namespace Ratms.Networking
             // Con edgeRadius > 0 las esquinas son curvas → la rata rueda
             // suavemente sobre los bumps, igual que un personaje de Worms.
             ApplyColliderEdgeRadius();
+            AlignColliderWithFeet();
 
             // SUAVIDAD: el dueño es quien simula la física de su rata.
             //  · Interpolate → Unity dibuja la rata entre dos pasos de física,
@@ -824,6 +865,11 @@ namespace Ratms.Networking
         {
             if (rb == null) return;
 
+            // RED DE SEGURIDAD: el terreno es de bordes (EdgeCollider2D), que no
+            // tienen "dentro". Si por lo que sea el cuerpo acaba DENTRO de la
+            // tierra, nada lo empujaría fuera y caería a través del mapa.
+            if (IsOwner) UnstuckFromTerrain();
+
             // APARCADO en cuestas (solo el dueño simula su física).
             if (IsOwner)
             {
@@ -885,6 +931,8 @@ namespace Ratms.Networking
             float newVx = Mathf.MoveTowards(rb.linearVelocity.x, targetVx, accel * Time.fixedDeltaTime);
             rb.linearVelocity = new Vector2(newVx, rb.linearVelocity.y);
 
+            if (stepAssist && Mathf.Abs(inputX) > 0.01f) TryStepUp(Mathf.Sign(inputX));
+
             // ==========================================================
             //  ASYMMETRIC GRAVITY — hace el salto MUCHO más satisfactorio
             //  · Cayendo → aplicamos gravedad extra → cae rápido, no flota
@@ -904,6 +952,25 @@ namespace Ratms.Networking
                 vel.y += extraGravity * (lowJumpMultiplier - 1f) * Time.fixedDeltaTime;
             }
             rb.linearVelocity = vel;
+        }
+
+        /// <summary>
+        ///  Si el CENTRO del cuerpo está dentro de tierra sólida, sube la rata
+        ///  hasta el primer hueco libre (máx. 1.5 u) y la para. Lo comprobamos
+        ///  cada paso de física: es solo mirar un píxel.
+        /// </summary>
+        private void UnstuckFromTerrain()
+        {
+            var col = GetComponent<Collider2D>();
+            if (col == null) return;
+            Vector2 center = col.bounds.center;
+            float? up = Ratms.World.DestructibleTerrain.EscapeUpDistance(center, 1.5f);
+            if (up == null) return;
+
+            float lift = up.Value + col.bounds.extents.y + 0.03f;
+            rb.position += Vector2.up * lift;
+            rb.linearVelocity = Vector2.zero;
+            Debug.LogWarning($"[NetworkPlayerMovement] {name} estaba DENTRO del terreno en ({center.x:F2},{center.y:F2}) → la saco {lift:F2} u hacia arriba.");
         }
 
         /// <summary>
@@ -944,6 +1011,49 @@ namespace Ratms.Networking
                 parked = false;
                 rb.gravityScale = defaultGravityScale;
             }
+        }
+
+        /// <summary>
+        ///  SUBIR ESCALONES: si al andar hay una pared justo delante de los
+        ///  PIES pero no a la altura de un escalón, es un bordillo bajo → damos
+        ///  un saltito vertical para subirlo. Dos rayos cortos hacia delante:
+        ///  uno a ras de suelo y otro a <see cref="stepHeight"/> por encima.
+        /// </summary>
+        private void TryStepUp(float dir)
+        {
+            if (Time.time < nextStepTime) return;
+            if (rb.linearVelocity.y > 0.5f) return;            // ya está subiendo/saltando
+            if (!HasFootContact()) return;                      // solo apoyada en el suelo
+
+            var col = GetComponent<Collider2D>();
+            if (col == null) return;
+            Bounds b = col.bounds;
+            float frontX = dir > 0f ? b.max.x : b.min.x;
+            const float probe = 0.07f;
+
+            bool lowBlocked = WallAhead(new Vector2(frontX - dir * 0.01f, b.min.y + 0.04f), dir, probe);
+            if (!lowBlocked) return;
+            bool highBlocked = WallAhead(new Vector2(frontX - dir * 0.01f, b.min.y + stepHeight), dir, probe);
+            if (highBlocked) return;                            // es una pared de verdad, no un escalón
+
+            rb.linearVelocity = new Vector2(rb.linearVelocity.x, stepUpVelocity);
+            nextStepTime = Time.time + 0.18f;
+        }
+
+        /// <summary>¿Hay una superficie casi vertical (no una cuesta suave) delante, que no sea de esta rata?</summary>
+        private bool WallAhead(Vector2 origin, float dir, float dist)
+        {
+#pragma warning disable CS0618
+            int n = Physics2D.RaycastNonAlloc(origin, new Vector2(dir, 0f), stepHits, dist);
+#pragma warning restore CS0618
+            for (int i = 0; i < n; i++)
+            {
+                var c = stepHits[i].collider;
+                if (c == null || c.isTrigger) continue;
+                if (c.transform == transform || c.transform.IsChildOf(transform)) continue;
+                if (Mathf.Abs(stepHits[i].normal.x) > 0.6f) return true;   // pared/escalón, no rampa
+            }
+            return false;
         }
 
         /// <summary>¿Está tocando físicamente algo que hace de suelo (normal hacia arriba)?</summary>
@@ -1212,6 +1322,31 @@ namespace Ratms.Networking
             newSize.y = Mathf.Max(0.05f, newSize.y);
             box.size = newSize;
             box.edgeRadius = r;
+        }
+
+        /// <summary>
+        ///  Baja el collider (y el groundCheck) <see cref="colliderDropToFeet"/>
+        ///  para que la rata se APOYE con las patas del dibujo y no con un
+        ///  punto más alto. Solo una vez por rata.
+        /// </summary>
+        private void AlignColliderWithFeet()
+        {
+            if (feetAligned || Mathf.Abs(colliderDropToFeet) < 0.0001f) return;
+            var box = GetComponent<BoxCollider2D>();
+            if (box == null) return;
+
+            float sy = Mathf.Max(0.0001f, Mathf.Abs(transform.lossyScale.y));
+            box.offset -= new Vector2(0f, colliderDropToFeet / sy);
+
+            if (groundCheck == null)
+            {
+                var found = transform.Find("groundcheck") ?? transform.Find("GroundCheck") ?? transform.Find("groundCheck");
+                if (found != null) groundCheck = found;
+            }
+            if (groundCheck != null)
+                groundCheck.position -= new Vector3(0f, colliderDropToFeet, 0f);
+
+            feetAligned = true;
         }
 
         // ==================================================================

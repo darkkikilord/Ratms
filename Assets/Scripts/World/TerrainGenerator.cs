@@ -182,6 +182,20 @@ namespace Ratms.World
         // ============================================================
         //  ISLAS FLOTANTES
         // ============================================================
+        [Header("Decoración (TerrainDecorator)")]
+        [Tooltip("Si ON, se pintan detalles: hierbajos, flores, setas, raíces, huesos, quesos (pradera) o " +
+                 "latas, botellas, tuberías y ladrillos (alcantarilla). La decoración de superficie no tiene física.")]
+        [SerializeField] private bool decorate = true;
+
+        [Tooltip("Cantidad de decoración (1 = normal, 0.5 = la mitad, 2 = el doble).")]
+        [SerializeField, Range(0f, 3f)] private float decorationDensity = 1f;
+
+        [Tooltip("Cuánto se oscurece la tierra con la profundidad (0 = nada, 0.35 = bastante). Da sensación de volumen.")]
+        [SerializeField, Range(0f, 0.7f)] private float depthDarkening = 0.35f;
+
+        [Tooltip("Profundidad (px bajo la superficie) a la que el oscurecimiento llega al máximo.")]
+        [SerializeField] private int depthDarkeningRangePx = 420;
+
         [Header("Islas flotantes")]
         [Tooltip("Cuántas islas flotantes intentamos colocar en el cielo. " +
                  "OJO: ahora mismo PUESTO A 0 por defecto — Unity Sprite.Tight y nuestro skyline fallback no las soportan bien y crean colliders raros (paredes invisibles bajo ellas). " +
@@ -496,7 +510,16 @@ namespace Ratms.World
                     }
                     else
                     {
-                        pixels[idx] = DirtPixel(x, y, offGrainX, offGrainY);
+                        Color32 dirt = DirtPixel(x, y, offGrainX, offGrainY);
+                        // PROFUNDIDAD: cuanto más abajo, más oscura la tierra
+                        // (como si llegase menos luz). Suave y progresivo.
+                        if (depthDarkening > 0f)
+                        {
+                            float t = Mathf.Clamp01((distToSurface - grassBandPx) / (float)Mathf.Max(1, depthDarkeningRangePx));
+                            float k = 1f - depthDarkening * t * (2f - t);   // ease-out
+                            dirt = new Color32((byte)(dirt.r * k), (byte)(dirt.g * k), (byte)(dirt.b * k), dirt.a);
+                        }
+                        pixels[idx] = dirt;
                     }
                 }
             }
@@ -527,6 +550,21 @@ namespace Ratms.World
                 // spawn manager pueda usarla como punto de aparición.
                 int topPy = iy + Mathf.RoundToInt(ry) + 2;   // +2 = margen sobre la hierba
                 lastIslandTops.Add(new Vector2Int(ix, topPy));
+            }
+
+            // --- 3.5) Decoración (flores, huesos, tuberías...) ---
+            if (decorate)
+            {
+                var bm = BiomeManager.Instance;
+                TerrainDecorator.Decorate(pixels, width, height, heightLine, seed, new TerrainDecorator.Settings
+                {
+                    biome = bm != null && bm.Current != null ? bm.Current.type : BiomeType.Meadow,
+                    grass = grassColor,
+                    grassOutline = grassOutlineColor,
+                    dirtDark = dirtColorDark,
+                    grassBandPx = grassBandPx,
+                    density = decorationDensity,
+                });
             }
 
             // --- 4) Volcar al terreno ---
@@ -900,15 +938,15 @@ namespace Ratms.World
                 for (int y = GROUND_DEPTH_PX; y < maxY; y++)
                 {
                     // Este píxel debe ser AIRE
-                    if (pixels[y * width + x].a != 0) continue;
+                    if (DestructibleTerrain.IsSolidPixel(pixels[y * width + x])) continue;
                     // El píxel de debajo debe ser SÓLIDO
-                    if (pixels[(y - 1) * width + x].a == 0) continue;
+                    if (!DestructibleTerrain.IsSolidPixel(pixels[(y - 1) * width + x])) continue;
                     // Espacio libre arriba (para el cuerpo de la rata)
                     bool hasHeadroom = true;
                     for (int dy = 1; dy < RAT_HEIGHT_PX; dy++)
                     {
                         if (y + dy >= height) { hasHeadroom = false; break; }
-                        if (pixels[(y + dy) * width + x].a != 0) { hasHeadroom = false; break; }
+                        if (DestructibleTerrain.IsSolidPixel(pixels[(y + dy) * width + x])) { hasHeadroom = false; break; }
                     }
                     if (!hasHeadroom) continue;
                     // Suelo sólido bajo los pies (para no caer inmediatamente)
@@ -916,7 +954,7 @@ namespace Ratms.World
                     for (int dy = 1; dy <= GROUND_DEPTH_PX; dy++)
                     {
                         if (y - dy < 0) { hasGround = false; break; }
-                        if (pixels[(y - dy) * width + x].a == 0) { hasGround = false; break; }
+                        if (!DestructibleTerrain.IsSolidPixel(pixels[(y - dy) * width + x])) { hasGround = false; break; }
                     }
                     if (!hasGround) continue;
 

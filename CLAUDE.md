@@ -26,7 +26,11 @@ El usuario habla español: responde, comenta el código y escribe los commits en
 - La física de la rata la mueve su **Owner**; el knockback llega por `ClientRpc` y solo lo aplica el Owner.
 - **Terreno determinista**: el servidor elige semilla → todos generan el mismo mapa. Los agujeros se replican con `NetworkDestructibleTerrain.CarveClientRpc` (cada peer carvea localmente).
 - Popups y etiquetas de vida son locales, se crean por código (sin prefab): `WorldDamagePopup`, `RatHealthLabel`.
-- ⚠ **El pivote del prefab de la rata está ~0.8 u POR DEBAJO del cuerpo** (dentro del suelo). Para distancias de explosión, golpes, popups o "¿toca el agua?" usa `NetworkHealth.BodyCenter`, nunca `transform.position`.
+- ⚠ **El pivote del prefab de la rata está ~0.8 u POR DEBAJO del cuerpo** (dentro del suelo). Para distancias de explosión, golpes, popups o "¿toca el agua?" usa `NetworkHealth.BodyCenter`, nunca `transform.position`. Para colocar cosas en la mano usa `NetworkPlayerMovement.HandPosition` desde un `LateUpdate` con `[DefaultExecutionOrder(100)]` (el Animator pisa el weaponHolder y el movimiento lo corrige en su LateUpdate).
+- El dibujo de la rata quedaba ~0.19 u por debajo de su collider (patas metidas en la hierba): `colliderDropToFeet` baja el collider y el groundCheck en runtime.
+- **Collider del terreno = contornos exactos** (`PixelContours`, marching squares → un `EdgeCollider2D` por bucle, ~40 ms por explosión en 2048×1024). Los bordes NO tienen "dentro": algo que acabe dentro de la tierra caería a través del mapa → `NetworkPlayerMovement.UnstuckFromTerrain` saca a la rata hacia arriba. Proyectiles en colisión continua. El sistema antiguo sigue como `TerrainColliderMode.LegacySkyline`.
+- **Píxeles de decoración**: alfa 254 (`DestructibleTerrain.DecorAlpha`) = se ven pero NO son sólidos. Usa siempre `DestructibleTerrain.IsSolidPixel(c)` en vez de `c.a > 0`.
+- Cráteres: cuenco (`craterDepthRatio` 0.65) + embudo a 45° (`craterFunnelHeight`) para que nunca queden paredes en voladizo, borde chamuscado y limpieza de decoración flotante.
 - La rata se "aparca" quieta en el suelo (gravedad 0) para no resbalar en cuestas (`holdOnSlopes` en `NetworkPlayerMovement`). Cualquier empujón debe pasar por `BeginKnockbackFlight` (ya lo hace `ApplyKnockbackClientRpc`) para soltarla.
 - **Un arma por turno** (`firedThisTurn`): tras usarla puedes moverte (huir) pero no volver a disparar.
 - Para añadir componentes a un prefab, mejor un método en `Assets/Editor/RatmsPrefabSetup.cs` ejecutado en batchmode (`-executeMethod`) que editar el YAML a mano (el prefab de la rata es una variante con `m_AddedComponents`).
@@ -51,7 +55,7 @@ Tipos de daño: `DamageType` (Generic, Explosion, Fire*, Water, Fall, Melee). *R
 
 ## Prueba automática (ver el juego sin jugar)
 `powershell -ExecutionPolicy Bypass -File tools\autotest.ps1` (Unity cerrado; `-SkipBuild` reutiliza la build, `-Biome Sewer` fuerza bioma).
-Compila la build y el juego se juega solo (~90 s, host local sin internet): mide andar/saltar/cuestas con números, comprueba el viento con misiles de prueba, dispara bazooka y granada, y prueba dinamita, bate y agua contra una **rata diana** (`NetworkPlayerMovement.SpawnNextAsTestDummy`: no cuenta para turnos ni victoria). Deja ~20 capturas + `informe.txt` (línea de tiempo, ✓/⚠, errores y warnings) en `AutoTest\Run_<fecha>\`. Mira las PNG con Read. Al añadir armas o mecánicas, amplía el guion en `Assets/Scripts/Testing/AutoPlayTest.cs` (hay ganchos `TestInputX`, `TestPressJump`, `TestPressFire`, `TestSetAim` en la rata).
+Compila la build y el juego se juega solo (~90 s, host local sin internet): mide andar/saltar/cuestas con números, saca primeros planos con las líneas de los colliders dibujadas (`*_colliders.png`: terreno magenta, rata cian), prueba a salir de cráteres, comprueba el viento con misiles de prueba, dispara bazooka y granada, y prueba dinamita, bate y agua contra una **rata diana** (`NetworkPlayerMovement.SpawnNextAsTestDummy`: no cuenta para turnos ni victoria). Deja ~20 capturas + `informe.txt` (línea de tiempo, ✓/⚠, errores y warnings) en `AutoTest\Run_<fecha>\`. Mira las PNG con Read. Al añadir armas o mecánicas, amplía el guion en `Assets/Scripts/Testing/AutoPlayTest.cs` (hay ganchos `TestInputX`, `TestPressJump`, `TestPressFire`, `TestSetAim` en la rata).
 Resultado de referencia (13 nov 2026): `Resultado: OK`, 0 errores, 0 warnings.
 
 ## Git
@@ -59,7 +63,7 @@ Resultado de referencia (13 nov 2026): `Resultado: OK`, 0 errores, 0 warnings.
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilar sin abrir Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.11.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.12.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Estado y roadmap (nov 2026)
@@ -73,6 +77,8 @@ Pendiente (detalle en `create_roadmap_issues.sh`; aún no se han creado las issu
 - Armas: escopeta, teletransporte, cuerda ninja.
 - Cajas de suministros, daño por fuego.
 - El spawn aleatorio a veces pone ratas junto al borde del mapa (muy cerca del agua).
+- Salir de cráteres que se juntan con cuevas profundas a veces no es posible solo saltando (depende del mapa).
+- Reconstruir el collider tarda ~40 ms por explosión: si se nota un tirón, limitar el recálculo a la zona del cráter.
 
 Problemas conocidos menores:
 - `EditorBuildSettings` lista `Assets/Scenes/Test_Network.unity`, que ya no existe.

@@ -100,6 +100,32 @@ namespace Ratms.Testing
             // no nos quedamos abiertos para siempre.
             if (!finished && Time.realtimeSinceStartup > maxSeconds)
                 Finish($"TIMEOUT: la prueba superó {maxSeconds}s");
+
+            WatchForFallThrough();
+        }
+
+        private readonly HashSet<int> reportedFalls = new();
+
+        /// <summary>
+        ///  Vigilante: si una rata viva aparece POR DEBAJO del fondo del
+        ///  terreno, es que lo ha atravesado (un fallo de colisión).
+        /// </summary>
+        private void WatchForFallThrough()
+        {
+            if (finished || Time.frameCount % 10 != 0) return;
+            var terrain = FindFirstObjectByType<DestructibleTerrain>();
+            if (terrain == null) return;
+            float bottom = terrain.transform.position.y;
+            foreach (var h in FindObjectsByType<NetworkHealth>(FindObjectsSortMode.None))
+            {
+                if (h.IsDead.Value || reportedFalls.Contains(h.GetInstanceID())) continue;
+                Vector2 b = h.BodyCenter;
+                if (b.y < bottom - 0.5f)
+                {
+                    reportedFalls.Add(h.GetInstanceID());
+                    Problem($"{h.name} ha ATRAVESADO el terreno: está en ({b.x:0.0},{b.y:0.0}), por debajo del fondo ({bottom:0.0})");
+                }
+            }
         }
 
         private void OnDestroy() => Application.logMessageReceived -= OnLog;
@@ -262,6 +288,7 @@ namespace Ratms.Testing
             weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Dynamite;
             yield return null;
             yield return null;
+            yield return CloseupWithColliders(rat, "09b_dinamita_en_mano", size: 1.4f, overlay: false);
             rat.TestPressFire();
             yield return new WaitForSeconds(0.3f);
 
@@ -351,6 +378,7 @@ namespace Ratms.Testing
             rat.TestSetAim(20f);
             yield return new WaitForSeconds(0.3f);
             yield return Capture("14_bate_listo");
+            yield return CloseupWithColliders(rat, "14b_bate_mira", size: 1.4f, overlay: false);
 
             Vector2 dummyStart = dummy.transform.position;
             int hpBefore = dHealth.CurrentHealth.Value;
@@ -447,6 +475,8 @@ namespace Ratms.Testing
             bool endedBefore = tm != null && tm.GameEnded.Value;
             var dummy = SpawnDummy(drop);
             if (dummy == null) yield break;
+            // Esta diana nace bajo el mapa A PROPÓSITO: que el vigilante no la cuente.
+            reportedFalls.Add(dummy.GetComponent<NetworkHealth>().GetInstanceID());
             var h = dummy.GetComponent<NetworkHealth>();
             yield return WaitFor(() => h.IsDead.Value, 3f, "que la diana muera en el agua", fatal: false);
             bool ended = !endedBefore && tm != null && tm.GameEnded.Value;
@@ -545,6 +575,16 @@ namespace Ratms.Testing
 
             // 4) Cuesta: ¿resbala estando quieta? ¿puede subirla?
             yield return SlopeCheck(rat, rb);
+
+            // 5) Primer plano de los pies + líneas de colliders
+            yield return RefreshTurn();
+            yield return PlaceOnFlatSpot(rat, 0.4f, 0.6f, "primer plano");
+            yield return CloseupWithColliders(rat, "02e_pies");
+            yield return CloseupWithColliders(rat, "02h_decoracion", size: 3f, overlay: false);
+
+            // 6) Cráter: ¿se puede salir de un agujero de explosión?
+            yield return CraterEscapeTest(rat, rb, 0.30f, 0.45f, depthBelowSurface: 0.2f, radius: 2.5f, label: "cráter de bazooka");
+            yield return CraterEscapeTest(rat, rb, 0.48f, 0.62f, depthBelowSurface: 1.2f, radius: 2.4f, label: "explosión enterrada");
 
             rat.TestInputX = null;
             rat.TestJumpHeld = false;
@@ -665,6 +705,161 @@ namespace Ratms.Testing
             yield return Walk(rat, rb, uphill, 1.2f, $"cuesta arriba {Mathf.Abs(bestAngle):0}°");
         }
 
+        // =========================================================
+        // COLLIDERS: primer plano y cráteres
+        // =========================================================
+        /// <summary>
+        ///  Acerca mucho la cámara a la rata y saca dos fotos: una normal y
+        ///  otra con las LÍNEAS DE LOS COLLIDERS dibujadas encima (terreno en
+        ///  magenta, rata en cian). Así se ve si los pies pisan la hierba de
+        ///  verdad o el collider del suelo va por otro sitio.
+        /// </summary>
+        private IEnumerator CloseupWithColliders(NetworkPlayerMovement rat, string name, float size = 1.1f, bool overlay = true)
+        {
+            var cam = Camera.main;
+            var follow = CameraFollow.Instance;
+            if (cam == null || rat == null) yield break;
+
+            // Paramos la cámara normal (sigue al pivote de la rata, que está
+            // bajo el suelo) y la centramos nosotros en el CUERPO.
+            bool followWasOn = follow != null && follow.enabled;
+            if (follow != null) follow.enabled = false;
+            float prevSize = cam.orthographicSize;
+            Vector3 prevPos = cam.transform.position;
+            Vector2 body = rat.GetComponent<NetworkHealth>().BodyCenter;
+            cam.transform.position = new Vector3(body.x, body.y + size * 0.15f, prevPos.z);
+            cam.orthographicSize = size;
+            yield return null;
+            yield return new WaitForSeconds(0.2f);
+            yield return Capture(name + "_cerca");
+
+            if (overlay)
+            {
+                var ov = DrawColliderOverlay(body, size * 2.5f);
+                yield return null;
+                yield return Capture(name + "_colliders");
+                Destroy(ov);
+            }
+
+            cam.orthographicSize = prevSize;
+            cam.transform.position = prevPos;
+            if (follow != null) follow.enabled = followWasOn;
+            yield return new WaitForSeconds(0.2f);
+        }
+
+        /// <summary>Dibuja con LineRenderers el contorno de todos los colliders cerca de un punto.</summary>
+        private static GameObject DrawColliderOverlay(Vector2 around, float radius)
+        {
+            var root = new GameObject("[ColliderOverlay]");
+            var mat = new Material(Shader.Find("Sprites/Default"));
+            var seen = new HashSet<Collider2D>();
+            foreach (var c in Physics2D.OverlapCircleAll(around, radius, ~0))
+            {
+                if (c == null || !seen.Add(c)) continue;
+                bool isRat = c.GetComponentInParent<NetworkHealth>() != null;
+                Color color = isRat ? Color.cyan : Color.magenta;
+                foreach (var loop in ColliderLoops(c))
+                {
+                    var go = new GameObject("loop");
+                    go.transform.SetParent(root.transform, false);
+                    var lr = go.AddComponent<LineRenderer>();
+                    lr.material = mat;
+                    lr.startColor = lr.endColor = color;
+                    lr.startWidth = lr.endWidth = 0.012f;
+                    lr.sortingOrder = 5000;
+                    lr.useWorldSpace = true;
+                    lr.loop = loop.closed;
+                    lr.positionCount = loop.points.Length;
+                    for (int i = 0; i < loop.points.Length; i++)
+                        lr.SetPosition(i, new Vector3(loop.points[i].x, loop.points[i].y, -1f));
+                }
+            }
+            return root;
+        }
+
+        private static IEnumerable<(Vector2[] points, bool closed)> ColliderLoops(Collider2D c)
+        {
+            switch (c)
+            {
+                case PolygonCollider2D p:
+                    for (int i = 0; i < p.pathCount; i++)
+                        yield return (p.GetPath(i).Select(v => (Vector2)p.transform.TransformPoint(v + p.offset)).ToArray(), true);
+                    break;
+                case EdgeCollider2D e:
+                    yield return (e.points.Select(v => (Vector2)e.transform.TransformPoint(v + e.offset)).ToArray(), false);
+                    break;
+                default:
+                {
+                    var bb = c.bounds;
+                    yield return (new[] { new Vector2(bb.min.x, bb.min.y), new Vector2(bb.max.x, bb.min.y),
+                                          new Vector2(bb.max.x, bb.max.y), new Vector2(bb.min.x, bb.max.y) }, true);
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        ///  Abre un agujero (como una explosión) en una zona llana, mete la
+        ///  rata en el fondo e intenta SALIR corriendo y saltando hacia un
+        ///  lado durante 5 s. Mide si lo consigue y cuánto tarda.
+        /// </summary>
+        private IEnumerator CraterEscapeTest(NetworkPlayerMovement rat, Rigidbody2D rb, float fromFrac, float toFrac,
+                                             float depthBelowSurface, float radius, string label)
+        {
+            if (finished || rat == null || NetworkDestructibleTerrain.Instance == null) yield break;
+            var gen = FindFirstObjectByType<TerrainGenerator>();
+            if (gen == null) yield break;
+
+            yield return RefreshTurn();
+            yield return PlaceOnFlatSpot(rat, fromFrac, toFrac, label);
+            Vector2 body = rat.GetComponent<NetworkHealth>().BodyCenter;
+            var surf = gen.GetSurfaceWorldPos(body.x);
+            float surfaceY = surf.HasValue ? surf.Value.y : body.y;
+            Vector2 blast = new Vector2(body.x, surfaceY - depthBelowSurface);
+
+            // Apartamos la rata (al CIELO, lejos de cualquier tierra), abrimos
+            // el agujero y la soltamos en el fondo.
+            rb.position = new Vector2(body.x, rb.position.y + 12f);
+            rb.linearVelocity = Vector2.zero;
+            NetworkDestructibleTerrain.Instance.ServerCarveAt(blast, radius);
+            yield return new WaitForSeconds(0.4f);
+            Vector2 pivotOffset = (Vector2)rat.transform.position - rat.GetComponent<NetworkHealth>().BodyCenter;
+            rb.position = new Vector2(blast.x, blast.y - radius * 0.55f) + pivotOffset;
+            rb.linearVelocity = Vector2.zero;
+            yield return new WaitForFixedUpdate();
+            rat.TestResetFallTracking();
+            yield return new WaitForSeconds(0.8f);
+            yield return CloseupWithColliders(rat, $"02g_{(label.Contains("enterrada") ? "enterrada" : "crater")}", size: 2.2f);
+
+            Vector2 start = rat.GetComponent<NetworkHealth>().BodyCenter;
+            float t = 0f, nextJump = 0f;
+            bool escaped = false;
+            // Como un jugador: prueba a salir por la derecha y, si no puede,
+            // por la izquierda (un lado puede dar a una pared o a una cueva).
+            rat.TestInputX = 1f;
+            while (t < 5f && !finished)
+            {
+                t += Time.deltaTime;
+                if (t > 2.5f && rat.TestInputX > 0f) rat.TestInputX = -1f;
+                if (t >= nextJump) { rat.TestPressJump(); rat.TestJumpHeld = true; nextJump = t + 0.55f; }
+                if (t >= nextJump - 0.25f) rat.TestJumpHeld = false;
+                Vector2 now = rat.GetComponent<NetworkHealth>().BodyCenter;
+                // Fuera = de vuelta a la altura del suelo y más allá del borde
+                // (el embudo hace la boca más ancha que el radio).
+                var surfHere = gen.GetSurfaceWorldPos(now.x);
+                float groundHere = surfHere.HasValue ? surfHere.Value.y : surfaceY;
+                if (Mathf.Abs(now.x - blast.x) > radius * 1.25f && now.y > groundHere - 0.25f) { escaped = true; break; }
+                yield return null;
+            }
+            rat.TestInputX = 0f;
+            rat.TestJumpHeld = false;
+            Vector2 end = rat.GetComponent<NetworkHealth>().BodyCenter;
+            Log($"Salir del {label} (radio {radius}, centro {depthBelowSurface} u bajo el suelo) → " +
+                (escaped ? $"✓ fuera en {t:0.0}s" : $"⚠ NO sale en 5s (se quedó en {end.x - blast.x:+0.00;-0.00},{end.y - surfaceY:+0.00;-0.00} respecto al borde)"));
+            yield return null;
+            rat.TestInputX = null;
+        }
+
         /// <summary>
         ///  Coloca la rata en la zona MÁS PLANA del tramo [desde, hasta] del
         ///  mapa (fracciones del ancho). Así cada bloque de la prueba empieza
@@ -699,6 +894,8 @@ namespace Ratms.Testing
             var rb = rat.GetComponent<Rigidbody2D>();
             rb.position = new Vector2(surf.x, surf.y + 1.0f);
             rb.linearVelocity = Vector2.zero;
+            yield return new WaitForFixedUpdate();
+            rat.TestResetFallTracking();
             yield return new WaitForSeconds(0.3f);
             yield return Settle(rb);
             Log($"({label}: rata colocada en zona llana x={bestX:0.0}, irregularidad {bestScore:0.00})");
@@ -714,6 +911,19 @@ namespace Ratms.Testing
                 still = rb.linearVelocity.sqrMagnitude < 0.01f ? still + Time.deltaTime : 0f;
                 yield return null;
             }
+        }
+
+        /// <summary>
+        ///  Espera a tener el turno y lo RELLENA a tope (somos el servidor).
+        ///  Para bloques largos de movimiento que si no se quedan sin tiempo.
+        /// </summary>
+        private IEnumerator RefreshTurn()
+        {
+            var nm = NetworkManager.Singleton;
+            yield return WaitMyTurn(nm);
+            var tm = NetworkTurnManager.Instance;
+            if (tm != null && tm.IsTurnOf(nm.LocalClientId))
+                tm.TurnTimeRemaining.Value = tm.TurnDuration;
         }
 
         private IEnumerator WaitMyTurn(NetworkManager nm)

@@ -37,9 +37,11 @@ namespace Ratms.World
                  "las nubes/siluetas moviéndose detrás de las cuevas).")]
         [Range(0f, 1f)] [SerializeField] private float alpha = 1f;
 
-        [Tooltip("Cuántos píxeles EXTRA por debajo/encima añadimos al perfil " +
-                 "para asegurar que el backdrop tapa bien al terreno.")]
-        [SerializeField] private int extraPixelsMargin = 3;
+        [Tooltip("Cuántos píxeles POR DEBAJO de la superficie empieza el fondo oscuro. " +
+                 "Antes sobresalía 3 px POR ENCIMA de la hierba: se veía una línea negra en todo el borde del " +
+                 "mapa, justo a la altura de los pies de la rata, y parecía que estaba hundida en el suelo. " +
+                 "Con un valor positivo el fondo queda siempre escondido detrás del terreno.")]
+        [SerializeField] private int insetBelowSurfacePx = 4;
 
         [Header("Debug")]
         [SerializeField] private bool debugLog = true;
@@ -114,7 +116,7 @@ namespace Ratms.World
             var pixels = new Color32[w * h];
             for (int x = 0; x < w; x++)
             {
-                int surfaceY = heightLine[x] + extraPixelsMargin;
+                int surfaceY = heightLine[x] - Mathf.Max(0, insetBelowSurfacePx);
                 for (int y = 0; y < h; y++)
                 {
                     if (y < surfaceY)

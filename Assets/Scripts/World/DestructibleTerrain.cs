@@ -75,7 +75,21 @@ namespace Ratms.World
         [Tooltip("Dibuja el bounding box del terreno en la vista de Escena.")]
         [SerializeField] private bool drawGizmos = true;
 
-        [Header("Collider — modo")]
+        [Header("Collider — sistema")]
+        [Tooltip("PixelContours (recomendado): el collider sigue EXACTAMENTE el dibujo, con cuevas, cráteres e islas. " +
+                 "LegacySkyline: el sistema antiguo (solo la línea superior suavizada + cuevas cerradas). Déjalo por si hiciera falta volver atrás.")]
+        [SerializeField] private TerrainColliderMode colliderMode = TerrainColliderMode.PixelContours;
+
+        [Tooltip("Cuánto puede desviarse el collider del dibujo al simplificarlo (píxeles). 0.8 = casi exacto; más alto = menos vértices.")]
+        [SerializeField, Range(0.3f, 3f)] private float contourSimplifyPx = 0.8f;
+
+        [Tooltip("Bucles de contorno con menos puntos que esto (motas sueltas de tierra) no tienen collider.")]
+        [SerializeField] private int minContourPoints = 12;
+
+        [Tooltip("Grosor de los bordes físicos (u). Un poco de grosor evita que algo rápido los atraviese.")]
+        [SerializeField] private float contourEdgeRadius = 0.015f;
+
+        [Header("Collider — modo (sistema antiguo)")]
         [Tooltip("Si ON, ignora la magia automática de Sprite.Tight de Unity y SIEMPRE construye el collider con nuestro skyline (de abajo a arriba, ignorando islas flotantes). " +
                  "Recomendado quedarse en ON: Sprite.Tight ha demostrado producir colliders inconsistentes en runtime con texturas grandes (a veces shapeCount=0, a veces shapes solapados). " +
                  "Apágalo solo si quieres recuperar el comportamiento por defecto y depurar.")]
@@ -109,6 +123,57 @@ namespace Ratms.World
 
         /// <summary>Todos los terrenos activos en la escena — para CarveAllAt.</summary>
         private static readonly List<DestructibleTerrain> s_all = new();
+
+        // Colliders de borde del sistema PixelContours (uno por bucle), en un hijo.
+        private GameObject edgesHost;
+        private readonly List<EdgeCollider2D> edgePool = new();
+
+        // ============================================================
+        //  PÍXELES SÓLIDOS vs DECORACIÓN
+        // ============================================================
+        /// <summary>
+        ///  Alfa "mágico" para píxeles de DECORACIÓN (hierbajos, flores,
+        ///  setas, raíces colgando...). Se pintan opacos a la vista (254 ≈ 255)
+        ///  pero la física los ignora: la rata los atraviesa. Se borran con las
+        ///  explosiones como el resto del terreno.
+        /// </summary>
+        public const byte DecorAlpha = 254;
+
+        /// <summary>¿Este píxel es terreno SÓLIDO (choca)? Aire y decoración no.</summary>
+        public static bool IsSolidPixel(Color32 c) => c.a > 0 && c.a != DecorAlpha;
+
+        /// <summary>¿Este píxel es decoración (visible pero sin física)?</summary>
+        public static bool IsDecorPixel(Color32 c) => c.a == DecorAlpha;
+
+        /// <summary>¿Hay tierra SÓLIDA en este punto del mundo (en cualquier terreno de la escena)?</summary>
+        public static bool IsSolidAtWorld(Vector2 worldPos)
+        {
+            for (int i = 0; i < s_all.Count; i++)
+            {
+                var t = s_all[i];
+                if (t == null || t.pixels == null) continue;
+                Vector3 local = t.transform.InverseTransformPoint(worldPos);
+                int x = Mathf.FloorToInt(local.x * t.pixelsPerUnit);
+                int y = Mathf.FloorToInt(local.y * t.pixelsPerUnit);
+                if (x < 0 || y < 0 || x >= t.textureWidth || y >= t.textureHeight) continue;
+                if (IsSolidPixel(t.pixels[y * t.textureWidth + x])) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        ///  Si <paramref name="worldPos"/> está dentro de tierra sólida, devuelve
+        ///  cuánto hay que SUBIR para llegar al primer hueco libre (hasta
+        ///  <paramref name="maxUp"/>). Null si no está dentro o no hay hueco cerca.
+        /// </summary>
+        public static float? EscapeUpDistance(Vector2 worldPos, float maxUp)
+        {
+            if (!IsSolidAtWorld(worldPos)) return null;
+            float step = 1f / 32f;
+            for (float d = step; d <= maxUp; d += step)
+                if (!IsSolidAtWorld(worldPos + Vector2.up * d)) return d;
+            return null;
+        }
 
         // API read-only
         public int WidthPx => textureWidth;
@@ -347,6 +412,28 @@ namespace Ratms.World
             float offY = ((rng >> 16) & 0xFFFF) * 0.017f;
 
             Color32 air = new Color32(0, 0, 0, 0);
+            // CUENCO: la distancia vertical cuenta más que la horizontal, así
+            // el agujero sale más ANCHO que hondo. Con un círculo, las paredes
+            // eran casi verticales justo en el borde y la rata no podía salir
+            // ni andando ni saltando.
+            float vScale = 1f / Mathf.Max(0.3f, craterDepthRatio);
+            int scorch = Mathf.Max(0, craterScorchPx);
+            // EMBUDO: por encima de la parte ancha del cuenco, las paredes se
+            // ABREN hacia arriba a 45°. Sin esto, una explosión un poco por
+            // debajo del suelo dejaba la boca del agujero más estrecha que su
+            // interior (paredes en voladizo) → imposible salir.
+            float bowlB = radius * Mathf.Max(0.3f, craterDepthRatio);   // semieje vertical (px)
+            // Empieza donde la pared del cuenco ya está a ~45° (más arriba se
+            // pone vertical): desde ahí, paredes a 45° hasta arriba.
+            float funnelStartY = -0.55f * bowlB;                          // dónde empieza a abrirse
+            float funnelTop = radius * craterFunnelHeight;                // hasta dónde sube
+            float funnelBaseHalf = radius * 0.835f;                       // = anchura del cuenco en funnelStartY
+            // Caja a recorrer: el embudo puede ser bastante más ancho arriba.
+            expand += scorch + Mathf.CeilToInt(funnelTop + radius);
+            ymin = Mathf.Max(0, center.y - expand);
+            ymax = Mathf.Min(textureHeight - 1, center.y + expand);
+            xmin = Mathf.Max(0, center.x - expand);
+            xmax = Mathf.Min(textureWidth - 1, center.x + expand);
 
             for (int y = ymin; y <= ymax; y++)
             {
@@ -355,12 +442,12 @@ namespace Ratms.World
                 {
                     int dx = x - center.x;
                     int dy = y - center.y;
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    if (dist > expand) continue;
+                    float dyS = dy * vScale;
+                    float dist = Mathf.Sqrt(dx * dx + dyS * dyS);
 
                     // Ángulo 0..2π → tomamos Perlin(cos, sin) para que varíe
                     // continuamente al girar. Escala 1.8 = ~3 "bollos" por vuelta.
-                    float ang = Mathf.Atan2(dy, dx);
+                    float ang = Mathf.Atan2(dyS, dx);
                     float pert = Mathf.PerlinNoise(
                         Mathf.Cos(ang) * 1.8f + offX,
                         Mathf.Sin(ang) * 1.8f + offY);
@@ -368,10 +455,97 @@ namespace Ratms.World
                     float rNoise = (pert - 0.5f) * 2f * irregularity;
                     float effectiveR = radius * (1f + rNoise);
 
-                    if (dist <= effectiveR)
-                        pixels[row + x] = air;
+                    // "Cuánto fuera" está el píxel del agujero (≤0 = dentro).
+                    // Es el mínimo entre el cuenco y el embudo.
+                    float outside = dist - effectiveR;
+                    if (dy >= funnelStartY && dy <= funnelTop)
+                    {
+                        // Menos ruido en el embudo: con el ruido entero, la anchura
+                        // subía y bajaba con la altura y dejaba mini-voladizos.
+                        float half = (funnelBaseHalf + (dy - funnelStartY)) * (1f + rNoise * 0.4f);
+                        outside = Mathf.Min(outside, Mathf.Abs(dx) - half);
+                    }
+
+                    int idx = row + x;
+                    if (outside <= 0f)
+                    {
+                        pixels[idx] = air;
+                    }
+                    else if (scorch > 0 && outside <= scorch && IsSolidPixel(pixels[idx]))
+                    {
+                        // BORDE CHAMUSCADO: oscurecemos la tierra justo alrededor
+                        // del agujero, más cuanto más cerca del borde, con un
+                        // poco de ruido para que no sea un anillo perfecto.
+                        float t = outside / scorch;                                   // 0 borde … 1 fuera
+                        float jitter = ((x * 73 + y * 151) & 7) / 7f * 0.25f;         // determinista
+                        float dark = craterScorchStrength * (1f - Mathf.Clamp01(t + jitter * t));
+                        if (dark > 0f)
+                        {
+                            var c = pixels[idx];
+                            float k = 1f - dark;
+                            pixels[idx] = new Color32((byte)(c.r * k), (byte)(c.g * k), (byte)(c.b * k), c.a);
+                        }
+                    }
                 }
             }
+
+            ClearFloatingDecor(xmin, xmax, ymin, Mathf.Min(textureHeight - 1, ymax + 16));
+        }
+
+        /// <summary>
+        ///  Tras una explosión: borra la DECORACIÓN que se ha quedado flotando
+        ///  (una flor cuyo suelo ha volado). Recorremos de abajo a arriba: si
+        ///  debajo de un píxel de decoración hay aire, desaparece; así las
+        ///  briznas altas caen en cadena con su base. Las raíces que cuelgan
+        ///  de un techo se comprueban al revés (necesitan algo ENCIMA).
+        /// </summary>
+        private void ClearFloatingDecor(int xmin, int xmax, int ymin, int ymax)
+        {
+            Color32 air = new Color32(0, 0, 0, 0);
+            int rw = xmax - xmin + 1, rh = ymax - ymin + 1;
+            if (rw <= 0 || rh <= 0) return;
+            var fromBelow = new bool[rw * rh];
+            var fromAbove = new bool[rw * rh];
+
+            // ¿El píxel (x,y) sostiene a la decoración de encima/debajo?
+            // Fuera de la región asumimos que la decoración sigue sujeta.
+            bool Holds(int x, int y, bool[] support)
+            {
+                if (x < 0 || y < 0 || x >= textureWidth || y >= textureHeight) return false;
+                var c = pixels[y * textureWidth + x];
+                if (IsSolidPixel(c)) return true;
+                if (!IsDecorPixel(c)) return false;
+                if (x < xmin || x > xmax || y < ymin || y > ymax) return true;
+                return support[(y - ymin) * rw + (x - xmin)];
+            }
+
+            // Apoyo DESDE ABAJO (hierba, flores, setas): fila a fila hacia arriba,
+            // vale el píxel de debajo o los de las diagonales de abajo.
+            for (int y = ymin; y <= ymax; y++)
+                for (int x = xmin; x <= xmax; x++)
+                {
+                    if (!IsDecorPixel(pixels[y * textureWidth + x])) continue;
+                    fromBelow[(y - ymin) * rw + (x - xmin)] =
+                        Holds(x, y - 1, fromBelow) || Holds(x - 1, y - 1, fromBelow) || Holds(x + 1, y - 1, fromBelow);
+                }
+
+            // Colgando DESDE ARRIBA (raíces, goteos): fila a fila hacia abajo.
+            for (int y = ymax; y >= ymin; y--)
+                for (int x = xmin; x <= xmax; x++)
+                {
+                    if (!IsDecorPixel(pixels[y * textureWidth + x])) continue;
+                    fromAbove[(y - ymin) * rw + (x - xmin)] =
+                        Holds(x, y + 1, fromAbove) || Holds(x - 1, y + 1, fromAbove) || Holds(x + 1, y + 1, fromAbove);
+                }
+
+            for (int y = ymin; y <= ymax; y++)
+                for (int x = xmin; x <= xmax; x++)
+                {
+                    int k = (y - ymin) * rw + (x - xmin);
+                    int idx = y * textureWidth + x;
+                    if (IsDecorPixel(pixels[idx]) && !fromBelow[k] && !fromAbove[k])
+                        pixels[idx] = air;
+                }
         }
 
         // ============================================================
@@ -384,6 +558,21 @@ namespace Ratms.World
 
         [Tooltip("Irregularidad del borde del cráter (0 = círculo perfecto, 0.2 = borde bastante orgánico). 0.15 va bien para Worms.")]
         [SerializeField, Range(0f, 0.4f)] private float craterIrregularity = 0.15f;
+
+        [Tooltip("Profundidad del cráter respecto a su anchura. 1 = círculo (paredes verticales en el borde, difícil salir). " +
+                 "0.65 = cuenco: más ancho que hondo, con paredes por las que la rata puede salir saltando.")]
+        [SerializeField, Range(0.3f, 1f)] private float craterDepthRatio = 0.65f;
+
+        [Tooltip("Altura del EMBUDO sobre el centro del cráter, en radios. Las paredes se abren a 45° hasta esta altura, " +
+                 "así la boca nunca es más estrecha que el interior. 0 = sin embudo (puede haber voladizos). " +
+                 "0.9 = una explosión hasta ~1 radio bajo el suelo abre boca hacia arriba; más hondo queda una cueva cerrada.")]
+        [SerializeField, Range(0f, 1.5f)] private float craterFunnelHeight = 0.9f;
+
+        [Tooltip("Anchura (px) del borde CHAMUSCADO alrededor del cráter. 0 = sin chamuscar.")]
+        [SerializeField, Range(0, 12)] private int craterScorchPx = 5;
+
+        [Tooltip("Cuánto se oscurece la tierra pegada al cráter (0-1).")]
+        [SerializeField, Range(0f, 1f)] private float craterScorchStrength = 0.45f;
 
         /// <summary>
         ///  Carvea un agujero en ESTE terreno con forma IRREGULAR (no un círculo
@@ -450,18 +639,32 @@ namespace Ratms.World
             //    por nosotros a partir del alpha de los píxeles.
             //    extrude=1 da algo más de margen y reduce el riesgo de
             //    "vertices too close" al construir el PolygonCollider2D.
+            //    Con PixelContours el collider NO sale del sprite, así que usamos
+            //    FullRect: Unity no tiene que calcular la malla ajustada de una
+            //    textura enorme en cada explosión (mucho más barato).
+            bool contours = colliderMode == TerrainColliderMode.PixelContours;
             Sprite newSprite = Sprite.Create(
                 tex,
                 new Rect(0, 0, textureWidth, textureHeight),
                 new Vector2(0f, 0f),       // pivot = esquina inferior-izquierda
                 pixelsPerUnit,
                 extrude: 1,
-                meshType: SpriteMeshType.Tight);
+                meshType: contours ? SpriteMeshType.FullRect : SpriteMeshType.Tight);
 
             // Destruye el sprite anterior para no acumular basura en memoria.
             var old = sr.sprite;
             sr.sprite = newSprite;
             if (old != null && old != newSprite) Destroy(old);
+
+            if (contours)
+            {
+                BuildContourColliders();
+                return;
+            }
+            else if (edgesHost != null && edgesHost.activeSelf)
+            {
+                edgesHost.SetActive(false);   // volviendo al sistema antiguo
+            }
 
             // 3) Extrae los paths del sprite y aplícalos al PolygonCollider2D.
             //    GetPhysicsShape devuelve los puntos YA en unidades de mundo
@@ -590,6 +793,65 @@ namespace Ratms.World
                           $"textura={textureWidth}x{textureHeight}, PPU={pixelsPerUnit}, " +
                           $"layer={gameObject.layer} ({LayerMask.LayerToName(gameObject.layer)}).");
             }
+        }
+
+        /// <summary>
+        ///  Collider EXACTO: un EdgeCollider2D por cada contorno del terreno
+        ///  (borde exterior, cada cueva, cada cráter, cada isla).
+        ///
+        ///  Por qué bordes (EdgeCollider2D) y no un polígono relleno: un
+        ///  polígono con "agujeros" depende de cómo Unity interprete qué es
+        ///  dentro y qué es fuera, y con formas raras (cráteres abiertos de
+        ///  lado, cuevas que tocan la superficie) se equivocaba → la física
+        ///  creía que había tierra donde se veía aire. Los bordes no tienen
+        ///  "dentro": la rata choca justo donde está la línea, por los dos lados.
+        /// </summary>
+        private void BuildContourColliders()
+        {
+            if (poly != null)
+            {
+                poly.pathCount = 0;
+                poly.enabled = false;   // el antiguo no participa
+            }
+
+            if (edgesHost == null)
+            {
+                edgesHost = new GameObject("TerrainEdges");
+                edgesHost.transform.SetParent(transform, worldPositionStays: false);
+                edgesHost.layer = gameObject.layer;
+            }
+            if (!edgesHost.activeSelf) edgesHost.SetActive(true);
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var loops = PixelContours.Build(pixels, textureWidth, textureHeight, pixelsPerUnit,
+                                            contourSimplifyPx, minContourPoints);
+            long contourMs = sw.ElapsedMilliseconds;
+
+            // Reutilizamos los EdgeCollider2D que ya había (crear/destruir
+            // componentes en cada explosión es caro).
+            while (edgePool.Count < loops.Count)
+            {
+                var ec = edgesHost.AddComponent<EdgeCollider2D>();
+                edgePool.Add(ec);
+            }
+            int points = 0;
+            for (int i = 0; i < edgePool.Count; i++)
+            {
+                var ec = edgePool[i];
+                if (i < loops.Count)
+                {
+                    ec.enabled = true;
+                    ec.edgeRadius = contourEdgeRadius;
+                    ec.points = loops[i];
+                    points += loops[i].Length;
+                }
+                else ec.enabled = false;
+            }
+
+            if (debugColliderBuild)
+                Debug.Log($"[DestructibleTerrain] Collider via CONTORNOS EXACTOS — {loops.Count} bucles, {points} vértices, " +
+                          $"contornos {contourMs} ms + colliders {sw.ElapsedMilliseconds - contourMs} ms, " +
+                          $"textura={textureWidth}x{textureHeight}, PPU={pixelsPerUnit}.");
         }
 
         /// <summary>
@@ -771,7 +1033,7 @@ namespace Ratms.World
             // FALLBACK (sin máscara aún): de arriba hacia abajo, primer sólido.
             for (int y = textureHeight - 1; y >= 0; y--)
             {
-                if (pixels[y * textureWidth + x].a > 0)
+                if (IsSolidPixel(pixels[y * textureWidth + x]))
                     return y;
             }
             return -1;
@@ -811,7 +1073,7 @@ namespace Ratms.World
             int seedRow = -1;
             for (int x = 0; x < textureWidth; x++)
             {
-                if (pixels[x].a > 0)
+                if (IsSolidPixel(pixels[x]))
                 {
                     if (seedRow < 0) seedRow = 0;
                     mask[x] = true;
@@ -829,7 +1091,7 @@ namespace Ratms.World
                     for (int x = 0; x < textureWidth; x++)
                     {
                         int idx = rowStart + x;
-                        if (pixels[idx].a > 0)
+                        if (IsSolidPixel(pixels[idx]))
                         {
                             seedRow = y;
                             mask[idx] = true;
@@ -852,25 +1114,25 @@ namespace Ratms.World
                 if (y + 1 < textureHeight)
                 {
                     int n = idx + textureWidth;
-                    if (!mask[n] && pixels[n].a > 0) { mask[n] = true; queue.Enqueue(n); }
+                    if (!mask[n] && IsSolidPixel(pixels[n])) { mask[n] = true; queue.Enqueue(n); }
                 }
                 // Abajo
                 if (y - 1 >= 0)
                 {
                     int n = idx - textureWidth;
-                    if (!mask[n] && pixels[n].a > 0) { mask[n] = true; queue.Enqueue(n); }
+                    if (!mask[n] && IsSolidPixel(pixels[n])) { mask[n] = true; queue.Enqueue(n); }
                 }
                 // Izquierda
                 if (x - 1 >= 0)
                 {
                     int n = idx - 1;
-                    if (!mask[n] && pixels[n].a > 0) { mask[n] = true; queue.Enqueue(n); }
+                    if (!mask[n] && IsSolidPixel(pixels[n])) { mask[n] = true; queue.Enqueue(n); }
                 }
                 // Derecha
                 if (x + 1 < textureWidth)
                 {
                     int n = idx + 1;
-                    if (!mask[n] && pixels[n].a > 0) { mask[n] = true; queue.Enqueue(n); }
+                    if (!mask[n] && IsSolidPixel(pixels[n])) { mask[n] = true; queue.Enqueue(n); }
                 }
             }
 
@@ -920,7 +1182,7 @@ namespace Ratms.World
             {
                 if (visited[idx]) continue;
                 if (mainGroundMask[idx]) continue;
-                if (pixels[idx].a == 0) continue;
+                if (!IsSolidPixel(pixels[idx])) continue;
 
                 // Inicio de una nueva isla: flood-fill localmente para
                 // descubrir todos los píxeles del chunk.
@@ -960,25 +1222,25 @@ namespace Ratms.World
                     if (py + 1 < textureHeight)
                     {
                         int n = p + textureWidth;
-                        if (!visited[n] && pixels[n].a > 0 && !mainGroundMask[n])
+                        if (!visited[n] && IsSolidPixel(pixels[n]) && !mainGroundMask[n])
                         { visited[n] = true; floodQueue.Enqueue(n); }
                     }
                     if (py - 1 >= 0)
                     {
                         int n = p - textureWidth;
-                        if (!visited[n] && pixels[n].a > 0 && !mainGroundMask[n])
+                        if (!visited[n] && IsSolidPixel(pixels[n]) && !mainGroundMask[n])
                         { visited[n] = true; floodQueue.Enqueue(n); }
                     }
                     if (px - 1 >= 0)
                     {
                         int n = p - 1;
-                        if (!visited[n] && pixels[n].a > 0 && !mainGroundMask[n])
+                        if (!visited[n] && IsSolidPixel(pixels[n]) && !mainGroundMask[n])
                         { visited[n] = true; floodQueue.Enqueue(n); }
                     }
                     if (px + 1 < textureWidth)
                     {
                         int n = p + 1;
-                        if (!visited[n] && pixels[n].a > 0 && !mainGroundMask[n])
+                        if (!visited[n] && IsSolidPixel(pixels[n]) && !mainGroundMask[n])
                         { visited[n] = true; floodQueue.Enqueue(n); }
                     }
                 }
@@ -1050,19 +1312,19 @@ namespace Ratms.World
             for (int x = 0; x < textureWidth; x++)
             {
                 int topIdx = (textureHeight - 1) * textureWidth + x;
-                if (pixels[topIdx].a == 0 && !exteriorAir[topIdx])
+                if (!IsSolidPixel(pixels[topIdx]) && !exteriorAir[topIdx])
                 { exteriorAir[topIdx] = true; q.Enqueue(topIdx); }
                 int botIdx = x;
-                if (pixels[botIdx].a == 0 && !exteriorAir[botIdx])
+                if (!IsSolidPixel(pixels[botIdx]) && !exteriorAir[botIdx])
                 { exteriorAir[botIdx] = true; q.Enqueue(botIdx); }
             }
             for (int y = 0; y < textureHeight; y++)
             {
                 int leftIdx = y * textureWidth;
-                if (pixels[leftIdx].a == 0 && !exteriorAir[leftIdx])
+                if (!IsSolidPixel(pixels[leftIdx]) && !exteriorAir[leftIdx])
                 { exteriorAir[leftIdx] = true; q.Enqueue(leftIdx); }
                 int rightIdx = y * textureWidth + (textureWidth - 1);
-                if (pixels[rightIdx].a == 0 && !exteriorAir[rightIdx])
+                if (!IsSolidPixel(pixels[rightIdx]) && !exteriorAir[rightIdx])
                 { exteriorAir[rightIdx] = true; q.Enqueue(rightIdx); }
             }
 
@@ -1075,22 +1337,22 @@ namespace Ratms.World
                 if (py + 1 < textureHeight)
                 {
                     int n = p + textureWidth;
-                    if (pixels[n].a == 0 && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
+                    if (!IsSolidPixel(pixels[n]) && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
                 }
                 if (py - 1 >= 0)
                 {
                     int n = p - textureWidth;
-                    if (pixels[n].a == 0 && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
+                    if (!IsSolidPixel(pixels[n]) && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
                 }
                 if (px - 1 >= 0)
                 {
                     int n = p - 1;
-                    if (pixels[n].a == 0 && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
+                    if (!IsSolidPixel(pixels[n]) && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
                 }
                 if (px + 1 < textureWidth)
                 {
                     int n = p + 1;
-                    if (pixels[n].a == 0 && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
+                    if (!IsSolidPixel(pixels[n]) && !exteriorAir[n]) { exteriorAir[n] = true; q.Enqueue(n); }
                 }
             }
 
@@ -1102,7 +1364,7 @@ namespace Ratms.World
             for (int idx = 0; idx < total; idx++)
             {
                 if (visitedCave[idx]) continue;
-                if (pixels[idx].a != 0) continue;       // no es aire
+                if (IsSolidPixel(pixels[idx])) continue;       // no es aire
                 if (exteriorAir[idx]) continue;          // es aire exterior, no cueva
 
                 caveQueue.Clear();
@@ -1129,25 +1391,25 @@ namespace Ratms.World
                     if (py + 1 < textureHeight)
                     {
                         int n = p + textureWidth;
-                        if (!visitedCave[n] && pixels[n].a == 0 && !exteriorAir[n])
+                        if (!visitedCave[n] && !IsSolidPixel(pixels[n]) && !exteriorAir[n])
                         { visitedCave[n] = true; caveQueue.Enqueue(n); }
                     }
                     if (py - 1 >= 0)
                     {
                         int n = p - textureWidth;
-                        if (!visitedCave[n] && pixels[n].a == 0 && !exteriorAir[n])
+                        if (!visitedCave[n] && !IsSolidPixel(pixels[n]) && !exteriorAir[n])
                         { visitedCave[n] = true; caveQueue.Enqueue(n); }
                     }
                     if (px - 1 >= 0)
                     {
                         int n = p - 1;
-                        if (!visitedCave[n] && pixels[n].a == 0 && !exteriorAir[n])
+                        if (!visitedCave[n] && !IsSolidPixel(pixels[n]) && !exteriorAir[n])
                         { visitedCave[n] = true; caveQueue.Enqueue(n); }
                     }
                     if (px + 1 < textureWidth)
                     {
                         int n = p + 1;
-                        if (!visitedCave[n] && pixels[n].a == 0 && !exteriorAir[n])
+                        if (!visitedCave[n] && !IsSolidPixel(pixels[n]) && !exteriorAir[n])
                         { visitedCave[n] = true; caveQueue.Enqueue(n); }
                     }
                 }
@@ -1195,7 +1457,7 @@ namespace Ratms.World
             // Muestreo: si hay un píxel sólido cada 64, lo pillamos enseguida
             // y ahorramos tiempo con texturas grandes.
             for (int i = 0; i < pixels.Length; i += 64)
-                if (pixels[i].a > 0) return true;
+                if (IsSolidPixel(pixels[i])) return true;
             return false;
         }
 

@@ -89,6 +89,11 @@ namespace Ratms.Networking
             if (!IsServer && rb != null)
                 rb.simulated = false;
 
+            // Colisión CONTINUA: el terreno es una línea fina (EdgeCollider2D)
+            // y un misil rápido podría saltársela entre dos pasos de física.
+            if (IsServer && rb != null)
+                rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+
             // Avisamos a TODOS los clientes para que sus cámaras sigan al
             // proyectil mientras vuela (como en Worms). Cada cámara volverá
             // sola a su rata cuando el misil se destruya o caduque el seguimiento.

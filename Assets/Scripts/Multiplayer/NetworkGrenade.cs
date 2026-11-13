@@ -150,6 +150,10 @@ namespace Ratms.Networking
             if (!IsServer && rb != null)
                 rb.simulated = false;
 
+            // Colisión CONTINUA: el terreno son líneas finas (EdgeCollider2D).
+            if (IsServer && rb != null)
+                rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+
             if (IsDynamite.Value) ApplyDynamiteVisual();
             IsDynamite.OnValueChanged += OnDynamiteChanged;
 
@@ -181,33 +185,7 @@ namespace Ratms.Networking
 
             foreach (var sr in GetComponentsInChildren<SpriteRenderer>()) sr.enabled = false;
 
-            const int W = 8, H = 22;
-            var tex = new Texture2D(W, H, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
-            var px = new Color32[W * H];
-            var clear = new Color32(0, 0, 0, 0);
-            var red = new Color32(200, 40, 35, 255);
-            var redDark = new Color32(140, 25, 25, 255);
-            var band = new Color32(235, 210, 150, 255);
-            var fuse = new Color32(90, 60, 30, 255);
-            var spark = new Color32(255, 230, 80, 255);
-            for (int y = 0; y < H; y++)
-                for (int x = 0; x < W; x++)
-                {
-                    Color32 c = clear;
-                    if (y < 16)                                   // cartucho
-                    {
-                        c = (x == 0 || x == W - 1) ? redDark : red;
-                        if (y == 3 || y == 12) c = band;          // bandas de papel
-                    }
-                    else if (x == 4 && y < 20) c = fuse;          // mecha
-                    else if ((x == 4 || x == 3 || x == 5) && y >= 20) c = spark;   // chispa
-                    px[y * W + x] = c;
-                }
-            tex.SetPixels32(px);
-            tex.Apply();
-
-            const float ppu = 80f;   // 8x22 px → 0.1 x 0.275 u (como la rata de alta)
-            var sprite = Sprite.Create(tex, new Rect(0, 0, W, H), new Vector2(0.5f, 0.2f), ppu);
+            var sprite = WeaponSprites.Dynamite();   // mismo dibujo que la que llevas en la mano
 
             dynamiteVisual = new GameObject("DynamiteVisual");
             dynamiteVisual.transform.SetParent(transform, worldPositionStays: false);

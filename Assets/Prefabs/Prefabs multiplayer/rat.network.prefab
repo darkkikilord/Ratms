@@ -584,7 +584,7 @@ MonoBehaviour:
   moveDeceleration: 55
   moveForce: 20
   linearDrag: 4
-  jumpForce: 3.4
+  jumpForce: 3.9
   colliderEdgeRadius: 0.06
   groundCheck: {fileID: 2694106041307057042}
   groundRadius: 0.15

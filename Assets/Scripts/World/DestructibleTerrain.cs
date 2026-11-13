@@ -162,6 +162,32 @@ namespace Ratms.World
         }
 
         /// <summary>
+        ///  Busca el color de la tierra alrededor de un punto (en un anillo de
+        ///  radio <paramref name="radius"/>). Lo usan los efectos de explosión
+        ///  para que los trozos que salen volando sean del color del suelo.
+        /// </summary>
+        public static bool TrySampleColorAround(Vector2 worldPos, float radius, out Color32 color)
+        {
+            for (int k = 0; k < 12; k++)
+            {
+                float a = -Mathf.PI * 0.5f + (k % 2 == 0 ? 1 : -1) * (k / 2) * (Mathf.PI / 6f);   // empezamos por abajo
+                Vector2 p = worldPos + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * radius;
+                for (int i = 0; i < s_all.Count; i++)
+                {
+                    var t = s_all[i];
+                    if (t == null || t.pixels == null) continue;
+                    Vector3 local = t.transform.InverseTransformPoint(p);
+                    int x = Mathf.FloorToInt(local.x * t.pixelsPerUnit), y = Mathf.FloorToInt(local.y * t.pixelsPerUnit);
+                    if (x < 0 || y < 0 || x >= t.textureWidth || y >= t.textureHeight) continue;
+                    var c = t.pixels[y * t.textureWidth + x];
+                    if (IsSolidPixel(c)) { color = c; return true; }
+                }
+            }
+            color = default;
+            return false;
+        }
+
+        /// <summary>
         ///  Si <paramref name="worldPos"/> está dentro de tierra sólida, devuelve
         ///  cuánto hay que SUBIR para llegar al primer hueco libre (hasta
         ///  <paramref name="maxUp"/>). Null si no está dentro o no hay hueco cerca.

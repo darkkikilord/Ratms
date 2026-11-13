@@ -216,15 +216,24 @@ namespace Ratms.Networking
         private void ShowDamagePopupClientRpc(int amount, Vector3 hitPoint, byte typeByte)
         {
             DamageType type = (DamageType)typeByte;
+            lastDamageType = type;
             WorldDamagePopup.Spawn(hitPoint, amount, type);
+            if (type == DamageType.Water) Fx.Splash(hitPoint);
         }
+
+        // Último tipo de daño recibido (en cada cliente): para saber si la
+        // muerte fue en el agua (salpicadura, sin lápida) o en tierra (lápida).
+        private DamageType lastDamageType = DamageType.Generic;
 
         // ==============================================================
         // MUERTE
         // ==============================================================
         private void OnDeathStateChanged(bool oldValue, bool newValue)
         {
-            if (newValue) ApplyDeathVisual();
+            if (!newValue) return;
+            // Lápida donde ha caído (muy Worms). En el agua no: ya hay salpicadura.
+            if (lastDamageType != DamageType.Water) Fx.Gravestone(BodyCenter);
+            ApplyDeathVisual();
         }
 
         private void ApplyDeathVisual()

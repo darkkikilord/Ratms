@@ -113,7 +113,7 @@ namespace Ratms.Networking
                 var menu = LocalWeaponsMenu();
                 string weapon = menu != null ? WeaponsMenuUI.ShortName(menu.SelectedWeapon) : "?";
                 GUI.Label(new Rect(panel.x, panel.y + panelSize.y + 2f, panel.width, 24f),
-                          $"Arma: {weapon}   (1-5 o TAB)", windStyle);
+                          $"Arma: {weapon}   (1-7 o TAB)", windStyle);
             }
 
             GUI.matrix = previous;

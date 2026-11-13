@@ -376,6 +376,15 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -2253911629886400664, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
       insertIndex: -1
       addedObject: {fileID: 2094197168486976101}
+    - targetCorrespondingSourceObject: {fileID: -2253911629886400664, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1224859666599491496}
+    - targetCorrespondingSourceObject: {fileID: -2253911629886400664, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 335983204999230704}
+    - targetCorrespondingSourceObject: {fileID: -2253911629886400664, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 896531941232417245}
   m_SourcePrefab: {fileID: -8435245712485981826, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
 --- !u!95 &1190916561255911831 stripped
 Animator:
@@ -586,12 +595,15 @@ MonoBehaviour:
   linearDrag: 4
   jumpForce: 3.9
   colliderEdgeRadius: 0.06
+  colliderDropToFeet: 0.19
+  colliderExtraHeight: 0.22
   groundCheck: {fileID: 2694106041307057042}
   groundRadius: 0.15
   groundMask:
     serializedVersion: 2
     m_Bits: 1
   respectTurns: 1
+  useProceduralRat: 1
   bodySprite: {fileID: 3626916397498700004, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
   animator: {fileID: 1190916561255911831}
   speedParam: Speed
@@ -616,6 +628,12 @@ MonoBehaviour:
   groundCheckMaxRiseVy: 2
   debugGroundCheck: 0
   groundRaycastDistance: 0.4
+  holdOnSlopes: 1
+  parkMaxSpeed: 0.5
+  footNormalMinY: 0.45
+  stepAssist: 1
+  stepHeight: 0.2
+  stepUpVelocity: 2.7
 --- !u!114 &3613967885074546661
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -666,7 +684,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
   toggleKey: 9
-  panelSize: {x: 300, y: 320}
+  panelSize: {x: 300, y: 380}
   panelOffset: {x: 20, y: 20}
   defaultWeapon: -1
 --- !u!114 &-4067887177151130670
@@ -728,6 +746,59 @@ MonoBehaviour:
   freeFlightSeconds: 1
   swingSeconds: 0.22
   swingArc: 120
+  showAimIndicator: 1
+  aimColor: {r: 1, g: 0.85, b: 0.25, a: 0.9}
+--- !u!114 &1224859666599491496
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6927920246332017463}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8bcbc2318c21ae748b03c8c755931908, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShowTopMostFoldoutHeaderGroup: 1
+  shotsPerTurn: 2
+  range: 11
+  damageNear: 35
+  damageFar: 10
+  knockback: 6
+  holeRadius: 0.45
+--- !u!114 &335983204999230704
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6927920246332017463}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8255ca2c17fba26489db3a6d7236e069, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShowTopMostFoldoutHeaderGroup: 1
+  maxDistance: 30
+--- !u!114 &896531941232417245
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6927920246332017463}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 44a45646091fc83419e852ec8780e282, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShowTopMostFoldoutHeaderGroup: 1
+  maxLength: 8
+  minLength: 0.6
+  swingForce: 9
+  climbSpeed: 2.5
+  maxSwingSpeed: 14
 --- !u!4 &7910872146381693778 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7878350319992209165, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}

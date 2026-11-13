@@ -120,7 +120,10 @@ namespace Ratms.Testing
             {
                 if (h.IsDead.Value || reportedFalls.Contains(h.GetInstanceID())) continue;
                 Vector2 b = h.BodyCenter;
-                if (b.y < bottom - 0.5f)
+                // Solo cuenta si está DENTRO del ancho del mapa (salir volando
+                // por un lado y caer al agua es legal).
+                float left = terrain.transform.position.x, right = left + terrain.WorldSize.x;
+                if (b.y < bottom - 0.5f && b.x > left + 0.5f && b.x < right - 0.5f)
                 {
                     reportedFalls.Add(h.GetInstanceID());
                     Problem($"{h.name} ha ATRAVESADO el terreno: está en ({b.x:0.0},{b.y:0.0}), por debajo del fondo ({bottom:0.0})");
@@ -253,6 +256,9 @@ namespace Ratms.Testing
             // --- 6) Armas nuevas, con la rata DIANA ------------------
             yield return DynamiteTest(nm, rat);
             yield return BatTest(nm, rat);
+            yield return ShotgunTest(nm, rat);
+            yield return TeleportTest(nm, rat);
+            yield return RopeTest(nm, rat);
             yield return WaterTest(rat);
             yield return CountdownTest(nm);
 
@@ -375,7 +381,9 @@ namespace Ratms.Testing
 
             var weapons = rat.GetComponentInChildren<WeaponsMenuUI>();
             weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Bat;
-            rat.TestSetAim(20f);
+            // Apuntamos AL CUERPO de la diana (puede haber resbalado más abajo).
+            Vector2 toDummy = dHealth.BodyCenter - rat.GetComponent<NetworkHealth>().BodyCenter;
+            rat.TestSetAim(Mathf.Atan2(toDummy.y, Mathf.Abs(toDummy.x)) * Mathf.Rad2Deg);
             yield return new WaitForSeconds(0.3f);
             yield return Capture("14_bate_listo");
             yield return CloseupWithColliders(rat, "14b_bate_mira", size: 1.4f, overlay: false);
@@ -460,6 +468,170 @@ namespace Ratms.Testing
             }
             tm.Wind.Value = original;
             yield return Capture("02d_hud_viento");
+        }
+
+        /// <summary>Escopeta: dos disparos a la diana y el tercero bloqueado.</summary>
+        private IEnumerator ShotgunTest(NetworkManager nm, NetworkPlayerMovement rat)
+        {
+            if (finished || rat == null || !rat.gameObject.activeInHierarchy) yield break;
+            Log("---- Escopeta ----");
+            yield return WaitFreshTurn(nm, rat);
+            if (finished) yield break;
+            yield return PlaceOnFlatSpot(rat, 0.4f, 0.6f, "escopeta");
+            float side = rat.FacingRight ? 1f : -1f;
+            var dummy = SpawnDummy((Vector2)rat.transform.position + new Vector2(side * 2.5f, 0.3f));
+            if (dummy == null) yield break;
+            var dh = dummy.GetComponent<NetworkHealth>();
+            yield return new WaitForSeconds(0.9f);
+
+            var weapons = rat.GetComponentInChildren<WeaponsMenuUI>();
+            weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Shotgun;
+            AimAt(rat, dh.BodyCenter);
+            yield return new WaitForSeconds(0.3f);
+            yield return CloseupWithColliders(rat, "18_escopeta_mira", size: 2f, overlay: false);
+
+            int h0 = dh.CurrentHealth.Value;
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.45f);
+            int h1 = dh.CurrentHealth.Value;
+            AimAt(rat, dh.BodyCenter);
+            yield return new WaitForSeconds(0.15f);
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.45f);
+            int h2 = dh.CurrentHealth.Value;
+            rat.TestPressFire();   // tercero: no debe salir
+            yield return new WaitForSeconds(0.4f);
+            int h3 = dh.CurrentHealth.Value;
+            Log($"Escopeta → diana {h0}→{h1}→{h2} (2 disparos) · tercer intento: {(h3 == h2 ? "bloqueado ✓" : "⚠ disparó otra vez")}" +
+                (h1 < h0 && h2 < h1 ? "  ✓ los dos dieron" : h2 < h0 ? "  (alguno falló)" : "  ⚠ no dio ninguno"));
+            if (h2 >= h0) Problem("Escopeta: la diana no recibió daño");
+            if (h3 != h2) Problem("Escopeta: se pudo disparar más de 2 veces en un turno");
+        }
+
+        /// <summary>Teletransporte: primero a un sitio imposible (debe negarse), luego a uno válido.</summary>
+        private IEnumerator TeleportTest(NetworkManager nm, NetworkPlayerMovement rat)
+        {
+            if (finished || rat == null || !rat.gameObject.activeInHierarchy) yield break;
+            Log("---- Teletransporte ----");
+            yield return WaitFreshTurn(nm, rat);
+            if (finished) yield break;
+            yield return PlaceOnFlatSpot(rat, 0.2f, 0.35f, "teletransporte");
+            var tp = rat.GetComponent<NetworkTeleport>();
+            var gen = FindFirstObjectByType<TerrainGenerator>();
+            var terrain = gen != null ? gen.GetComponent<DestructibleTerrain>() : null;
+            if (tp == null || gen == null || terrain == null) { Problem("Teletransporte: falta componente"); yield break; }
+
+            var weapons = rat.GetComponentInChildren<WeaponsMenuUI>();
+            weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Teleport;
+            var health = rat.GetComponent<NetworkHealth>();
+            Vector2 start = health.BodyCenter;
+
+            // 1) Dentro de la tierra → no debe moverse
+            var below = gen.GetSurfaceWorldPos(start.x + 3f);
+            tp.TestTarget = below.HasValue ? new Vector2(below.Value.x, below.Value.y - 1.5f) : start + Vector2.down * 3f;
+            yield return null;
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.4f);
+            bool stayed = Vector2.Distance(start, health.BodyCenter) < 0.3f && !rat.FiredThisTurn;
+            Log($"Teletransporte dentro de la tierra → {(stayed ? "rechazado ✓" : "⚠ se movió")}");
+            if (!stayed) Problem("Teletransporte: dejó aparecer dentro de la tierra");
+
+            // 2) A una zona llana lejos → debe aparecer allí
+            float x0 = terrain.transform.position.x + terrain.WorldSize.x * 0.65f;
+            var s = gen.GetSurfaceWorldPos(x0, 40);
+            if (!s.HasValue) { Log("Teletransporte: no encontré destino, se omite."); yield break; }
+            Vector2 target = new Vector2(s.Value.x, s.Value.y + 0.45f);
+            tp.TestTarget = target;
+            yield return new WaitForSeconds(0.2f);
+            yield return Capture("20_teletransporte_antes");
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.6f);
+            float off = Vector2.Distance(target, health.BodyCenter);
+            Log($"Teletransporte a ({target.x:0.0},{target.y:0.0}) → quedó a {off:0.00} u del destino · arma gastada: {rat.FiredThisTurn}" +
+                (off < 0.8f ? "  ✓" : "  ⚠ no llegó"));
+            if (off >= 0.8f) Problem($"Teletransporte: la rata no apareció en el destino (a {off:0.00} u)");
+            yield return Capture("21_teletransporte_despues");
+            tp.TestTarget = null;
+        }
+
+        /// <summary>Cuerda ninja: buscar dónde engancharse, balancearse, trepar y soltarse.</summary>
+        private IEnumerator RopeTest(NetworkManager nm, NetworkPlayerMovement rat)
+        {
+            if (finished || rat == null || !rat.gameObject.activeInHierarchy) yield break;
+            Log("---- Cuerda ninja ----");
+            yield return WaitFreshTurn(nm, rat);
+            if (finished) yield break;
+            yield return PlaceOnFlatSpot(rat, 0.35f, 0.65f, "cuerda");
+            var rope = rat.GetComponent<NetworkNinjaRope>();
+            if (rope == null) { Problem("Cuerda: falta componente"); yield break; }
+            var weapons = rat.GetComponentInChildren<WeaponsMenuUI>();
+            weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Rope;
+            var health = rat.GetComponent<NetworkHealth>();
+
+            // Buscamos una dirección (de 85° a 20°, a cada lado) en la que haya
+            // terreno a menos de la longitud máxima.
+            float bestAngle = float.NaN, bestSide = 1f;
+            foreach (float sd in new[] { 1f, -1f })
+                for (float a = 85f; a >= 20f && float.IsNaN(bestAngle); a -= 5f)
+                {
+                    Vector2 d = new Vector2(Mathf.Cos(a * Mathf.Deg2Rad) * sd, Mathf.Sin(a * Mathf.Deg2Rad));
+                    foreach (var hh in Physics2D.RaycastAll(health.BodyCenter, d, rope.MaxLength * 0.95f))
+                        if (hh.collider != null && hh.collider.GetComponentInParent<NetworkHealth>() == null && !hh.collider.isTrigger)
+                        { bestAngle = a; bestSide = sd; break; }
+                }
+            if (float.IsNaN(bestAngle)) { Log("Cuerda: no hay terreno a tiro desde aquí, se omite."); yield break; }
+
+            // Mirar hacia ese lado y apuntar
+            if (rat.FacingRight != (bestSide > 0f))
+            {
+                rat.TestInputX = bestSide;
+                yield return new WaitForSeconds(0.08f);
+                rat.TestInputX = 0f;
+                yield return new WaitForSeconds(0.2f);
+            }
+            rat.TestSetAim(bestAngle);
+            yield return new WaitForSeconds(0.25f);
+            yield return CloseupWithColliders(rat, "22_cuerda_apuntando", size: 3f, overlay: false);
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.2f);
+            if (!rope.IsAttached) { Problem($"Cuerda: no enganchó apuntando a {bestAngle}°"); rat.TestInputX = null; yield break; }
+
+            Vector2 anchor = rope.Anchor;
+            float len0 = rope.Length;
+            // Balanceo: A/D alternando
+            float minX = float.MaxValue, maxX = float.MinValue, t = 0f;
+            while (t < 2.4f && !finished && rope.IsAttached)
+            {
+                t += Time.deltaTime;
+                rat.TestInputX = Mathf.Sin(t * Mathf.PI / 0.6f) >= 0f ? 1f : -1f;
+                float x = health.BodyCenter.x;
+                minX = Mathf.Min(minX, x); maxX = Mathf.Max(maxX, x);
+                yield return null;
+            }
+            rat.TestInputX = 0f;
+            yield return Capture("23_cuerda_balanceo");
+            // Trepar
+            rat.TestRopeClimb = 1f;
+            yield return new WaitForSeconds(0.5f);
+            rat.TestRopeClimb = null;
+            float len1 = rope.Length;
+            // Soltar
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.2f);
+            bool released = !rope.IsAttached;
+            yield return new WaitForSeconds(1.5f);
+            rat.TestInputX = null;
+            Log($"Cuerda → enganchó a {bestAngle}° ({Vector2.Distance(health.BodyCenter, anchor):0.0} u) · balanceo {maxX - minX:0.00} u de lado a lado · " +
+                $"trepar {len0:0.00}→{len1:0.00} u · soltar: {(released ? "✓" : "⚠")} · viva: {!health.IsDead.Value}" +
+                (maxX - minX > 0.8f && len1 < len0 && released ? "  ✓" : "  ⚠"));
+            if (maxX - minX <= 0.8f) Problem("Cuerda: casi no se balancea");
+            if (!released) Problem("Cuerda: no se soltó");
+        }
+
+        private static void AimAt(NetworkPlayerMovement rat, Vector2 target)
+        {
+            Vector2 d = target - rat.GetComponent<NetworkHealth>().BodyCenter;
+            rat.TestSetAim(Mathf.Atan2(d.y, Mathf.Abs(d.x)) * Mathf.Rad2Deg);
         }
 
         /// <summary>Una diana tirada al agua debe morir sin acabar la partida.</summary>

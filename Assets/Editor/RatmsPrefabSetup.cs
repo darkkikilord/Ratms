@@ -23,12 +23,10 @@ public static class RatmsPrefabSetup
         {
             bool changed = false;
 
-            if (root.GetComponent<NetworkBat>() == null)
-            {
-                root.AddComponent<NetworkBat>();
-                changed = true;
-                Debug.Log("[RatmsPrefabSetup] Añadido NetworkBat a la rata.");
-            }
+            changed |= Ensure<NetworkBat>(root);
+            changed |= Ensure<NetworkShotgun>(root);
+            changed |= Ensure<NetworkTeleport>(root);
+            changed |= Ensure<NetworkNinjaRope>(root);
 
             if (changed)
             {
@@ -44,5 +42,13 @@ public static class RatmsPrefabSetup
         {
             PrefabUtility.UnloadPrefabContents(root);
         }
+    }
+
+    private static bool Ensure<T>(GameObject root) where T : Component
+    {
+        if (root.GetComponent<T>() != null) return false;
+        root.AddComponent<T>();
+        Debug.Log($"[RatmsPrefabSetup] Añadido {typeof(T).Name} a la rata.");
+        return true;
     }
 }

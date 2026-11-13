@@ -55,6 +55,10 @@ namespace Ratms.Networking
                  "patas se metían en la hierba y la rata parecía hundida. Se aplica en runtime; el prefab no se toca. 0 = sin ajuste.")]
         [SerializeField] private float colliderDropToFeet = 0.19f;
         private bool feetAligned;
+
+        [Tooltip("Altura EXTRA (u) que se añade al collider hacia ARRIBA (los pies no se mueven). El dibujo de la rata mide " +
+                 "~0.8 u y el collider solo 0.25 u: sin esto, un misil podía atravesar la cabeza sin darle. 0 = sin cambio.")]
+        [SerializeField] private float colliderExtraHeight = 0.22f;
         [SerializeField] private Transform groundCheck;
         [SerializeField] private float groundRadius = 0.15f;
         [SerializeField] private LayerMask groundMask;
@@ -64,6 +68,10 @@ namespace Ratms.Networking
         [SerializeField] private bool respectTurns = true;
 
         [Header("Visual")]
+        [Tooltip("Si ON, la rata se dibuja con RatAppearance (pixel-art generado por código, contorno, casco del color del equipo, " +
+                 "animaciones propias) en vez del sprite .ase antiguo. Desmárcalo para volver a la rata antigua.")]
+        [SerializeField] private bool useProceduralRat = true;
+
         [Tooltip("Sprite de la rata (para hacer flip). Si no se asigna se buscará automáticamente.")]
         [SerializeField] private SpriteRenderer bodySprite;
 
@@ -85,6 +93,12 @@ namespace Ratms.Networking
 
         [Tooltip("Bate (cuerpo a cuerpo) de la propia rata (se auto-resuelve).")]
         [SerializeField] private NetworkBat bat;
+
+        // Armas/herramientas añadidas por RatmsPrefabSetup (se auto-resuelven).
+        private NetworkShotgun shotgun;
+        private NetworkTeleport teleport;
+        private NetworkNinjaRope rope;
+        private int shotsThisTurn;
 
         [Tooltip("Menú de armas de la propia rata (se auto-resuelve). Sirve para saber qué arma está equipada y disparar la correcta.")]
         [SerializeField] private WeaponsMenuUI weaponsMenu;
@@ -265,6 +279,9 @@ namespace Ratms.Networking
         /// <summary>Simula mantener pulsada la flecha arriba (salto largo). Solo AutoPlayTest.</summary>
         public bool TestJumpHeld { get; set; }
 
+        /// <summary>Simula W/S colgando de la cuerda (+1 subir, -1 bajar). Solo AutoPlayTest.</summary>
+        public float? TestRopeClimb { get; set; }
+
         private bool testJumpPressed;
 
         /// <summary>Simula pulsar la flecha arriba este frame. Solo AutoPlayTest.</summary>
@@ -352,6 +369,9 @@ namespace Ratms.Networking
             if (bazooka == null) bazooka = GetComponentInChildren<NetworkBazooka>();
             if (grenadeThrower == null) grenadeThrower = GetComponentInChildren<NetworkGrenadeThrower>();
             if (bat == null) bat = GetComponentInChildren<NetworkBat>();
+            shotgun = GetComponent<NetworkShotgun>();
+            teleport = GetComponent<NetworkTeleport>();
+            rope = GetComponent<NetworkNinjaRope>();
             if (weaponsMenu == null) weaponsMenu = GetComponentInChildren<WeaponsMenuUI>();
             if (health == null) health = GetComponent<NetworkHealth>();
 
@@ -477,6 +497,10 @@ namespace Ratms.Networking
                 : IsOwner ? $"Rat_{OwnerClientId}_(yo)"
                 : $"Rat_{OwnerClientId}";
 
+            // Rata dibujada por código (más bonita, casco del color del equipo).
+            if (useProceduralRat && GetComponent<RatAppearance>() == null)
+                gameObject.AddComponent<RatAppearance>().Init(this, OwnerClientId, IsTestDummy);
+
             // Si SOY yo, que la cámara me siga (y recuerde a quién volver
             // tras seguir un proyectil o tras una pausa de impacto).
             if (IsOwner && !IsTestDummy)
@@ -515,6 +539,23 @@ namespace Ratms.Networking
         ///  - Debo ser el dueño (IsOwner).
         ///  - Si hay TurnManager activo y respectTurns=true, debe ser mi turno.
         /// </summary>
+        /// <summary>¿Puede controlar la rata AHORA? (dueño + su turno). Lo leen las armas.</summary>
+        public bool CanControlNow => CanControl();
+
+        /// <summary>Lo llama NetworkTeleport tras mover la rata: sin "caída" falsa y sin aparcar.</summary>
+        public void OnTeleported()
+        {
+            peakYSinceLastGround = transform.position.y;
+            if (parked && rb != null) { parked = false; rb.gravityScale = defaultGravityScale >= 0f ? defaultGravityScale : 1f; }
+        }
+
+        /// <summary>Lo llama la cuerda al engancharse o soltarse: reinicia la caída y suelta el aparcado.</summary>
+        public void OnRopeAttachChanged()
+        {
+            peakYSinceLastGround = transform.position.y;
+            if (parked && rb != null) { parked = false; rb.gravityScale = defaultGravityScale >= 0f ? defaultGravityScale : 1f; }
+        }
+
         private bool CanControl()
         {
             if (!IsOwner || IsTestDummy) return false;
@@ -534,7 +575,7 @@ namespace Ratms.Networking
             // Al EMPEZAR un turno nuevo (pasamos de no controlar a controlar),
             // se recupera el derecho a usar un arma.
             bool canControlNow = CanControl();
-            if (canControlNow && !couldControlLastFrame) firedThisTurn = false;
+            if (canControlNow && !couldControlLastFrame) { firedThisTurn = false; shotsThisTurn = 0; }
             couldControlLastFrame = canControlNow;
 
             if (!canControlNow)
@@ -585,6 +626,14 @@ namespace Ratms.Networking
 
             // Salto: SOLO Flecha Arriba. W queda libre para apuntar arriba.
             bool jumpKeyDown = Input.GetKeyDown(KeyCode.UpArrow) || ConsumeTestJump();
+
+            // Colgando de la cuerda: la flecha arriba la SUELTA (no salta).
+            if (rope != null && rope.IsAttached)
+            {
+                if (jumpKeyDown) rope.Release();
+                jumpKeyDown = false;
+                jumpRequestedTime = -10f;
+            }
             if (jumpKeyDown) jumpRequestedTime = Time.time;
 
             bool canCoyoteJump = (Time.time - lastGroundedTime) <= coyoteTime;
@@ -716,8 +765,46 @@ namespace Ratms.Networking
             bool fireUp   = Input.GetKeyUp(KeyCode.Space)   || testFireUp;
             testFireDown = testFireUp = false;
 
+            // CUERDA NINJA: herramienta de movimiento, NO gasta el arma del turno.
+            if (equipped == WeaponsMenuUI.WeaponId.Rope && rope != null)
+            {
+                if (fireDown)
+                {
+                    if (rope.IsAttached) rope.Release();
+                    else rope.TryAttach(GetWeaponForward());
+                }
+                return;
+            }
+
             // Ya usaste tu arma este turno → solo puedes moverte (huir).
             if (firedThisTurn) return;
+
+            // TELETRANSPORTE: clic izquierdo o ESPACIO.
+            if (equipped == WeaponsMenuUI.WeaponId.Teleport && teleport != null)
+            {
+                bool click = Input.GetMouseButtonDown(0) && TestInputX == null;
+                if ((fireDown || click) && teleport.TryTeleport())
+                {
+                    firedThisTurn = true;
+                    ScheduleEndTurn(1.5f);
+                }
+                return;
+            }
+
+            // ESCOPETA: hasta N disparos por turno, puedes reapuntar entre ellos.
+            if (equipped == WeaponsMenuUI.WeaponId.Shotgun && shotgun != null)
+            {
+                if (fireDown && shotgun.Fire(GetWeaponForward()))
+                {
+                    shotsThisTurn++;
+                    if (shotsThisTurn >= shotgun.ShotsPerTurn)
+                    {
+                        firedThisTurn = true;
+                        ScheduleEndTurn(2f);
+                    }
+                }
+                return;
+            }
 
             // === START: al pulsar ESPACIO, arrancamos la carga del arma correspondiente ===
             if (fireDown)
@@ -890,6 +977,17 @@ namespace Ratms.Networking
             // así NO queremos linearDamping, o iría en contra y se notaría
             // "lento/pegajoso". Lo dejamos a 0 siempre que la rata controla.
             rb.linearDamping = 0f;
+
+            // COLGANDO DE LA CUERDA: la cuerda manda (balanceo con A/D, subir/
+            // bajar con W/S). Nada de frenar en horizontal ni gravedad extra,
+            // o mataríamos el columpio.
+            if (rope != null && rope.IsAttached)
+            {
+                float climb = (Input.GetKey(KeyCode.W) ? 1f : 0f) - (Input.GetKey(KeyCode.S) ? 1f : 0f);
+                if (TestRopeClimb.HasValue) climb = TestRopeClimb.Value;
+                rope.FixedTick(CanControl() ? inputX : 0f, CanControl() ? climb : 0f);
+                return;
+            }
 
             if (!CanControl())
             {
@@ -1337,6 +1435,14 @@ namespace Ratms.Networking
 
             float sy = Mathf.Max(0.0001f, Mathf.Abs(transform.lossyScale.y));
             box.offset -= new Vector2(0f, colliderDropToFeet / sy);
+
+            // Más alto hacia arriba (el fondo no se mueve): que la cabeza también reciba.
+            if (colliderExtraHeight > 0f)
+            {
+                float extra = colliderExtraHeight / sy;
+                box.size += new Vector2(0f, extra);
+                box.offset += new Vector2(0f, extra * 0.5f);
+            }
 
             if (groundCheck == null)
             {

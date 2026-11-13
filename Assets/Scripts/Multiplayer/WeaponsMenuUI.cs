@@ -29,7 +29,9 @@ namespace Ratms.Networking
             Grenade   = 1,
             Dynamite  = 2,
             Shotgun   = 3,
-            Bat       = 4
+            Bat       = 4,
+            Teleport  = 5,
+            Rope      = 6
         }
 
         private struct WeaponEntry
@@ -70,8 +72,10 @@ namespace Ratms.Networking
             new WeaponEntry { id = WeaponId.Bazooka,  displayName = "Bazooka",                    implemented = true,  shortcut = KeyCode.Alpha1 },
             new WeaponEntry { id = WeaponId.Grenade,  displayName = "Granada",                    implemented = true,  shortcut = KeyCode.Alpha2 },
             new WeaponEntry { id = WeaponId.Dynamite, displayName = "Dinamita (ESPACIO = soltar)", implemented = true,  shortcut = KeyCode.Alpha3 },
-            new WeaponEntry { id = WeaponId.Shotgun,  displayName = "Escopeta (próximamente)",    implemented = false, shortcut = KeyCode.Alpha4 },
+            new WeaponEntry { id = WeaponId.Shotgun,  displayName = "Escopeta (2 disparos)",      implemented = true,  shortcut = KeyCode.Alpha4 },
             new WeaponEntry { id = WeaponId.Bat,      displayName = "Bate (ESPACIO = golpear)",   implemented = true,  shortcut = KeyCode.Alpha5 },
+            new WeaponEntry { id = WeaponId.Teleport, displayName = "Teletransporte (clic)",      implemented = true,  shortcut = KeyCode.Alpha6 },
+            new WeaponEntry { id = WeaponId.Rope,     displayName = "Cuerda ninja",               implemented = true,  shortcut = KeyCode.Alpha7 },
         };
 
         /// <summary>Nombre corto del arma para el HUD.</summary>
@@ -82,6 +86,8 @@ namespace Ratms.Networking
             WeaponId.Dynamite => "Dinamita",
             WeaponId.Shotgun  => "Escopeta",
             WeaponId.Bat      => "Bate",
+            WeaponId.Teleport => "Teletransporte",
+            WeaponId.Rope     => "Cuerda ninja",
             _                 => "Ninguna",
         };
 
@@ -149,7 +155,7 @@ namespace Ratms.Networking
             GUI.enabled = true;
 
             GUI.Label(new Rect(x + pad, y + panelSize.y - 26f, panelSize.x - pad * 2, 20f),
-                "Apuntar ↑↓  ·  Cargar/disparar ESPACIO");
+                "Apuntar W/S  ·  Usar ESPACIO");
         }
     }
 }

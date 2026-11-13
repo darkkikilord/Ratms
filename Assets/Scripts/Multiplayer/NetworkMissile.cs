@@ -121,8 +121,17 @@ namespace Ratms.Networking
                 rb.AddForce(impulse, ForceMode2D.Impulse);
         }
 
+        private float nextTrail;
+
         private void Update()
         {
+            // Estela de humo (local, en todos los clientes).
+            if (IsSpawned && Time.time >= nextTrail)
+            {
+                nextTrail = Time.time + 0.035f;
+                Fx.TrailPuff(transform.position);
+            }
+
             if (!IsServer || exploded) return;
 
             if (Time.time - spawnTime > selfDestructSeconds)
@@ -271,6 +280,8 @@ namespace Ratms.Networking
 
             if (explosionSfx != null)
                 AudioSource.PlayClipAtPoint(explosionSfx, at, explosionSfxVolume);
+
+            Fx.Explosion(at, explosionRadius);
 
             // POPUP DE IMPACTO: SIEMPRE pintamos un "BOOM!" en el punto de la
             // explosión, aunque no haya rata dañada. Así el jugador siempre

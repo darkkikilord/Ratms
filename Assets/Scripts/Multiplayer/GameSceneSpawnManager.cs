@@ -445,6 +445,9 @@ namespace Ratms.Networking
         private void ApplyTeamColor(GameObject ratGo, int index)
         {
             if (teamColors == null || teamColors.Length == 0) return;
+            // La rata dibujada por código (RatAppearance) lleva el color en el
+            // casco y lo calcula cada cliente; teñirla entera la ensuciaría.
+            if (ratGo.GetComponent<RatAppearance>() != null) return;
             Color col = teamColors[index % teamColors.Length];
 
             // Buscamos un SpriteRenderer hijo y le ponemos el color; si hay
@@ -456,7 +459,7 @@ namespace Ratms.Networking
                 // que ya tiene su propia imagen). Aplicamos el tint solo a los
                 // sprites cuyo nombre NO contenga "bazooka" ni "lanzamisiles".
                 string n = sr.gameObject.name.ToLowerInvariant();
-                if (n.Contains("bazooka") || n.Contains("lanzamisiles") || n.Contains("dot")) continue;
+                if (n.Contains("bazooka") || n.Contains("lanzamisiles") || n.Contains("dot") || n.Contains("ratbody")) continue;
 
                 // Mezcla suave para no perder el sprite original.
                 sr.color = Color.Lerp(Color.white, col, 0.6f);

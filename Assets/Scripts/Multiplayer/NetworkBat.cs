@@ -263,6 +263,7 @@ namespace Ratms.Networking
 
             if (hitSomething)
             {
+                Fx.Sparks(at, 14, new Color(1f, 0.95f, 0.6f, 1f), 3f, 7f);
                 WorldDamagePopup.SpawnImpact(at, "¡PAM!", new Color(1f, 0.85f, 0.2f));
                 if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.2f, 0.25f);
             }

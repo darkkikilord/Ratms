@@ -101,6 +101,7 @@ namespace Ratms.Networking
         private int bounceCount;
         private GameObject dynamiteVisual;
         private bool pendingDynamite;   // solo servidor: PrepareAsDynamite antes del Spawn
+        private float nextFuseSpark;
 
         // ==============================================================
         /// <summary>
@@ -222,6 +223,13 @@ namespace Ratms.Networking
             // Todos descuentan (para pintar la cuenta atrás); solo el
             // servidor decide la explosión.
             timeRemaining = fuseNet.Value - (Time.time - spawnTime);
+
+            // Mecha encendida de la dinamita: chispitas en la punta (local).
+            if (IsDynamite.Value && Time.time >= nextFuseSpark)
+            {
+                nextFuseSpark = Time.time + 0.07f;
+                Fx.Sparks((Vector2)transform.position + Vector2.up * 0.25f, 2, new Color(1f, 0.85f, 0.3f, 1f), 0.6f, 1.6f);
+            }
 
             if (!IsServer || exploded) return;
             if (timeRemaining <= 0f)
@@ -354,6 +362,8 @@ namespace Ratms.Networking
 
             if (explosionSfx != null)
                 AudioSource.PlayClipAtPoint(explosionSfx, at, explosionSfxVolume);
+
+            Fx.Explosion(at, IsDynamite.Value ? Mathf.Max(explosionRadius, 4f) : explosionRadius);
 
             // POPUP DE IMPACTO: feedback visual fijo aunque la granada
             // no le pegue a ninguna rata.

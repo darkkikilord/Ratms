@@ -138,8 +138,16 @@ namespace Ratms.Networking
         }
 
         // Índices de "material" del dibujo (luego se convierten a color con luz)
-        private const byte Empty = 0, Fur = 1, Belly = 2, Pink = 3, Eye = 4, Glint = 5, Helmet = 6, Whisker = 7, Strap = 8;
+        private const byte Empty = 0, Fur = 1, Belly = 2, Pink = 3, Eye = 4, Pupil = 5, Helmet = 6, Whisker = 7,
+                           Band = 8, Teeth = 9, Scar = 10, Mange = 11, Bandage = 12, Blood = 13, Cig = 14, Ember = 15,
+                           Brow = 16, Claw = 17;
 
+        /// <summary>
+        ///  RATA DE TRINCHERA: sarnosa y fea a propósito. Casco de la Gran
+        ///  Guerra (ala ancha) con franja del color del equipo, oreja rota,
+        ///  ojo inyectado en sangre con ceja de mala leche, dientes amarillos,
+        ///  cicatriz, calvas de sarna, vendaje con sangre y un cigarro.
+        /// </summary>
         private static Sprite Draw(Frame frame, Color32 team)
         {
             var mat = new byte[S * S];
@@ -160,66 +168,96 @@ namespace Ratms.Networking
             }
             float tailSway = frame >= Frame.Walk0 && frame <= Frame.Walk3 ? ((int)frame % 2 == 0 ? 1f : -1f) : 0f;
 
-            // Capas de atrás a delante
-            // Cola: curva desde el trasero hacia la izquierda y arriba
+            // Cola: fina, con un quiebro y anillas oscuras (de rata de alcantarilla)
             for (float t = 0f; t <= 1f; t += 0.02f)
             {
-                float x = 9.5f - 8.5f * t;
-                float y = 4f + bob + (5f + 4f * tailUp) * t * t + tailSway * Mathf.Sin(t * 3f);
-                Dot(mat, shade, x, y, t < 0.45f ? 1.0f : 0.6f, Pink);
+                float x = 9.5f - 9f * t;
+                float y = 4f + bob + (4f + 5f * tailUp) * t * t + tailSway * Mathf.Sin(t * 3f) + (t > 0.55f ? 1.2f : 0f);
+                Dot(mat, shade, x, y, t < 0.3f ? 0.9f : 0.55f, ((int)(t * 14) % 3 == 0) ? Scar : Pink);
             }
-            // Pata y pie de atrás
+            // Pata y pie de atrás (con garras)
             Rect(mat, shade, 10 + backFoot / 2, 2 + footLift, 2, 3, Fur, -1);
             Ellipse(mat, shade, 11.5f + backFoot, 1.6f + footLift, 2.6f, 1.2f, Pink);
-            // Cuerpo y barriga
-            Ellipse(mat, shade, 14f, 9.5f + bob, 5.6f, 7f, Fur);
-            Ellipse(mat, shade, 16.2f, 8.5f + bob, 3f, 4.8f, Belly);
+            Set(mat, shade, 14 + backFoot, 1 + footLift, Claw, 0);
+            // Cuerpo encorvado y barriga sucia
+            Ellipse(mat, shade, 13.8f, 9.3f + bob, 5.8f, 6.8f, Fur);
+            Ellipse(mat, shade, 16.2f, 8.2f + bob, 2.8f, 4.4f, Belly);
+            // Calvas de sarna
+            Set(mat, shade, 10, 11 + bob, Mange, 0); Set(mat, shade, 11, 11 + bob, Mange, 0); Set(mat, shade, 11, 12 + bob, Mange, 0);
+            Set(mat, shade, 12, 6 + bob, Mange, 0);
             // Pata y pie de delante
             Rect(mat, shade, 15 + frontFoot / 2, 2 + footLift, 2, 3, Fur, 0);
             Ellipse(mat, shade, 16.5f + frontFoot, 1.6f + footLift, 2.6f, 1.2f, Pink);
-            // Brazo (sujeta las armas a la altura del pecho)
-            Ellipse(mat, shade, 19f, (air ? 13f : 10.5f) + bob, 2.2f, 1.5f, Fur);
-            Dot(mat, shade, 21.2f, (air ? 13f : 10.5f) + bob, 1.1f, Pink);
-            // Oreja (detrás de la cabeza)
-            float hy = 18.5f + bob + headBob;
-            Ellipse(mat, shade, 12.5f, hy + 4.2f, 3.1f, 3.1f, Fur);
-            Ellipse(mat, shade, 12.6f, hy + 4.1f, 1.7f, 1.7f, Pink);
-            // Cabeza y hocico
-            Ellipse(mat, shade, 17f, hy, 5.6f, 4.6f, Fur);
-            Ellipse(mat, shade, 21.8f, hy - 1f, 3.4f, 2.5f, Fur);
-            Ellipse(mat, shade, 22.3f, hy - 2.2f, 2.2f, 1.1f, Belly);   // mentón
-            Dot(mat, shade, 25f, hy - 0.6f, 1.2f, Pink);                // nariz
-            // Casco (cúpula del color del equipo + borde + correa)
+            Set(mat, shade, 19 + frontFoot, 1 + footLift, Claw, 0);
+            // Brazo con VENDAJE ensangrentado
+            float ay = (air ? 13f : 10.5f) + bob;
+            Ellipse(mat, shade, 19f, ay, 2.2f, 1.5f, Fur);
+            Set(mat, shade, 18, Mathf.RoundToInt(ay), Bandage, 0); Set(mat, shade, 18, Mathf.RoundToInt(ay) - 1, Bandage, 0);
+            Set(mat, shade, 19, Mathf.RoundToInt(ay), Bandage, 0); Set(mat, shade, 19, Mathf.RoundToInt(ay) - 1, Blood, 0);
+            Dot(mat, shade, 21.2f, ay, 1.1f, Pink);
+            // Oreja ROTA (con muesca) detrás de la cabeza
+            float hy = 18.3f + bob + headBob;
+            Ellipse(mat, shade, 12.3f, hy + 4f, 3.1f, 3.1f, Fur);
+            Ellipse(mat, shade, 12.4f, hy + 3.9f, 1.6f, 1.6f, Pink);
+            Set(mat, shade, 14, Mathf.RoundToInt(hy + 6.5f), Empty, 0); Set(mat, shade, 13, Mathf.RoundToInt(hy + 6.8f), Empty, 0);
+            Set(mat, shade, 14, Mathf.RoundToInt(hy + 5.8f), Empty, 0);
+            // Cabeza y hocico largo
+            Ellipse(mat, shade, 17f, hy, 5.4f, 4.4f, Fur);
+            Ellipse(mat, shade, 22f, hy - 1.2f, 3.8f, 2.3f, Fur);
+            Ellipse(mat, shade, 22.4f, hy - 2.4f, 2.4f, 1.0f, Belly);   // mentón
+            Dot(mat, shade, 25.6f, hy - 0.8f, 1.1f, Pink);              // nariz
+            // Dientes amarillos (dos paletas)
+            int ty = Mathf.RoundToInt(hy - 3.4f);
+            Set(mat, shade, 23, ty, Teeth, 0); Set(mat, shade, 24, ty, Teeth, 0); Set(mat, shade, 23, ty - 1, Teeth, 0);
+            // Cicatriz en la mejilla
+            int sy = Mathf.RoundToInt(hy - 1f);
+            Set(mat, shade, 16, sy + 1, Scar, 0); Set(mat, shade, 17, sy, Scar, 0); Set(mat, shade, 18, sy - 1, Scar, 0);
+            // Cigarro colgando de la boca, con la brasa encendida
+            int cy = Mathf.RoundToInt(hy - 2.8f);
+            for (int k = 0; k < 4; k++) Set(mat, shade, 25 + k, cy - (k >= 2 ? 1 : 0), Cig, 0);
+            Set(mat, shade, 29, cy - 1, Ember, 0);
+            // CASCO DE TRINCHERA: cúpula baja caqui, ala muy ancha y franja de equipo
+            float domeY = hy + 2.4f;
             for (int y = 0; y < S; y++)
                 for (int x = 0; x < S; x++)
                 {
-                    float dx = (x + 0.5f - 16.6f) / 6.2f, dy = (y + 0.5f - (hy + 2.2f)) / 3.8f;
-                    if (dy >= 0f && dx * dx + dy * dy <= 1f) { Set(mat, shade, x, y, Helmet, (sbyte)(dx < -0.2f && dy > 0.45f ? 1 : dx > 0.45f ? -1 : 0)); }
+                    float dx = (x + 0.5f - 16.6f) / 5.4f, dy = (y + 0.5f - domeY) / 3.0f;
+                    if (dy >= 0f && dx * dx + dy * dy <= 1f)
+                        Set(mat, shade, x, y, Helmet, (sbyte)(dx < -0.25f && dy > 0.4f ? 1 : dx > 0.4f ? -1 : 0));
                 }
-            for (int x = 10; x <= 23; x++) Set(mat, shade, x, Mathf.RoundToInt(hy + 2.2f), Helmet, -1);   // ala del casco
-            // Ojo
+            int brimY = Mathf.RoundToInt(domeY);
+            for (int x = 8; x <= 25; x++) Set(mat, shade, x, brimY, Helmet, -1);              // ala ancha
+            for (int x = 12; x <= 21; x++) Set(mat, shade, x, brimY + 1, Band, 0);           // franja del equipo
+            Set(mat, shade, 15, brimY + 2, Empty, 0);                                         // abolladura
+            // Ojo inyectado en sangre, entrecerrado, con ceja de mala leche
             int ey = Mathf.RoundToInt(hy - 0.2f);
-            if (blink) { Set(mat, shade, 19, ey, Eye, 0); Set(mat, shade, 20, ey, Eye, 0); }
+            Set(mat, shade, 18, ey + 2, Brow, 0); Set(mat, shade, 19, ey + 2, Brow, 0); Set(mat, shade, 20, ey + 1, Brow, 0);
+            if (blink) { Set(mat, shade, 19, ey, Brow, 0); Set(mat, shade, 20, ey, Brow, 0); }
             else
             {
-                Set(mat, shade, 19, ey, Eye, 0); Set(mat, shade, 20, ey, Eye, 0);
-                Set(mat, shade, 19, ey + 1, Eye, 0); Set(mat, shade, 20, ey + 1, Glint, 0);
+                Set(mat, shade, 19, ey, Eye, 0); Set(mat, shade, 20, ey, Pupil, 0);
+                Set(mat, shade, 19, ey + 1, Eye, 0); Set(mat, shade, 18, ey, Blood, 0);       // venita roja
             }
-            // Bigotes
+            // Bigotes (pocos y torcidos)
             for (int k = 0; k < 4; k++)
             {
-                Set(mat, shade, 24 + k, Mathf.RoundToInt(hy - 0.5f + k * 0.35f), Whisker, 0, onlyEmpty: true);
-                Set(mat, shade, 24 + k, Mathf.RoundToInt(hy - 1.6f - k * 0.3f), Whisker, 0, onlyEmpty: true);
+                Set(mat, shade, 24 + k, Mathf.RoundToInt(hy + 0.2f + k * 0.45f), Whisker, 0, onlyEmpty: true);
+                Set(mat, shade, 25 + k, Mathf.RoundToInt(hy - 1.0f - k * 0.2f), Whisker, 0, onlyEmpty: true);
             }
 
-            // --- A color, con contorno ---
-            Color32 fur = new Color32(140, 140, 152, 255), furL = new Color32(178, 178, 190, 255), furD = new Color32(100, 100, 116, 255);
-            Color32 belly = new Color32(218, 208, 206, 255), bellyD = new Color32(186, 174, 176, 255);
-            Color32 pink = new Color32(236, 150, 166, 255), pinkD = new Color32(198, 108, 128, 255);
-            Color32 eye = new Color32(22, 18, 26, 255), glint = new Color32(250, 250, 255, 255);
-            Color32 whisker = new Color32(210, 210, 220, 200);
-            Color32 outline = new Color32(34, 28, 40, 255);
-            Color32 hL = Lighten(team, 0.25f), hD = Darken(team, 0.3f), strap = new Color32(60, 46, 34, 255);
+            // --- A color (paleta sucia, de barro), con contorno ---
+            Color32 fur = new Color32(112, 100, 88, 255), furL = new Color32(142, 128, 110, 255), furD = new Color32(76, 66, 58, 255);
+            Color32 belly = new Color32(158, 142, 118, 255), bellyD = new Color32(126, 112, 92, 255);
+            Color32 pink = new Color32(190, 124, 116, 255), pinkD = new Color32(146, 88, 84, 255);
+            Color32 eye = new Color32(226, 214, 160, 255), pupil = new Color32(150, 18, 18, 255);
+            Color32 whisker = new Color32(176, 166, 150, 190);
+            Color32 helmet = new Color32(96, 96, 62, 255), helmetL = new Color32(126, 126, 84, 255), helmetD = new Color32(66, 66, 44, 255);
+            Color32 teeth = new Color32(226, 200, 96, 255), scar = new Color32(112, 42, 40, 255), mange = new Color32(176, 126, 116, 255);
+            Color32 bandage = new Color32(204, 194, 164, 255), blood = new Color32(160, 16, 16, 255);
+            Color32 cig = new Color32(230, 226, 214, 255), ember = new Color32(255, 128, 40, 255);
+            Color32 brow = new Color32(36, 26, 24, 255), claw = new Color32(214, 204, 180, 255);
+            Color32 outline = new Color32(20, 15, 16, 255);
+            Color32 band = Darken(team, 0.1f);
 
             var px = new Color32[S * S];
             for (int i = 0; i < px.Length; i++)
@@ -231,14 +269,23 @@ namespace Ratms.Networking
                     Belly => s < 0 ? bellyD : belly,
                     Pink => s < 0 ? pinkD : pink,
                     Eye => eye,
-                    Glint => glint,
-                    Helmet => s > 0 ? hL : s < 0 ? hD : team,
+                    Pupil => pupil,
+                    Helmet => s > 0 ? helmetL : s < 0 ? helmetD : helmet,
                     Whisker => whisker,
-                    Strap => strap,
+                    Band => band,
+                    Teeth => teeth,
+                    Scar => scar,
+                    Mange => mange,
+                    Bandage => bandage,
+                    Blood => blood,
+                    Cig => cig,
+                    Ember => ember,
+                    Brow => brow,
+                    Claw => claw,
                     _ => new Color32(0, 0, 0, 0),
                 };
             }
-            // Contorno: todo píxel vacío que toca a uno relleno (no bigote)
+            // Contorno: todo píxel vacío que toca a uno relleno (no bigote ni humo)
             var outlined = (Color32[])px.Clone();
             for (int y = 0; y < S; y++)
                 for (int x = 0; x < S; x++)

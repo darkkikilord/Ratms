@@ -41,9 +41,24 @@ namespace Ratms.UI
         [SerializeField] private string firstLevelSceneName = "Level_01";
         [SerializeField] private bool useAsyncLoading = false;
 
+        /// <summary>
+        ///  El controlador multijugador VIVO. Al volver de una partida, el del
+        ///  Inspector es la copia de la escena (que se destruye); el bueno es
+        ///  el persistente, <see cref="MultiplayerMenuController.Instance"/>.
+        /// </summary>
+        private MultiplayerMenuController MP =>
+            MultiplayerMenuController.Instance != null ? MultiplayerMenuController.Instance : multiplayerMenu;
+
         private void Awake()
         {
-            ShowMain();
+            // Si volvemos de una partida online y seguimos en la sala, el que
+            // manda es el lobby: NO encendemos el menú principal encima.
+            if (MultiplayerMenuController.InOnlineRoom)
+            {
+                if (mainPanel) mainPanel.SetActive(false);
+                if (optionsPanel) optionsPanel.SetActive(false);
+            }
+            else ShowMain();
             if (loadingPanel) loadingPanel.SetActive(false);
 
             if (btnPlay) btnPlay.onClick.AddListener(OnPlay);
@@ -113,16 +128,16 @@ namespace Ratms.UI
         public void OnPlay()
         {
             // Opción: el botón 'Jugar' va directo al panel multijugador.
-            if (playGoesToMultiplayer && multiplayerMenu != null)
+            if (playGoesToMultiplayer && MP != null)
             {
                 OnMultiplayer();
                 return;
             }
 
             // Panel para elegir: PRÁCTICA (contra dianas) o PARTIDA LOCAL.
-            if (multiplayerMenu != null)
+            if (MP != null)
             {
-                multiplayerMenu.HideAllPanels();
+                MP.HideAllPanels();
                 if (mainPanel) mainPanel.SetActive(false);
                 if (optionsPanel) optionsPanel.SetActive(false);
                 if (playModeMenu == null)
@@ -169,20 +184,20 @@ namespace Ratms.UI
         public void StartPractice()
         {
             ClosePlayModeMenu();
-            if (multiplayerMenu == null) return;
-            multiplayerMenu.HideAllPanels();
+            if (MP == null) return;
+            MP.HideAllPanels();
             if (mainPanel) mainPanel.SetActive(false);
-            PracticeSession.Begin(multiplayerMenu.GameSceneName);
+            PracticeSession.Begin(MP.GameSceneName);
         }
 
         /// <summary>PARTIDA LOCAL en el mismo PC con las reglas de MatchRules.</summary>
         public void StartLocalMatch()
         {
             ClosePlayModeMenu();
-            if (multiplayerMenu == null) return;
-            multiplayerMenu.HideAllPanels();
+            if (MP == null) return;
+            MP.HideAllPanels();
             if (mainPanel) mainPanel.SetActive(false);
-            if (!LocalMatchSession.Begin(multiplayerMenu.GameSceneName)) ShowMain();
+            if (!LocalMatchSession.Begin(MP.GameSceneName)) ShowMain();
         }
 
         /// <summary>
@@ -190,12 +205,12 @@ namespace Ratms.UI
         /// </summary>
         public void OnMultiplayer()
         {
-            if (multiplayerMenu == null)
+            if (MP == null)
             {
                 Debug.LogWarning("[MainMenu] No hay multiplayerMenu asignado en el inspector.");
                 return;
             }
-            multiplayerMenu.ShowMultiplayer();
+            MP.ShowMultiplayer();
             if (mainPanel) mainPanel.SetActive(false);
             if (optionsPanel) optionsPanel.SetActive(false);
         }

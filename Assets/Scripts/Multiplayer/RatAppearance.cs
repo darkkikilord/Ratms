@@ -223,8 +223,21 @@ namespace Ratms.Networking
             // --- Posición: los PIES del dibujo sobre el fondo del collider ---
             if (col != null && col.enabled)
             {
+                // Con BoxCollider2D calculamos los pies desde el TRANSFORM (no
+                // desde col.bounds): los bounds solo se actualizan en el paso de
+                // física, y en las ratas rivales (las mueve la red) iban un paso
+                // por detrás → el dibujo se separaba del arma.
                 Bounds b = col.bounds;
-                float bottom = b.min.y - (box != null ? box.edgeRadius : 0f);
+                float bottom;
+                if (box != null)
+                {
+                    Vector2 localBottom = box.offset - new Vector2(0f, box.size.y * 0.5f);
+                    Vector3 wb = transform.TransformPoint(localBottom);
+                    Vector3 wc = transform.TransformPoint(box.offset);
+                    b.center = new Vector3(wc.x, b.center.y, b.center.z);
+                    bottom = wb.y - box.edgeRadius;
+                }
+                else bottom = b.min.y;
                 // Cojera de la pata de palo: un pelín arriba y abajo al andar.
                 bool lame = Look.pegLeg || (health != null && health.LegsLost == 1);
                 float limp = lame && f >= Frame.Walk0 && f <= Frame.Walk3 && ((int)f % 2 == 1) ? 1f / 32f : 0f;

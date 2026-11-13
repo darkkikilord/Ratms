@@ -107,8 +107,41 @@ namespace Ratms.Networking
         private bool isBusy;
 
         // ================================================================
+        /// <summary>
+        ///  El controlador VIVO (el del objeto persistente). Úsalo en vez de una
+        ///  referencia del Inspector: al recargar el MainMenu, la copia nueva de
+        ///  la escena se destruye y sus referencias quedan muertas.
+        /// </summary>
+        public static MultiplayerMenuController Instance { get; private set; }
+
+        /// <summary>¿Seguimos dentro de una sala online (conectados y sin estar cerrando)?</summary>
+        public static bool InOnlineRoom
+        {
+            get
+            {
+                var nm = NetworkManager.Singleton;
+                return nm != null && nm.IsListening && !nm.ShutdownInProgress
+                       && (nm.IsHost || nm.IsClient) && MatchRules.Mode == MatchMode.Online;
+            }
+        }
+
         private void Awake()
         {
+            // ¿Ya hay un controlador persistente vivo? Entonces este es la COPIA
+            // que trae el MainMenu al recargarse (volver de una partida). Antes
+            // las dos copias manejaban paneles a la vez: el persistente apuntaba
+            // a los paneles de la escena vieja (destruidos) y la copia enseñaba
+            // el lobby mientras el menú principal también se encendía → botones
+            // de los dos paneles uno encima de otro. Ahora el persistente ADOPTA
+            // los paneles nuevos y la copia se apaga sin hacer nada.
+            if (Instance != null && Instance != this)
+            {
+                enabled = false;
+                Instance.AdoptSceneUI(this);
+                return;
+            }
+            Instance = this;
+
             LobbySync.Ensure();
             if (GetComponent<LobbyCard>() == null) gameObject.AddComponent<LobbyCard>().Init(this);
             // Auto-resolver el RelayManager. Orden de búsqueda:
@@ -117,6 +150,18 @@ namespace Ratms.Networking
             if (relayManager == null) relayManager = GetComponentInParent<RelayManager>();
             if (relayManager == null) relayManager = FindFirstObjectByType<RelayManager>();
 
+            WireSceneUI();
+            ShowInitialPanel();
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
+        /// <summary>Engancha botones, nombre y bioma de los paneles actuales.</summary>
+        private void WireSceneUI()
+        {
             if (btnCreateRoom          != null) btnCreateRoom.onClick.AddListener(OnCreateRoomClicked);
             if (btnJoinRoom            != null) btnJoinRoom.onClick.AddListener(OnJoinRoomClicked);
             if (btnBackFromMultiplayer != null) btnBackFromMultiplayer.onClick.AddListener(ShowMain);
@@ -128,18 +173,46 @@ namespace Ratms.Networking
 
             // Rellenamos el input de nombre con el guardado + escuchamos cambios
             InitializePlayerNameInput();
+        }
 
-            // Arranque: si venimos de una partida (ya estamos conectados a una
-            // sala vía NGO), mostramos el LOBBY directamente en lugar del menú
-            // principal. Así al terminar una partida y "Volver al lobby",
-            // los jugadores no se ven en el menú principal desconectados.
-            var nm = NetworkManager.Singleton;
-            bool alreadyConnected = nm != null && (nm.IsHost || nm.IsClient);
-            if (alreadyConnected)
-                ShowLobby();
-            else
-                ShowMain();
+        /// <summary>
+        ///  Arranque: si venimos de una partida y seguimos en la sala, LOBBY
+        ///  directamente; si no, menú principal.
+        /// </summary>
+        private void ShowInitialPanel()
+        {
+            if (InOnlineRoom) ShowLobby(); else ShowMain();
             SetStatus("");
+            if (InOnlineRoom) RefreshLobbyUI();
+        }
+
+        /// <summary>
+        ///  Toma los paneles y botones de la copia recién cargada del MainMenu
+        ///  (los nuestros murieron con la escena anterior).
+        /// </summary>
+        private void AdoptSceneUI(MultiplayerMenuController fresh)
+        {
+            mainPanel              = fresh.mainPanel;
+            multiplayerPanel       = fresh.multiplayerPanel;
+            lobbyPanel             = fresh.lobbyPanel;
+            btnCreateRoom          = fresh.btnCreateRoom;
+            btnJoinRoom            = fresh.btnJoinRoom;
+            btnBackFromMultiplayer = fresh.btnBackFromMultiplayer;
+            joinCodeInput          = fresh.joinCodeInput;
+            lobbyCodeText          = fresh.lobbyCodeText;
+            lobbyPlayerCountText   = fresh.lobbyPlayerCountText;
+            btnStartGame           = fresh.btnStartGame;
+            btnCancelLobby         = fresh.btnCancelLobby;
+            statusText             = fresh.statusText;
+            playerNameInput        = fresh.playerNameInput;
+            biomeDropdown          = fresh.biomeDropdown;
+            biomeLabelForClient    = fresh.biomeLabelForClient;
+            isBusy = false;
+
+            WireSceneUI();
+            // Si venimos de una partida online acabada, "¡Listo!" vuelve a no.
+            if (InOnlineRoom && LobbySync.LocalReady) LobbySync.LocalReady = false;
+            ShowInitialPanel();
         }
 
         private void OnEnable()

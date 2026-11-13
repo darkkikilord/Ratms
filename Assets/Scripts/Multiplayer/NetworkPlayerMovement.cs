@@ -509,11 +509,7 @@ namespace Ratms.Networking
             //    notaba mucho el temblor).
             //  · Continuous → a las velocidades de un empujón de explosión la
             //    rata ya no puede atravesar paredes finas del terreno.
-            if (IsOwner && rb != null)
-            {
-                rb.interpolation = RigidbodyInterpolation2D.Interpolate;
-                rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
-            }
+            ApplyAuthorityPhysics();
 
             // Aplica el flip inicial al spawnear (importante para clientes que
             // entran después y ven al jugador ya girado)
@@ -1373,6 +1369,38 @@ namespace Ratms.Networking
             // repintamos el apuntado inmediatamente para no esperar al LateUpdate.
             ApplyAimRotation(aimAngle.Value, newValue);
         }
+
+        /// <summary>
+        ///  Quién mueve la física de esta rata.
+        ///  · DUEÑO: Rigidbody2D dinámico (gravedad, saltos, empujones), con
+        ///    Interpolate y colisión Continuous.
+        ///  · RESTO de PCs: KINEMATIC. Aquí la rata la coloca el NetworkTransform;
+        ///    si la dejásemos dinámica, la física local la haría caer a la vez que
+        ///    la red la recoloca, y el collider (donde se pinta el cuerpo) y el
+        ///    transform (donde va el arma) acababan cada uno por su lado: la rata
+        ///    rival se veía "glicheada", con el arma flotando lejos. Kinematic
+        ///    sigue chocando con misiles y granadas, pero no cae ni resbala.
+        /// </summary>
+        private void ApplyAuthorityPhysics()
+        {
+            if (rb == null) return;
+            if (IsOwner)
+            {
+                rb.bodyType = RigidbodyType2D.Dynamic;
+                rb.interpolation = RigidbodyInterpolation2D.Interpolate;
+                rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+            }
+            else
+            {
+                rb.bodyType = RigidbodyType2D.Kinematic;
+                rb.linearVelocity = Vector2.zero;
+                rb.angularVelocity = 0f;
+                rb.interpolation = RigidbodyInterpolation2D.None;
+            }
+        }
+
+        public override void OnGainedOwnership() { base.OnGainedOwnership(); ApplyAuthorityPhysics(); }
+        public override void OnLostOwnership() { base.OnLostOwnership(); ApplyAuthorityPhysics(); }
 
         private void ApplyFlipVisual(bool right)
         {

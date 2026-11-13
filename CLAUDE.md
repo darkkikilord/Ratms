@@ -23,7 +23,8 @@ El usuario habla español: responde, comenta el código y escribe los commits en
 ## Arquitectura de red (respetar siempre)
 - **Servidor autoritativo**: daño, vida, turnos, explosiones y victoria los decide el servidor. `NetworkVariable` con `writePerm: Server` salvo estado que el dueño publica (flip, velocidad, ángulo del arma).
 - Única excepción aceptada: el daño por caída lo calcula el cliente dueño y lo pide por `ServerRpc`.
-- La física de la rata la mueve su **Owner**; el knockback llega por `ClientRpc` y solo lo aplica el Owner.
+- La física de la rata la mueve su **Owner**; el knockback llega por `ClientRpc` y solo lo aplica el Owner. En los demás PCs el Rigidbody2D de la rata es **Kinematic** (`ApplyAuthorityPhysics`): si fuese dinámico, la física local la haría caer mientras el NetworkTransform la recoloca y el dibujo se separaba del arma ("rata glicheada").
+- Menú persistente: `MultiplayerMenuController.Instance` es el del objeto DontDestroyOnLoad; al recargar MainMenu, la copia de la escena le pasa sus paneles (`AdoptSceneUI`) y se apaga. Usa `Instance`/`InOnlineRoom`, no la referencia del Inspector.
 - **Terreno determinista**: el servidor elige semilla → todos generan el mismo mapa. Los agujeros se replican con `NetworkDestructibleTerrain.CarveClientRpc` (cada peer carvea localmente).
 - Popups y etiquetas de vida son locales, se crean por código (sin prefab): `WorldDamagePopup`, `RatHealthLabel`.
 - ⚠ **El pivote del prefab de la rata está ~0.8 u POR DEBAJO del cuerpo** (dentro del suelo). Para distancias de explosión, golpes, popups o "¿toca el agua?" usa `NetworkHealth.BodyCenter`, nunca `transform.position`. Para colocar cosas en la mano usa `NetworkPlayerMovement.HandPosition` desde un `LateUpdate` con `[DefaultExecutionOrder(100)]` (el Animator pisa el weaponHolder y el movimiento lo corrige en su LateUpdate).

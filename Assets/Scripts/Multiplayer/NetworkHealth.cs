@@ -169,6 +169,13 @@ namespace Ratms.Networking
             }
         }
 
+        /// <summary>(Servidor) Cura a la rata (botiquín), sin pasar de su vida máxima.</summary>
+        public void HealServer(int amount)
+        {
+            if (!IsServer || IsDead.Value || amount <= 0) return;
+            CurrentHealth.Value = Mathf.Min(MaxHealth, CurrentHealth.Value + amount);
+        }
+
         /// <summary>
         ///  ServerRpc para que un cliente pueda pedir daño (no se usa hoy pero
         ///  está disponible por si en el futuro hay armas cliente-autoritativas).
@@ -238,6 +245,7 @@ namespace Ratms.Networking
             lastDamageType = type;
             WorldDamagePopup.Spawn(hitPoint, amount, type);
             if (type == DamageType.Water) { Fx.Splash(hitPoint); Sfx.Play(Sfx.Id.Splash); return; }
+            bool laughs = PlayerPrefs.GetInt("opt_laughs", 1) == 1;
 
             // GORE: salpicón de sangre hacia fuera del golpe (mancha el suelo).
             Vector2 away = BodyCenter - (Vector2)hitPoint;
@@ -247,14 +255,14 @@ namespace Ratms.Networking
             if (!lethal)
             {
                 Sfx.Play(Sfx.Id.Ouch, 0.7f, 0.15f);
-                if (Random.value < 0.35f)
+                if (laughs && Random.value < 0.35f)
                     WorldDamagePopup.SpawnImpact(BodyCenter + Vector2.up * 0.9f, Pick(HurtQuips), new Color(1f, 0.75f, 0.6f));
             }
 
             // RISA: la rata que tiene el turno se ríe de su víctima (siempre si
             // la mata, a veces si solo la hiere). Humor negro de trinchera.
             var attacker = CurrentTurnRat();
-            if (attacker != null && attacker.gameObject != gameObject && (lethal || Random.value < 0.45f))
+            if (laughs && attacker != null && attacker.gameObject != gameObject && (lethal || Random.value < 0.45f))
             {
                 var ah = attacker.GetComponent<NetworkHealth>();
                 Vector2 at = (ah != null ? ah.BodyCenter : (Vector2)attacker.transform.position) + Vector2.up * 0.95f;
@@ -312,7 +320,8 @@ namespace Ratms.Networking
                 if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.25f, 0.35f);
                 Sfx.Play(Sfx.Id.Splat);
                 Fx.Gravestone(b);
-                WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.3f, Pick(DeathQuips), new Color(0.95f, 0.25f, 0.2f));
+                if (PlayerPrefs.GetInt("opt_laughs", 1) == 1)
+                    WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.3f, Pick(DeathQuips), new Color(0.95f, 0.25f, 0.2f));
             }
             Sfx.Play(Sfx.Id.Squeak, 0.8f);
             ApplyDeathVisual();

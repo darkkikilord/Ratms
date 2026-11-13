@@ -5,97 +5,80 @@ using UnityEngine;
 namespace Ratms.UI
 {
     /// <summary>
-    ///  Panel del botón "Jugar": elegir entre PRÁCTICA (tú solo contra
-    ///  dianas) y PARTIDA LOCAL en el mismo PC, con sus opciones básicas
-    ///  (equipos, ratas por equipo y minutos hasta la muerte súbita).
-    ///
-    ///  Las opciones se guardan en <see cref="MatchRules"/> (PlayerPrefs), así
-    ///  que se recuerdan para la próxima vez. Hecho con IMGUI: cero prefabs.
+    ///  Panel del botón "Jugar": PRÁCTICA (tú solo contra dianas) o PARTIDA
+    ///  LOCAL en el mismo PC, con todas sus reglas. Estilo <see cref="TrenchGUI"/>.
+    ///  Las reglas se guardan en <see cref="MatchRules"/> (se recuerdan).
     /// </summary>
     public class PlayModeMenu : MonoBehaviour
     {
         public Action OnPractice;
         public Action OnLocal;
         public Action OnBack;
-
-        private GUIStyle title, label, button, selected, big;
-        private Texture2D panelTex;
-        private float stylesScale = -1f;
-
-        private static readonly float[] SuddenDeathChoices = { 5f, 10f, 15f, 0f };
+        public Action OnTeam;
 
         private void OnGUI()
         {
-            float scale = Mathf.Max(0.6f, Screen.height / 1080f);
-            EnsureStyles(scale);
-            var prev = GUI.matrix;
-            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
-            float vw = Screen.width / scale, vh = Screen.height / scale;
-
-            var panel = new Rect((vw - 640f) * 0.5f, (vh - 640f) * 0.5f, 640f, 640f);
-            GUI.DrawTexture(panel, panelTex);
-            float x = panel.x + 40f, w = panel.width - 80f, y = panel.y + 24f;
-
-            GUI.Label(new Rect(x, y, w, 50f), "¿A QUÉ JUGAMOS?", title);
+            TrenchGUI.Begin();
+            var r = new Rect((TrenchGUI.VW - 860f) * 0.5f, (TrenchGUI.VH - 790f) * 0.5f, 860f, 790f);
+            TrenchGUI.Panel(r);
+            float x = r.x + 40f, w = r.width - 80f, y = r.y + 18f;
+            TrenchGUI.Title(new Rect(r.x, y, r.width, 50f), "¿A QUÉ JUGAMOS?");
             y += 70f;
 
-            if (GUI.Button(new Rect(x, y, w, 56f), "Práctica  ·  tú solo contra ratas diana", big)) OnPractice?.Invoke();
-            y += 84f;
+            if (TrenchGUI.Button(new Rect(x, y, w, 58f), "Práctica  ·  tú solo contra ratas diana", big: true)) OnPractice?.Invoke();
+            y += 80f;
 
-            GUI.Label(new Rect(x, y, w, 30f), "PARTIDA LOCAL  (mismo PC, os pasáis el teclado)", label);
+            TrenchGUI.Label(new Rect(x, y, w, 34f), "PARTIDA LOCAL  (mismo PC, os pasáis el teclado)");
             y += 44f;
+            MatchRules.LocalTeams = TrenchGUI.Choice(new Rect(x, y, w, 44f), "Equipos", new[] { "2", "3", "4" }, MatchRules.LocalTeams - 2) + 2;
+            y += 54f;
+            y += RulesEditor.Draw(new Rect(x, y, w, 0f));
+            y += 10f;
 
-            y = Row(x, y, w, "Equipos", new[] { "2", "3", "4" }, MatchRules.LocalTeams - 2, i => MatchRules.LocalTeams = i + 2);
-            y = Row(x, y, w, "Ratas por equipo", new[] { "1", "2", "3", "4" }, MatchRules.RatsPerTeam - 1, i => MatchRules.RatsPerTeam = i + 1);
-            int sdIdx = Array.IndexOf(SuddenDeathChoices, MatchRules.SuddenDeathMinutes);
-            y = Row(x, y, w, "Muerte súbita", new[] { "5 min", "10 min", "15 min", "Nunca" }, sdIdx,
-                    i => MatchRules.SuddenDeathMinutes = SuddenDeathChoices[i]);
-            y += 14f;
+            if (TrenchGUI.Button(new Rect(x, y, w, 64f), "¡A LA TRINCHERA!", big: true)) { PlayerPrefs.Save(); OnLocal?.Invoke(); }
+            y += 80f;
+            if (TrenchGUI.Button(new Rect(x, y, w * 0.48f, 46f), "Mi equipo (nombres y ratas)")) OnTeam?.Invoke();
+            if (TrenchGUI.Button(new Rect(x + w * 0.52f, y, w * 0.48f, 46f), "Volver")) OnBack?.Invoke();
+            TrenchGUI.End();
+        }
+    }
 
-            if (GUI.Button(new Rect(x, y, w, 64f), "¡A LA TRINCHERA!", big)) { PlayerPrefs.Save(); OnLocal?.Invoke(); }
-            y += 86f;
+    /// <summary>
+    ///  Editor de REGLAS de partida (ratas, vida, turno, muerte súbita,
+    ///  barriles, cajas). Lo usan la partida local y el lobby online (host).
+    /// </summary>
+    public static class RulesEditor
+    {
+        private static readonly int[] Hp = { 50, 100, 150, 200 };
+        private static readonly int[] Turn = { 20, 30, 45, 60 };
+        private static readonly float[] Sd = { 5f, 10f, 15f, 0f };
+        private static readonly int[] Barrels = { 0, 3, 5, 8 };
+        private static readonly float[] Crates = { 0f, 0.2f, 0.4f, 0.7f };
 
-            if (GUI.Button(new Rect(x + w * 0.3f, y, w * 0.4f, 44f), "Volver", button)) OnBack?.Invoke();
-
-            GUI.matrix = prev;
+        /// <summary>Dibuja las reglas en filas; devuelve la altura usada.</summary>
+        public static float Draw(Rect r, float rowH = 44f, float gap = 54f)
+        {
+            float y = r.y;
+            MatchRules.RatsPerTeam = TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Ratas por equipo", new[] { "1", "2", "3", "4" }, MatchRules.RatsPerTeam - 1) + 1; y += gap;
+            MatchRules.StartHealth = Hp[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Vida inicial", new[] { "50", "100", "150", "200" }, Idx(Hp, MatchRules.StartHealth, 1))]; y += gap;
+            MatchRules.TurnSeconds = Turn[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Tiempo de turno", new[] { "20 s", "30 s", "45 s", "60 s" }, Idx(Turn, MatchRules.TurnSeconds, 1))]; y += gap;
+            MatchRules.SuddenDeathMinutes = Sd[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Muerte súbita", new[] { "5 min", "10 min", "15 min", "Nunca" }, Idx(Sd, MatchRules.SuddenDeathMinutes, 1))]; y += gap;
+            MatchRules.Barrels = Barrels[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Barriles", new[] { "Ninguno", "Pocos", "Normal", "Muchos" }, Idx(Barrels, MatchRules.Barrels, 2))]; y += gap;
+            MatchRules.CrateChance = Crates[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Cajas", new[] { "Nunca", "Pocas", "Normal", "Muchas" }, Idx(Crates, MatchRules.CrateChance, 2))]; y += gap;
+            return y - r.y;
         }
 
-        /// <summary>Fila "Etiqueta: [a] [b] [c]" con la opción elegida resaltada.</summary>
-        private float Row(float x, float y, float w, string text, string[] options, int current, Action<int> pick)
-        {
-            GUI.Label(new Rect(x, y, 200f, 44f), text, label);
-            float bx = x + 210f, bw = (w - 210f) / options.Length;
-            for (int i = 0; i < options.Length; i++)
-                if (GUI.Button(new Rect(bx + i * bw + 3f, y, bw - 6f, 44f), options[i], i == current ? selected : button))
-                    pick(i);
-            return y + 56f;
-        }
+        /// <summary>Resumen de una línea (lo ven los clientes en el lobby).</summary>
+        public static string Summary() =>
+            $"{MatchRules.RatsPerTeam} ratas · {MatchRules.StartHealth} vida · turnos de {MatchRules.TurnSeconds} s · " +
+            $"muerte súbita {(MatchRules.SuddenDeathMinutes > 0 ? MatchRules.SuddenDeathMinutes + " min" : "nunca")} · " +
+            $"{MatchRules.Barrels} barriles · cajas {(MatchRules.CrateChance <= 0f ? "nunca" : MatchRules.CrateChance < 0.3f ? "pocas" : MatchRules.CrateChance < 0.5f ? "normal" : "muchas")}";
 
-        private void EnsureStyles(float scale)
+        private static int Idx(int[] arr, int v, int def) { int i = Array.IndexOf(arr, v); return i < 0 ? def : i; }
+        private static int Idx(float[] arr, float v, int def)
         {
-            if (title != null && Mathf.Approximately(stylesScale, scale)) return;
-            stylesScale = scale;
-            panelTex = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave };
-            panelTex.SetPixel(0, 0, new Color(0.08f, 0.06f, 0.05f, 0.92f));
-            panelTex.Apply();
-
-            title = new GUIStyle(GUI.skin.label) { fontSize = 40, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
-            title.normal.textColor = new Color(0.95f, 0.8f, 0.45f);
-            label = new GUIStyle(GUI.skin.label) { fontSize = 20, wordWrap = false, clipping = TextClipping.Overflow, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft };
-            label.normal.textColor = new Color(0.9f, 0.88f, 0.8f);
-            button = new GUIStyle(GUI.skin.button) { fontSize = 22 };
-            selected = new GUIStyle(GUI.skin.button) { fontSize = 22, fontStyle = FontStyle.Bold };
-            selected.normal.textColor = selected.hover.textColor = new Color(1f, 0.85f, 0.3f);
-            var selTex = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave };
-            selTex.SetPixel(0, 0, new Color(0.45f, 0.32f, 0.12f, 1f));
-            selTex.Apply();
-            selected.normal.background = selected.hover.background = selTex;
-            big = new GUIStyle(GUI.skin.button) { fontSize = 26, fontStyle = FontStyle.Bold };
-        }
-
-        private void OnDestroy()
-        {
-            if (panelTex != null) Destroy(panelTex);
+            for (int i = 0; i < arr.Length; i++) if (Mathf.Abs(arr[i] - v) < 0.01f) return i;
+            return def;
         }
     }
 }

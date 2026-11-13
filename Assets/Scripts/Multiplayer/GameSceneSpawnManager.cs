@@ -131,6 +131,7 @@ namespace Ratms.Networking
         // ================================================================
         public override void OnNetworkSpawn()
         {
+            if (IsServer) CustomTeamNames.Clear();
             // Al cargar la escena, escondemos el menú si quedó visible.
             var menu = FindFirstObjectByType<MultiplayerMenuController>();
             if (menu != null) menu.HideAllPanels();
@@ -297,9 +298,22 @@ namespace Ratms.Networking
             for (int t = 0; t < teamsHere && nextTeamIndex < MatchRules.MaxTeams; t++)
             {
                 int team = nextTeamIndex++;
+                // Cada rata del equipo con una ANATOMÍA distinta (gorda, flaca,
+                // jorobada, musculosa, topo) mientras haya donde elegir.
+                var bodies = new List<int> { 0, 1, 2, 3, 4 };
+                for (int i = bodies.Count - 1; i > 0; i--) { int j = nameRng.Next(i + 1); (bodies[i], bodies[j]) = (bodies[j], bodies[i]); }
+                // "Mi equipo" del jugador (nombres y aspectos elegidos en el menú). En
+                // partida local solo el primer equipo es "el tuyo".
+                TeamProfile.Data profile = MatchRules.Mode == MatchMode.Local
+                    ? (t == 0 ? TeamProfile.Local() : null)
+                    : (MatchRules.Mode == MatchMode.Online ? LobbySync.ProfileOf(clientId) : null);
+                if (profile != null && !string.IsNullOrWhiteSpace(profile.team)) CustomTeamNames[team] = profile.team;
                 for (int r = 0; r < ratsPerTeam; r++)
                 {
-                    string ratName = NextRatName();
+                    string ratName = profile != null && r < TeamProfile.Slots && !string.IsNullOrWhiteSpace(profile.names[r])
+                        ? profile.names[r] : NextRatName();
+                    uint chosen = profile != null && r < TeamProfile.Slots ? profile.looks[r] : 0u;
+                    NetworkPlayerMovement.SpawnNextLook = chosen != 0 ? chosen : RatLook.Random(nameRng, bodies[r % bodies.Count]).Pack();
                     SpawnRat(clientId, team, ratName, asPlayerObject: !playerObjectGiven);
                     playerObjectGiven = true;
                 }
@@ -312,6 +326,9 @@ namespace Ratms.Networking
         // Nombres de rata SIN repetir en toda la partida. Generador propio: el
         // de Unity (UnityEngine.Random) lo re-siembra el generador de terreno
         // y salían nombres repetidos.
+        /// <summary>(Servidor) Nombres de equipo elegidos por los jugadores ("Mi equipo"). Los lee el TurnManager.</summary>
+        public static readonly Dictionary<int, string> CustomTeamNames = new();
+
         private readonly List<string> namePool = new();
         private readonly System.Random nameRng = new();
 

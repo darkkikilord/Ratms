@@ -108,6 +108,7 @@ public class CameraFollow : MonoBehaviour
     /// </summary>
     public void Shake(float amplitude, float seconds)
     {
+        if (PlayerPrefs.GetInt("opt_shake", 1) == 0) return;   // desactivado en Opciones
         shakeAmp = Mathf.Max(shakeAmp, amplitude); // si ya tiembla, no lo bajamos
         shakeUntil = Mathf.Max(shakeUntil, Time.time + seconds);
     }

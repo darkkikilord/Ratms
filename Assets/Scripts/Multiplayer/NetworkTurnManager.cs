@@ -23,7 +23,7 @@ namespace Ratms.Networking
     ///     el agua sube un poco al acabar cada turno.
     /// </summary>
     [RequireComponent(typeof(NetworkObject))]
-    public class NetworkTurnManager : NetworkBehaviour
+    public partial class NetworkTurnManager : NetworkBehaviour
     {
         public static NetworkTurnManager Instance { get; private set; }
 
@@ -110,6 +110,7 @@ namespace Ratms.Networking
             public readonly List<NetworkPlayerMovement> rats = new();
             public int nextRat;
             public bool eliminated;
+            public NetworkPlayerMovement forcedRat;   // elegida con "Cambiar rata" para su próximo turno
         }
 
         private readonly List<Team> teams = new();
@@ -120,7 +121,16 @@ namespace Ratms.Networking
         private void Awake()
         {
             TeamNames = new NetworkList<FixedString32Bytes>();
+            ItemsAwake();
         }
+
+        // Ganchos para la parte de munición, cajas y barriles (NetworkTurnManager.Items.cs).
+        partial void ItemsAwake();
+        partial void ItemsOnSpawn();
+        partial void ItemsOnDespawn();
+        partial void ItemsOnGameStart();
+        partial void ItemsOnTurnBegin();
+        partial void ItemsUpdate();
 
         // =========================================================
         // CICLO DE VIDA
@@ -145,11 +155,13 @@ namespace Ratms.Networking
                 // cargar la escena. Esperamos un poco y arrancamos.
                 Invoke(nameof(TryStartGameServer), 1.5f);
             }
+            ItemsOnSpawn();
         }
 
         public override void OnNetworkDespawn()
         {
             CurrentRatId.OnValueChanged -= OnCurrentRatChanged;
+            ItemsOnDespawn();
             if (IsServer && NetworkManager.Singleton != null)
                 NetworkManager.Singleton.OnClientDisconnectCallback -= OnClientDisconnected;
             if (Instance == this) Instance = null;
@@ -168,6 +180,7 @@ namespace Ratms.Networking
             gameStarted = true;
             currentTeamPos = -1;
             Debug.Log($"[NetworkTurnManager] Empieza la partida: {teams.Count} equipos.");
+            ItemsOnGameStart();
             AdvanceTurnServer();
         }
 
@@ -214,7 +227,8 @@ namespace Ratms.Networking
             while (TeamNames.Count < (teams.Count > 0 ? teams[teams.Count - 1].index + 1 : 0))
             {
                 int i = TeamNames.Count;
-                string n = MatchRules.Mode == MatchMode.Local ? MatchRules.LocalTeamNames[i % MatchRules.LocalTeamNames.Length] : "";
+                string n = GameSceneSpawnManager.CustomTeamNames.TryGetValue(i, out var custom) ? custom
+                         : MatchRules.Mode == MatchMode.Local ? MatchRules.LocalTeamNames[i % MatchRules.LocalTeamNames.Length] : "";
                 TeamNames.Add(new FixedString32Bytes(n));
             }
         }
@@ -240,6 +254,7 @@ namespace Ratms.Networking
         // =========================================================
         private void Update()
         {
+            ItemsUpdate();
             if (!IsServer || !gameStarted || GameEnded.Value) return;
 
             MatchTime.Value += Time.deltaTime;
@@ -302,6 +317,14 @@ namespace Ratms.Networking
                 var team = teams[pos];
                 if (!TeamAlive(team)) continue;
 
+                // ¿Alguien usó "Cambiar rata"? Esa rata va primero.
+                if (team.forcedRat != null && IsAlive(team.forcedRat))
+                {
+                    int fi = team.rats.IndexOf(team.forcedRat);
+                    if (fi >= 0) team.nextRat = fi;
+                }
+                team.forcedRat = null;
+
                 // Siguiente rata viva de ese equipo (rotación automática)
                 for (int j = 0; j < team.rats.Count; j++)
                 {
@@ -316,6 +339,7 @@ namespace Ratms.Networking
                     CurrentRatId.Value = rat.NetworkObjectId;
                     TurnTimeRemaining.Value = TurnDuration;
                     Wind.Value = RollWind();
+                    ItemsOnTurnBegin();
                     return;
                 }
             }
@@ -390,9 +414,29 @@ namespace Ratms.Networking
         ///  pasa; si su equipo se ha quedado sin ratas, queda eliminado y se
         ///  comprueba la victoria.
         /// </summary>
+        // Bajas seguidas (misma explosión) para los avisos cómicos.
+        private int killStreak;
+        private float killStreakUntil;
+        private static readonly string[] SuicideLines = { "¡SE HA SUICIDADO!", "¡AUTOGOL!", "¡ESO NO SE APUNTA ASÍ!", "¡PREMIO DARWIN!" };
+        private static readonly string[] FriendlyLines = { "¡FUEGO AMIGO!", "¡TRAICIÓN EN LA TRINCHERA!", "¡ERA DE LOS TUYOS!" };
+
         public void OnRatDiedServer(NetworkPlayerMovement rat)
         {
             if (!IsServer || !gameStarted) return;
+
+            // --- Avisos cómicos ---
+            var shooter = CurrentRat != null ? CurrentRat : LastTurnRat;
+            if (shooter != null && PlayerPrefs.GetInt("opt_laughs", 1) == 1)
+            {
+                if (shooter == rat)
+                    AnnounceClientRpc(SuicideLines[Random.Range(0, SuicideLines.Length)], new Color(1f, 0.6f, 0.2f));
+                else if (shooter.TeamIndex.Value == rat.TeamIndex.Value)
+                    AnnounceClientRpc(FriendlyLines[Random.Range(0, FriendlyLines.Length)], new Color(1f, 0.6f, 0.2f));
+            }
+            killStreak = Time.time < killStreakUntil ? killStreak + 1 : 1;
+            killStreakUntil = Time.time + 1.2f;
+            if (killStreak >= 2)
+                AnnounceClientRpc(killStreak == 2 ? "¡DOBLE BAJA!" : killStreak == 3 ? "¡TRIPLE BAJA!" : "¡MASACRE EN LA TRINCHERA!", new Color(1f, 0.25f, 0.2f));
             var team = teams.Find(t => t.rats.Contains(rat));
             if (team != null && !team.eliminated && !TeamAlive(team)) EliminateTeam(team);
             if (CheckVictoryServer()) return;

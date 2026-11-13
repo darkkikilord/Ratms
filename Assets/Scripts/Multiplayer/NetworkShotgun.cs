@@ -116,9 +116,12 @@ namespace Ratms.Networking
             return best < float.MaxValue;
         }
 
+        private float recoil;
+
         [ClientRpc]
         private void ShotFxClientRpc(Vector2 from, Vector2 to, bool hitRat)
         {
+            recoil = 1f;
             // Trazo del disparo que se desvanece en un instante
             var go = new GameObject("ShotTracer");
             var lr = go.AddComponent<LineRenderer>();
@@ -159,8 +162,13 @@ namespace Ratms.Networking
 
             Vector2 fwd = movement.WeaponForward;
             Vector3 hand = movement.HandPosition;
-            gun.position = new Vector3(hand.x, hand.y, transform.position.z);
-            gun.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(fwd.y, fwd.x) * Mathf.Rad2Deg);
+            // RETROCESO: tras cada disparo el arma da un culatazo hacia atrás y arriba.
+            recoil = Mathf.MoveTowards(recoil, 0f, Time.deltaTime * 5f);
+            float kick = recoil * recoil;
+            Vector2 back = -fwd * 0.12f * kick;
+            float lift = (fwd.x >= 0f ? 1f : -1f) * 25f * kick;
+            gun.position = new Vector3(hand.x + back.x, hand.y + back.y, transform.position.z);
+            gun.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(fwd.y, fwd.x) * Mathf.Rad2Deg + lift);
             gun.GetComponent<SpriteRenderer>().flipY = fwd.x < 0f;
 
             if (!sight) return;
@@ -192,7 +200,8 @@ namespace Ratms.Networking
             tex.Apply();
             var go = new GameObject("ShotgunVisual");
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = Sprite.Create(tex, new Rect(0, 0, W, H), new Vector2(0.15f, 0.5f), 48f);
+            sr.sprite = WeaponArt.Shotgun();   // recortada de dos cañones (pixel-art de trinchera)
+            go.transform.localScale = new Vector3(0.72f, 0.72f, 1f);
             sr.sortingOrder = 60;
             return go.transform;
         }

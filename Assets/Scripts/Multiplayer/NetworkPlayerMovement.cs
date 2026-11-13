@@ -369,9 +369,13 @@ namespace Ratms.Networking
         /// <summary>Nombre de la rata ("Sarnoso", "Cabo Queso"...).</summary>
         public readonly NetworkVariable<FixedString32Bytes> RatName = new(default);
 
-        /// <summary>Equipo y nombre para la PRÓXIMA rata que se spawnee (servidor). Ver GameSceneSpawnManager.</summary>
+        /// <summary>Aspecto de la rata (ver <see cref="RatLook"/>): anatomía, pelaje, casco... 0 = al azar.</summary>
+        public readonly NetworkVariable<uint> LookCode = new(0);
+
+        /// <summary>Equipo, nombre y aspecto para la PRÓXIMA rata que se spawnee (servidor). Ver GameSceneSpawnManager.</summary>
         public static int SpawnNextTeam = -1;
         public static string SpawnNextName;
+        public static uint SpawnNextLook;
 
         /// <summary>¿Es esta la rata que tiene el turno ahora?</summary>
         public bool IsActiveTurnRat =>
@@ -479,6 +483,11 @@ namespace Ratms.Networking
                 SpawnNextTeam = -1;
                 SpawnNextName = null;
             }
+            if (IsServer)
+            {
+                LookCode.Value = SpawnNextLook != 0 ? SpawnNextLook : RatLook.Random(new System.Random()).Pack();
+                SpawnNextLook = 0;
+            }
 
             // Re-resuelve las refs visuales por si el prefab las tiene mal cacheadas
             ResolveVisualReferences();
@@ -527,9 +536,12 @@ namespace Ratms.Networking
                 : IsOwner ? $"Rat_{OwnerClientId}_(yo)_E{TeamIndex.Value}_{RatName.Value}"
                 : $"Rat_{OwnerClientId}_E{TeamIndex.Value}_{RatName.Value}";
 
+            // Armas de la mano con el arte nuevo (bazuca y granada de palo).
+            if (GetComponent<WeaponSkin>() == null) gameObject.AddComponent<WeaponSkin>();
+
             // Rata dibujada por código (más bonita, casco del color del equipo).
             if (useProceduralRat && GetComponent<RatAppearance>() == null)
-                gameObject.AddComponent<RatAppearance>().Init(this, TeamIndex.Value >= 0 ? TeamIndex.Value : (int)(OwnerClientId % 4), IsTestDummy);
+                gameObject.AddComponent<RatAppearance>().Init(this, TeamIndex.Value >= 0 ? TeamIndex.Value : (int)(OwnerClientId % 4), IsTestDummy, LookCode.Value);
 
             // Si SOY yo (y aún no hay turnos repartidos), que la cámara me
             // siga. Luego el TurnManager la pone sobre la rata de cada turno.
@@ -813,6 +825,42 @@ namespace Ratms.Networking
             // Ya usaste tu arma este turno → solo puedes moverte (huir).
             if (firedThisTurn) return;
 
+            // MUNICIÓN: sin balas de esta arma no se dispara (no gasta el turno).
+            if (equipped != WeaponsMenuUI.WeaponId.None && weaponsMenu != null && !weaponsMenu.HasAmmo(equipped))
+            {
+                if (fireDown && health != null)
+                    WorldDamagePopup.SpawnImpact(health.BodyCenter + Vector2.up * 0.9f, "¡Sin munición!", new Color(1f, 0.6f, 0.4f));
+                return;
+            }
+
+            // CAMBIAR RATA: clic sobre una rata de tu equipo (o ESPACIO = la siguiente).
+            // Juega en el próximo turno de tu equipo; este turno se pierde.
+            if (equipped == WeaponsMenuUI.WeaponId.SelectRat)
+            {
+                bool click = Input.GetMouseButtonDown(0) && TestInputX == null;
+                if (fireDown || click)
+                {
+                    ulong target = 0;
+                    if (click && Camera.main != null)
+                    {
+                        Vector2 m = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+                        float best = 1.2f;
+                        foreach (var r in FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None))
+                        {
+                            if (r == this || r.TeamIndex.Value != TeamIndex.Value || !r.isActiveAndEnabled) continue;
+                            var rh = r.GetComponent<NetworkHealth>();
+                            float d = Vector2.Distance(m, rh != null ? rh.BodyCenter : (Vector2)r.transform.position);
+                            if (d < best) { best = d; target = r.NetworkObjectId; }
+                        }
+                        if (target == 0) return;   // clic en el vacío: no gastamos nada
+                    }
+                    var tmSel = NetworkTurnManager.Instance;
+                    if (tmSel != null) tmSel.SelectRatServerRpc(target);
+                    firedThisTurn = true;
+                }
+                return;
+            }
+
             // TELETRANSPORTE: clic izquierdo o ESPACIO.
             if (equipped == WeaponsMenuUI.WeaponId.Teleport && teleport != null)
             {
@@ -820,6 +868,7 @@ namespace Ratms.Networking
                 if ((fireDown || click) && teleport.TryTeleport())
                 {
                     firedThisTurn = true;
+                    SpendAmmo(equipped);
                     ScheduleEndTurn(1.5f);
                 }
                 return;
@@ -853,6 +902,7 @@ namespace Ratms.Networking
                     if (grenadeThrower.PlaceDynamite(facingRight.Value))
                     {
                         firedThisTurn = true;
+                        SpendAmmo(equipped);
                         // El turno dura lo que la mecha + margen: ese es tu
                         // tiempo para huir. La explosión lo acorta a 1 s.
                         ScheduleEndTurn(grenadeThrower.DynamiteFuse + 1.5f);
@@ -890,9 +940,18 @@ namespace Ratms.Networking
                 if (fired)
                 {
                     firedThisTurn = true;
+                    SpendAmmo(equipped);
                     ScheduleEndTurn();
                 }
             }
+        }
+
+        /// <summary>Avisa al servidor de que hemos gastado una unidad de un arma limitada.</summary>
+        private void SpendAmmo(WeaponsMenuUI.WeaponId w)
+        {
+            var tm = NetworkTurnManager.Instance;
+            if (tm == null || weaponsMenu == null || weaponsMenu.AmmoLeft(w) < 0) return;
+            tm.ConsumeAmmoServerRpc((int)w);
         }
 
         private void ScheduleEndTurn() => ScheduleEndTurn(endTurnDelay);
@@ -1257,10 +1316,17 @@ namespace Ratms.Networking
         ///  LateUpdate se ejecuta DESPUÉS del Animator. Reaplicamos el flip y
         ///  el ángulo de apuntado aquí para que no los pise ninguna animación.
         /// </summary>
+        // Ángulo que se PINTA. En el dueño es el real; en los demás clientes
+        // lo seguimos con suavidad (la red manda el ángulo a saltos y el
+        // arma temblaba).
+        private float shownAim;
+
         private void LateUpdate()
         {
             ApplyFlipVisual(facingRight.Value);
-            ApplyAimRotation(aimAngle.Value, facingRight.Value);
+            shownAim = IsOwner ? aimAngle.Value
+                               : Mathf.LerpAngle(shownAim, aimAngle.Value, 1f - Mathf.Exp(-18f * Time.deltaTime));
+            ApplyAimRotation(shownAim, facingRight.Value);
         }
 
         // ==================================================================

@@ -28,6 +28,30 @@ namespace Ratms.UI
         private const string K_MUSIC = "opt_music";
         private const string K_SFX = "opt_sfx";
 
+        // Las opciones nuevas (TrenchGUI) cambian los PlayerPrefs; aquí los
+        // aplicamos al mezclador de audio aunque este panel esté oculto.
+        private static OptionsMenu any;
+
+        private void Awake() { any = this; }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void Hook()
+        {
+            TrenchGUI.OnVolumesChanged -= ApplyFromPrefsStatic;
+            TrenchGUI.OnVolumesChanged += ApplyFromPrefsStatic;
+        }
+
+        private static void ApplyFromPrefsStatic()
+        {
+            if (any == null)
+                foreach (var o in Resources.FindObjectsOfTypeAll<OptionsMenu>())
+                    if (o.gameObject.scene.IsValid()) { any = o; break; }
+            if (any == null) return;
+            any.SetDb(any.masterParam, PlayerPrefs.GetFloat(K_MASTER, 0.8f));
+            any.SetDb(any.musicParam, PlayerPrefs.GetFloat(K_MUSIC, 0.8f));
+            any.SetDb(any.sfxParam, PlayerPrefs.GetFloat(K_SFX, 0.8f));
+        }
+
         private void OnEnable()
         {
             LoadPrefs();

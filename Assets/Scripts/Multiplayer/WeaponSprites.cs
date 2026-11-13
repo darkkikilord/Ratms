@@ -18,6 +18,10 @@ namespace Ratms.Networking
         public static Sprite Dynamite()
         {
             if (dynamite != null) return dynamite;
+            // Manojo de 3 cartuchos atados (WeaponArt), a 58 px/u para que no abulte demasiado.
+            var art = WeaponArt.Dynamite();
+            dynamite = Sprite.Create(art.texture, art.rect, new Vector2(art.pivot.x / art.rect.width, art.pivot.y / art.rect.height), 58f);
+            if (dynamite != null) return dynamite;
             const int W = 8, H = 22;
             var tex = new Texture2D(W, H, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
             var px = new Color32[W * H];

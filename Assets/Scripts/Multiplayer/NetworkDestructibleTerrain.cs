@@ -127,11 +127,18 @@ namespace Ratms.Networking
         ///  todos los clientes vía ClientRpc — el host también lo ejecuta
         ///  como cliente, así que no hacemos doble carve aquí.
         /// </summary>
+        /// <summary>
+        ///  (Servidor) Cada explosión que abre un agujero lo avisa aquí: así los
+        ///  barriles explotan en cadena y las cajas saltan por los aires.
+        /// </summary>
+        public static event System.Action<Vector2, float> OnServerExplosion;
+
         public void ServerCarveAt(Vector2 worldPos, float worldRadius)
         {
             if (!IsServer) return;
             if (worldRadius <= 0f) return;
             CarveClientRpc(worldPos, worldRadius);
+            OnServerExplosion?.Invoke(worldPos, worldRadius);
         }
 
         [ClientRpc]

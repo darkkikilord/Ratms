@@ -93,6 +93,43 @@ namespace Ratms.Networking
         public static int EffectiveRatsPerTeam =>
             Mode == MatchMode.Practice ? 1 : (OverrideRatsPerTeam ?? RatsPerTeam);
 
+        // ------------------------------------------------------------
+        //  ECONOMÍA DE ARMAS
+        // ------------------------------------------------------------
+        /// <summary>Munición inicial de cada arma por equipo (-1 = infinita). En práctica, todo infinito.</summary>
+        public static int DefaultAmmo(WeaponsMenuUI.WeaponId w)
+        {
+            if (Mode == MatchMode.Practice) return w == WeaponsMenuUI.WeaponId.SelectRat ? 0 : -1;
+            return w switch
+            {
+                WeaponsMenuUI.WeaponId.Grenade => 3,
+                WeaponsMenuUI.WeaponId.Dynamite => 1,
+                WeaponsMenuUI.WeaponId.Teleport => 1,
+                WeaponsMenuUI.WeaponId.SelectRat => 1,
+                _ => -1,   // bazuca, escopeta, bate y cuerda: infinitas
+            };
+        }
+
+        /// <summary>Barriles de gasolina en el mapa al empezar.</summary>
+        public static int Barrels
+        {
+            get => Mathf.Clamp(PlayerPrefs.GetInt("rule_barrels", 5), 0, 12);
+            set => PlayerPrefs.SetInt("rule_barrels", Mathf.Clamp(value, 0, 12));
+        }
+        public static int? OverrideBarrels;
+        public static int EffectiveBarrels => OverrideBarrels ?? Barrels;
+
+        /// <summary>Probabilidad (0-1) de que caiga una caja al empezar un turno.</summary>
+        public static float CrateChance
+        {
+            get => Mathf.Clamp01(OverrideCrateChance ?? PlayerPrefs.GetFloat("rule_crates", 0.4f));
+            set => PlayerPrefs.SetFloat("rule_crates", Mathf.Clamp01(value));
+        }
+        public static float? OverrideCrateChance;
+
+        /// <summary>Vida que da un botiquín.</summary>
+        public static int HealthCrateAmount = 30;
+
         /// <summary>Nombres de los equipos en partida local (uno por color de casco).</summary>
         public static readonly string[] LocalTeamNames = { "Rojos", "Azules", "Verdes", "Amarillos" };
 

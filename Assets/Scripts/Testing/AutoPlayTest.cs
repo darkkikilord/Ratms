@@ -144,6 +144,9 @@ namespace Ratms.Testing
             // Partida de DOS jugadores reales (dos copias del juego en el mismo PC).
             string role = GetArg("-autoTestRole");
             if (role == "local") { yield return RunLocalMatch(); yield break; }
+            if (role == "gallery") { yield return RunGallery(); yield break; }
+            if (role == "items") { yield return RunItems(); yield break; }
+            if (role == "menus") { yield return RunMenus(); yield break; }
 
             // El resto de pruebas miden UNA rata por jugador (como antes de los equipos).
             MatchRules.Mode = MatchMode.Online;
@@ -300,9 +303,15 @@ namespace Ratms.Testing
             if (utp != null) utp.SetConnectionData("127.0.0.1", 7777, "127.0.0.1");
             if (!nm.StartHost()) { Finish("No se pudo arrancar el host"); yield break; }
             Log("Host arrancado, esperando al cliente...");
+            if (menu != null) menu.ShowLobby();
             yield return WaitFor(() => nm.ConnectedClientsIds.Count >= 2, 60f, "que se conecte el cliente");
             if (finished) yield break;
-            Log($"Cliente conectado ({nm.ConnectedClientsIds.Count} jugadores). Cargando escena...");
+            Log($"Cliente conectado ({nm.ConnectedClientsIds.Count} jugadores).");
+            yield return WaitFor(() => LobbySync.Roster.Count >= 2 && LobbySync.AllReady, 20f, "que el cliente marque ¡Listo!", fatal: false);
+            Log($"Sala de espera: {string.Join(", ", LobbySync.Roster.Select(e => $"{e.name}{(e.ready ? " (listo)" : "")}"))} · todos listos: {(LobbySync.AllReady ? "✓" : "⚠")}");
+            if (!LobbySync.AllReady) Problem("Lobby: el cliente no aparece como listo");
+            yield return Capture("M00_host_lobby");
+            Log("Cargando escena...");
             yield return new WaitForSeconds(1f);
             nm.SceneManager.LoadScene(gameScene, LoadSceneMode.Single);
 
@@ -412,6 +421,12 @@ namespace Ratms.Testing
             }
             if (!connected) { Finish("El cliente no pudo conectarse al host"); yield break; }
             Log("Cliente conectado al host ✓");
+            if (menu != null) menu.ShowLobby();
+            yield return new WaitForSeconds(2f);
+            bool rulesSeen = !string.IsNullOrEmpty(LobbySync.RulesSummary);
+            Log($"Lobby (cliente): {LobbySync.Roster.Count} jugadores · reglas del host: \"{LobbySync.RulesSummary}\" {(rulesSeen ? "✓" : "⚠")}");
+            yield return Capture("C00_cliente_lobby");
+            LobbySync.LocalReady = true;
 
             yield return WaitFor(() => SceneManager.GetActiveScene().name == gameScene && FindLocalRat() != null, 40f, "entrar en la partida");
             if (finished) yield break;
@@ -580,6 +595,245 @@ namespace Ratms.Testing
             yield return new WaitForSeconds(1.5f);
             yield return Capture("L06_victoria");
 
+            TurnHUD.ExitToMenu();
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == "MainMenu", 10f, "volver al menú", fatal: false);
+            Finish(null);
+        }
+
+        /// <summary>
+        ///  GALERÍA de ratas: dibuja muchas ratas al azar (y una de cada
+        ///  anatomía) en rejilla y saca capturas grandes para revisar el
+        ///  diseño sin jugar. Papel "gallery".
+        /// </summary>
+        private IEnumerator RunGallery()
+        {
+            Log("Papel: GALERÍA de ratas");
+            yield return new WaitForSeconds(2f);
+            foreach (var c in FindObjectsByType<Canvas>(FindObjectsSortMode.None)) c.enabled = false;
+
+            var camGo = new GameObject("GalleryCam");
+            var cam = camGo.AddComponent<Camera>();
+            cam.orthographic = true;
+            cam.depth = 100;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.42f, 0.5f, 0.42f);
+            cam.transform.position = new Vector3(1000f, 1000f, -10f);
+
+            var rng = new System.Random(1234);
+            var root = new GameObject("Gallery");
+            for (int page = 0; page < 3; page++)
+            {
+                foreach (Transform t in root.transform) Destroy(t.gameObject);
+                yield return null;
+                int cols = page == 2 ? 5 : 8, rows = page == 2 ? 4 : 5;
+                cam.orthographicSize = page == 2 ? 3.2f : 3.4f;
+                float sp = page == 2 ? 1.55f : 1.5f;
+                var lines = new List<string>();
+                for (int r = 0; r < rows; r++)
+                    for (int c = 0; c < cols; c++)
+                    {
+                        RatLook look;
+                        int team = (r + c) % 4;
+                        if (page == 2)   // una fila por equipo, una columna por anatomía
+                        {
+                            look = RatLook.Random(rng, c);
+                            team = r;
+                        }
+                        else look = RatLook.Random(rng);
+                        var go = new GameObject("rata");
+                        go.transform.SetParent(root.transform);
+                        go.transform.position = new Vector3(1000f + (c - (cols - 1) * 0.5f) * sp, 1000f + ((rows - 1) * 0.5f - r) * sp - 0.5f, 0f);
+                        float k = page == 2 ? 1.5f : 1.15f;
+                        go.transform.localScale = new Vector3(k, k, 1f);
+                        var sr = go.AddComponent<SpriteRenderer>();
+                        sr.sprite = RatAppearance.Preview(look.Pack(), RatAppearance.ColorForTeam(team));
+                        if (lines.Count < 12) lines.Add(look.ToString());
+                    }
+                Log($"Galería {page + 1}: " + string.Join(" | ", lines.Take(6)));
+                yield return new WaitForSeconds(0.3f);
+                yield return Capture($"R0{page + 1}_galeria");
+            }
+            Finish(null);
+        }
+
+        /// <summary>
+        ///  ECONOMÍA DE ARMAS (papel "items"): munición limitada, cajas de
+        ///  armas y botiquín, barriles en cadena y "Cambiar rata".
+        /// </summary>
+        private IEnumerator RunItems()
+        {
+            Log("Papel: ECONOMÍA DE ARMAS (2 equipos × 2 ratas)");
+            MatchRules.OverrideLocalTeams = 2;
+            MatchRules.OverrideRatsPerTeam = 2;
+            MatchRules.OverrideTurnSeconds = 25;
+            MatchRules.OverrideSuddenDeathSeconds = 0f;
+            MatchRules.OverrideCrateChance = 0f;   // las cajas las ponemos nosotros
+            MatchRules.OverrideBarrels = 0;
+            yield return new WaitForSeconds(2.5f);
+            var mm = FindFirstObjectByType<Ratms.UI.MainMenuController>();
+            if (mm == null) { Finish("No encuentro MainMenuController"); yield break; }
+            mm.StartLocalMatch();
+            NetworkTurnManager tm = null;
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == gameScene && (tm = NetworkTurnManager.Instance) != null, 30f, "entrar en la partida");
+            if (finished) yield break;
+            yield return WaitFor(() => !tm.InTransition.Value && tm.CurrentRatId.Value != ulong.MaxValue, 20f, "el primer turno");
+            if (finished) yield break;
+            yield return new WaitForSeconds(1.5f);
+
+            var rat = tm.CurrentRat;
+            int team = rat.TeamIndex.Value;
+            var menu = rat.GetComponentInChildren<WeaponsMenuUI>();
+            Log($"Munición inicial ({tm.TeamDisplayName(team)}): granadas {tm.AmmoOf(team, WeaponsMenuUI.WeaponId.Grenade)}, " +
+                $"dinamita {tm.AmmoOf(team, WeaponsMenuUI.WeaponId.Dynamite)}, teletransporte {tm.AmmoOf(team, WeaponsMenuUI.WeaponId.Teleport)}, " +
+                $"cambiar rata {tm.AmmoOf(team, WeaponsMenuUI.WeaponId.SelectRat)}, bazuca {tm.AmmoOf(team, WeaponsMenuUI.WeaponId.Bazooka)} (∞ = -1)");
+
+            // --- 1) Caja de armas justo encima de la rata (+2 granadas) ---
+            int g0 = tm.AmmoOf(team, WeaponsMenuUI.WeaponId.Grenade);
+            var body = rat.GetComponent<NetworkHealth>().BodyCenter;
+            tm.SpawnItemServer(NetworkTurnManager.ItemKind.WeaponCrate, 0, body + Vector2.up * 1.6f);
+            yield return new WaitForSeconds(0.25f);
+            yield return Capture("I01_caja_cayendo");
+            yield return WaitFor(() => tm.ItemCount(NetworkTurnManager.ItemKind.WeaponCrate) == 0, 6f, "coger la caja", fatal: false);
+            int g1 = tm.AmmoOf(team, WeaponsMenuUI.WeaponId.Grenade);
+            Log($"Caja de armas → granadas {g0} → {g1} {(g1 == g0 + 2 ? "✓" : "⚠")}");
+            if (g1 != g0 + 2) Problem("Cajas: la caja de armas no dio +2 granadas");
+            yield return Capture("I02_caja_cogida");
+
+            // --- 2) Botiquín ---
+            var h = rat.GetComponent<NetworkHealth>();
+            h.ApplyDamageServer(45, h.BodyCenter);
+            yield return new WaitForSeconds(0.6f);
+            int hp0 = h.CurrentHealth.Value;
+            tm.SpawnItemServer(NetworkTurnManager.ItemKind.HealthCrate, 0, h.BodyCenter + Vector2.up * 0.3f);
+            yield return WaitFor(() => tm.ItemCount(NetworkTurnManager.ItemKind.HealthCrate) == 0, 5f, "coger el botiquín", fatal: false);
+            int hp1 = h.CurrentHealth.Value;
+            Log($"Botiquín → vida {hp0} → {hp1} {(hp1 == Mathf.Min(h.MaxHealth, hp0 + MatchRules.HealthCrateAmount) ? "✓" : "⚠")}");
+            if (hp1 <= hp0) Problem("Cajas: el botiquín no cura");
+
+            // --- 3) Munición: dinamita (1) → se gasta y luego no se puede ---
+            menu.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Dynamite;
+            yield return new WaitForSeconds(0.3f);
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.8f);
+            int d1 = tm.AmmoOf(team, WeaponsMenuUI.WeaponId.Dynamite);
+            bool blocked = !menu.HasAmmo(WeaponsMenuUI.WeaponId.Dynamite);
+            Log($"Dinamita gastada → quedan {d1} · el menú la bloquea: {(blocked ? "✓" : "⚠")}");
+            if (d1 != 0 || !blocked) Problem("Munición: la dinamita no se descuenta o no se bloquea");
+            // huir de la dinamita
+            rat.TestInputX = rat.FacingRight ? -1f : 1f;
+            for (float t = 0f; t < 2.5f; t += 0.5f) { rat.TestPressJump(); rat.TestJumpHeld = true; yield return new WaitForSeconds(0.5f); }
+            rat.TestInputX = null; rat.TestJumpHeld = false;
+            yield return Capture("I03_menu_armas_municion");
+
+            // --- 4) Barriles en cadena (lejos de las ratas) ---
+            var gen = FindFirstObjectByType<TerrainGenerator>();
+            var avoid = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Select(m => m.transform.position).ToList();
+            var spot = gen != null ? gen.GetRandomValidSpawnWorld(avoid, 5f) : null;
+            if (spot.HasValue)
+            {
+                Vector2 b0 = (Vector2)spot.Value + Vector2.up * 0.05f;
+                // El segundo, al lado y a la MISMA altura (cae solo hasta el suelo que tenga debajo).
+                Vector2 b1 = new Vector2(b0.x + 1.0f, b0.y + 0.4f);
+                // Que tenga suelo cerca debajo (no al borde de una isla) y no esté dentro de la roca.
+                bool Good(Vector2 p) => !DestructibleTerrain.IsSolidAtWorld(p) && DestructibleTerrain.IsSolidAtWorld(p + Vector2.down * 0.9f);
+                if (!Good(b1)) b1 = new Vector2(b0.x - 1.0f, b0.y + 0.4f);
+                if (!Good(b1)) b1 = new Vector2(b0.x + 0.6f, b0.y + 0.4f);
+                tm.SpawnItemServer(NetworkTurnManager.ItemKind.Barrel, 0, b0);
+                tm.SpawnItemServer(NetworkTurnManager.ItemKind.Barrel, 0, b1);
+                var cam = CameraFollow.Instance;
+                if (cam != null) cam.FocusOnImpact(b0, 4f);
+                yield return new WaitForSeconds(1.2f);
+                yield return Capture("I04_barriles");
+                tm.ServerBlast(b0 + new Vector2(-0.9f, 0.3f), 1.2f, 10, 3f);
+                yield return new WaitForSeconds(0.35f);
+                yield return Capture("I05_barril_revienta");
+                yield return WaitFor(() => tm.ItemCount(NetworkTurnManager.ItemKind.Barrel) == 0, 4f, "la cadena de barriles", fatal: false);
+                yield return new WaitForSeconds(0.6f);
+                yield return Capture("I06_fuego");
+                int left = tm.ItemCount(NetworkTurnManager.ItemKind.Barrel);
+                Log($"Barriles en cadena: quedan {left} de 2 {(left == 0 ? "✓ revientan los dos" : "⚠")}");
+                if (left != 0) Problem("Barriles: no explotan en cadena");
+            }
+            else Log("Barriles: no encontré sitio (mapa raro), no se prueba.");
+
+            // --- 5) Cambiar rata: elegimos a la compañera para el próximo turno ---
+            yield return WaitFor(() => !tm.InTransition.Value && tm.CurrentRatId.Value != ulong.MaxValue && tm.CurrentTeam.Value == team, 40f, "otro turno de mi equipo", fatal: false);
+            var cur = tm.CurrentRat;
+            var mate = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None)
+                       .FirstOrDefault(m => m.TeamIndex.Value == team && m != cur && m.isActiveAndEnabled);
+            if (cur != null && mate != null)
+            {
+                // Forzamos que la rotación normal NO fuera a elegirla ya: probamos dos turnos seguidos.
+                tm.SelectRatServerRpc(mate.NetworkObjectId);
+                yield return new WaitForSeconds(0.3f);
+                Log($"Cambiar rata: '{cur.RatName.Value}' elige a '{mate.RatName.Value}' · aviso \"{TurnHUD.LastAnnouncement}\" · quedan {tm.AmmoOf(team, WeaponsMenuUI.WeaponId.SelectRat)}");
+                yield return WaitFor(() => !tm.InTransition.Value && tm.CurrentTeam.Value != team && tm.CurrentRatId.Value != ulong.MaxValue, 10f, "turno rival", fatal: false);
+                tm.EndTurnServerRpc();
+                yield return WaitFor(() => !tm.InTransition.Value && tm.CurrentTeam.Value == team && tm.CurrentRatId.Value != ulong.MaxValue, 10f, "mi turno otra vez", fatal: false);
+                bool ok = tm.CurrentRat == mate;
+                Log($"Cambiar rata → ahora juega '{tm.CurrentRat?.RatName.Value}' {(ok ? "✓" : "⚠")}");
+                if (!ok) Problem("Cambiar rata: no juega la rata elegida");
+            }
+
+            // --- 6) Caja desde el cielo con paracaídas ---
+            tm.DropRandomCrateServer();
+            yield return new WaitForSeconds(1.5f);
+            var crateGo = GameObject.Find("Caja");
+            if (crateGo != null && CameraFollow.Instance != null) CameraFollow.Instance.FocusOnImpact(crateGo.transform.position, 3f);
+            yield return new WaitForSeconds(0.4f);
+            yield return Capture("I07_paracaidas");
+            Log($"Caja en paracaídas: {(crateGo != null ? "cayendo ✓" : "⚠ no la veo")}");
+
+            TurnHUD.ExitToMenu();
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == "MainMenu", 10f, "volver al menú", fatal: false);
+            Finish(null);
+        }
+
+        /// <summary>MENÚS (papel "menus"): capturas de cada pantalla nueva.</summary>
+        private IEnumerator RunMenus()
+        {
+            Log("Papel: MENÚS");
+            yield return new WaitForSeconds(3f);
+            yield return Capture("U00_menu_principal");
+            var mm = FindFirstObjectByType<Ratms.UI.MainMenuController>();
+            if (mm == null) { Finish("No encuentro MainMenuController"); yield break; }
+            mm.OnPlay();
+            yield return new WaitForSeconds(0.5f);
+            yield return Capture("U01_jugar");
+            var pm = FindFirstObjectByType<Ratms.UI.PlayModeMenu>();
+            pm?.OnTeam?.Invoke();
+            yield return new WaitForSeconds(0.5f);
+            yield return Capture("U02_mi_equipo");
+            var te = FindFirstObjectByType<Ratms.UI.TeamEditor>();
+            te?.OnClose?.Invoke();
+            pm?.OnBack?.Invoke();
+            yield return new WaitForSeconds(0.3f);
+            mm.ShowOptions();
+            yield return new WaitForSeconds(0.5f);
+            yield return Capture("U03_opciones");
+            FindFirstObjectByType<Ratms.UI.OptionsOverlay>()?.OnClose?.Invoke();
+            yield return new WaitForSeconds(0.3f);
+
+            MatchRules.OverrideRatsPerTeam = 3;
+            mm.StartLocalMatch();
+            NetworkTurnManager tm = null;
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == gameScene && (tm = NetworkTurnManager.Instance) != null, 30f, "entrar en la partida");
+            if (finished) yield break;
+            yield return WaitFor(() => !tm.InTransition.Value && tm.CurrentRatId.Value != ulong.MaxValue, 20f, "el primer turno");
+            yield return new WaitForSeconds(1.5f);
+            var menu = tm.CurrentRat.GetComponentInChildren<WeaponsMenuUI>();
+            menu.SetVisible(true);
+            menu.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Bazooka;
+            yield return new WaitForSeconds(0.5f);
+            yield return Capture("U04_arsenal");
+            menu.SetVisible(false);
+            menu.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.SelectRat;
+            yield return new WaitForSeconds(0.5f);
+            yield return Capture("U05_cambiar_rata_aros");
+            FindFirstObjectByType<TurnHUD>()?.OpenPause();
+            yield return new WaitForSeconds(0.5f);
+            yield return Capture("U06_pausa");
+            Log("Menús: capturas U00–U06 ✓");
             TurnHUD.ExitToMenu();
             yield return WaitFor(() => SceneManager.GetActiveScene().name == "MainMenu", 10f, "volver al menú", fatal: false);
             Finish(null);

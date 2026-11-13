@@ -109,6 +109,8 @@ namespace Ratms.Networking
         // ================================================================
         private void Awake()
         {
+            LobbySync.Ensure();
+            if (GetComponent<LobbyCard>() == null) gameObject.AddComponent<LobbyCard>().Init(this);
             // Auto-resolver el RelayManager. Orden de búsqueda:
             //   1. Mismo GameObject  2. Padres  3. Cualquier sitio en la escena.
             if (relayManager == null) relayManager = GetComponent<RelayManager>();
@@ -183,7 +185,7 @@ namespace Ratms.Networking
             SetStatus("");
         }
 
-        private void ShowLobby()
+        public void ShowLobby()
         {
             SetActive(mainPanel, false);
             SetActive(multiplayerPanel, false);
@@ -195,6 +197,9 @@ namespace Ratms.Networking
         ///  Oculta TODOS los paneles del menú. Se llama al cargar el Escenario 1
         ///  para que no tape el juego.
         /// </summary>
+        /// <summary>¿Está abierta la sala de espera? (lo lee LobbyCard)</summary>
+        public bool LobbyVisible => lobbyPanel != null && lobbyPanel.activeInHierarchy;
+
         public void HideAllPanels()
         {
             SetActive(mainPanel, false);
@@ -259,6 +264,11 @@ namespace Ratms.Networking
             if (NetworkManager.Singleton.ConnectedClients.Count < minPlayersToStart)
             {
                 SetStatus($"Necesitas al menos {minPlayersToStart} jugadores.");
+                return;
+            }
+            if (!LobbySync.AllReady)
+            {
+                SetStatus("Esperando a que todos marquen ¡Listo!");
                 return;
             }
 

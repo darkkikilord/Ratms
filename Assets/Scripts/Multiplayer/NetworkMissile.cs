@@ -90,6 +90,8 @@ namespace Ratms.Networking
                 rb.simulated = false;
 
             Sfx.Play(Sfx.Id.Launch);
+            // Obús de trinchera que apunta a su trayectoria (local, en todos los clientes).
+            ProjectileSkin.Apply(gameObject, WeaponArt.Missile(), 0.85f, faceVelocity: true);
 
             // Colisión CONTINUA: el terreno es una línea fina (EdgeCollider2D)
             // y un misil rápido podría saltársela entre dos pasos de física.

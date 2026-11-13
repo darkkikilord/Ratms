@@ -52,6 +52,11 @@ namespace Ratms.UI
             if (btnQuit) btnQuit.onClick.AddListener(OnQuit);
 
             SetupBackgroundCover();
+
+            // Ambiente de guerra: tinte, humo, obuses lejanos y desfile de ratas.
+            var canvasGo = GameObject.Find("MainCanvas");
+            var canvas = canvasGo != null ? canvasGo.GetComponent<Canvas>() : FindFirstObjectByType<Canvas>();
+            MenuDressing.Install(canvas, backgroundImage != null ? backgroundImage.transform : null);
         }
 
         /// <summary>
@@ -77,7 +82,23 @@ namespace Ratms.UI
             if (optionsPanel) optionsPanel.SetActive(false);
         }
 
+        private OptionsOverlay optionsOverlay;
+
         public void ShowOptions()
+        {
+            // Opciones nuevas (estilo trinchera): volúmenes, sangre, risas, temblor y pantalla.
+            if (mainPanel) mainPanel.SetActive(false);
+            if (optionsPanel) optionsPanel.SetActive(false);
+            if (optionsOverlay == null)
+            {
+                optionsOverlay = gameObject.AddComponent<OptionsOverlay>();
+                optionsOverlay.OnClose = () => { optionsOverlay.enabled = false; ShowMain(); };
+            }
+            optionsOverlay.enabled = true;
+            return;
+        }
+
+        private void ShowOldOptionsPanel()
         {
             if (mainPanel) mainPanel.SetActive(false);
             if (optionsPanel) optionsPanel.SetActive(true);
@@ -110,6 +131,16 @@ namespace Ratms.UI
                     playModeMenu.OnPractice = StartPractice;
                     playModeMenu.OnLocal = StartLocalMatch;
                     playModeMenu.OnBack = () => { ClosePlayModeMenu(); ShowMain(); };
+                    playModeMenu.OnTeam = () =>
+                    {
+                        playModeMenu.enabled = false;
+                        if (teamEditor == null)
+                        {
+                            teamEditor = gameObject.AddComponent<TeamEditor>();
+                            teamEditor.OnClose = () => { teamEditor.enabled = false; playModeMenu.enabled = true; };
+                        }
+                        teamEditor.enabled = true;
+                    };
                 }
                 playModeMenu.enabled = true;
                 return;
@@ -127,6 +158,7 @@ namespace Ratms.UI
         }
 
         private PlayModeMenu playModeMenu;
+        private TeamEditor teamEditor;
 
         private void ClosePlayModeMenu()
         {

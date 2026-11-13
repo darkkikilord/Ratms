@@ -341,6 +341,38 @@ namespace Ratms.Networking
             Sparks(at, 16, new Color(1f, 0.92f, 0.5f, 1f), 5f, 11f);
         }
 
+        /// <summary>
+        ///  Llamas de gasolina que se quedan ardiendo unos segundos donde
+        ///  revienta un barril (solo visual): lenguas de fuego que suben,
+        ///  humo negro y gotas ardiendo que salpican.
+        /// </summary>
+        public static void FireBurst(Vector2 at, float radius)
+        {
+            var fx = I;
+            for (int i = 0; i < 10; i++)
+            {
+                Vector2 v = (Random.insideUnitCircle * 0.6f + Vector2.up).normalized * Random.Range(3f, 7f);
+                ref var p = ref fx.New(at, v, Random.Range(0.9f, 1.5f), square);
+                p.gravity = 9f; p.drag = 0.4f; p.s0 = 3f / 32f; p.s1 = 2f / 32f;
+                p.c0 = new Color(1f, 0.75f, 0.2f, 1f); p.c1 = new Color(0.6f, 0.1f, 0f, 0.5f);
+                p.collides = true; p.trailEvery = 0.05f; p.trailKind = 2;
+            }
+            fx.Repeat(3f, 0.06f, () =>
+            {
+                Vector2 o = at + new Vector2(Random.Range(-radius, radius) * 0.45f, -0.1f);
+                ref var f = ref fx.New(o, new Vector2(Random.Range(-0.2f, 0.2f), Random.Range(0.8f, 1.6f)), Random.Range(0.35f, 0.6f), Cloud(Random.Range(0, 4)));
+                f.drag = 1f; f.wind = 0.3f; f.s0 = Random.Range(0.18f, 0.3f); f.s1 = 0.05f;
+                f.c0 = new Color(1f, 0.9f, 0.45f, 0.95f); f.cm = new Color(1f, 0.4f, 0.05f, 0.85f); f.c1 = new Color(0.3f, 0.05f, 0f, 0f); f.midT = 0.35f;
+                if (Random.value < 0.3f)
+                {
+                    float g = Random.Range(0.1f, 0.2f);
+                    ref var sm = ref fx.New(o + Vector2.up * 0.3f, Vector2.up * 0.8f, Random.Range(1.2f, 2f), Cloud(Random.Range(0, 4)));
+                    sm.drag = 0.8f; sm.wind = 0.3f; sm.s0 = 0.2f; sm.s1 = 0.7f; sm.spin = Random.Range(-40f, 40f);
+                    sm.c0 = new Color(g, g, g, 0.55f); sm.c1 = new Color(g, g, g, 0f);
+                }
+            });
+        }
+
         /// <summary>Bocanada de humo para la estela de un proyectil.</summary>
         public static void TrailPuff(Vector2 at)
         {

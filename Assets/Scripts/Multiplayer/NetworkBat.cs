@@ -105,7 +105,9 @@ namespace Ratms.Networking
             // la rata. Lo colocamos y giramos nosotros cada frame.
             var go = new GameObject("BatVisual");
             visualRenderer = go.AddComponent<SpriteRenderer>();
-            visualRenderer.sprite = sprite;
+            // Bate de trinchera con clavos y sangre (WeaponArt), algo más pequeño que 32 px/u.
+            visualRenderer.sprite = WeaponArt.Bat();
+            go.transform.localScale = new Vector3(0.62f, 0.62f, 1f);
             visualRenderer.sortingOrder = 60;
             visual = go.transform;
             go.SetActive(false);

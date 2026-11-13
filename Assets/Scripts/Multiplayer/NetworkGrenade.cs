@@ -156,6 +156,7 @@ namespace Ratms.Networking
                 rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
             if (IsDynamite.Value) ApplyDynamiteVisual();
+            else ProjectileSkin.Apply(gameObject, WeaponArt.StickGrenade(), 0.8f, faceVelocity: false, spinPerUnit: 160f);
             IsDynamite.OnValueChanged += OnDynamiteChanged;
             Sfx.Play(Sfx.Id.Throw, IsDynamite.Value ? 0.5f : 1f);
 
@@ -229,7 +230,7 @@ namespace Ratms.Networking
             if (IsDynamite.Value && Time.time >= nextFuseSpark)
             {
                 nextFuseSpark = Time.time + 0.07f;
-                Fx.Sparks((Vector2)transform.position + Vector2.up * 0.25f, 2, new Color(1f, 0.85f, 0.3f, 1f), 0.6f, 1.6f);
+                Fx.Sparks((Vector2)transform.position + Vector2.up * (WeaponArt.DynamiteFusePx / 58f), 2, new Color(1f, 0.85f, 0.3f, 1f), 0.6f, 1.6f);
             }
 
             if (!IsServer || exploded) return;

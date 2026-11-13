@@ -45,11 +45,28 @@ namespace Ratms.Networking
         // ==============================================================
         private float escConfirmUntil = -1f;
 
+        private Ratms.UI.PauseMenu pause;
+
+        /// <summary>Abre la pausa (ESC). Público para la prueba automática.</summary>
+        public void OpenPause()
+        {
+            if (pause == null)
+            {
+                pause = gameObject.AddComponent<Ratms.UI.PauseMenu>();
+                pause.OnExitToMenu = ExitToMenu;
+            }
+            pause.Open();
+        }
+
         private void Update()
         {
-            if (!Input.GetKeyDown(KeyCode.Escape)) return;
-            if (Time.unscaledTime < escConfirmUntil) ExitToMenu();
-            else escConfirmUntil = Time.unscaledTime + 2.5f;
+            if (!Input.GetKeyDown(KeyCode.Escape) || Ratms.UI.PauseMenu.IsOpen) return;
+            if (pause == null)
+            {
+                pause = gameObject.AddComponent<Ratms.UI.PauseMenu>();
+                pause.OnExitToMenu = ExitToMenu;
+            }
+            pause.Open();
         }
 
         /// <summary>
@@ -155,8 +172,8 @@ namespace Ratms.Networking
 
             // --- Aviso de salida (ESC) ----------------------------------
             {
-                bool confirming = Time.unscaledTime < escConfirmUntil;
-                string hint = confirming ? "Pulsa ESC otra vez para salir al menú" : "ESC ×2: salir";
+                bool confirming = false;
+                string hint = "ESC: pausa";
                 var r = new Rect(virtualWidth - 360f, 8f, 350f, 24f);
                 var prevAlign = windStyle.alignment;
                 var prevCol = windStyle.normal.textColor;
@@ -181,8 +198,10 @@ namespace Ratms.Networking
             {
                 var menu = LocalWeaponsMenu();
                 string weapon = menu != null ? WeaponsMenuUI.ShortName(menu.SelectedWeapon) : "?";
+                int ammo = menu != null && menu.SelectedWeapon != WeaponsMenuUI.WeaponId.None ? menu.AmmoLeft(menu.SelectedWeapon) : -1;
+                string ammoText = ammo >= 0 ? $" x{ammo}" : "";
                 GUI.Label(new Rect(panel.x, panel.y + panelSize.y + 2f, panel.width, 24f),
-                          $"Arma: {weapon}   (1-7 o TAB)", windStyle);
+                          $"Arma: {weapon}{ammoText}   (1-8 o TAB)", windStyle);
             }
 
             GUI.matrix = previous;
@@ -205,7 +224,7 @@ namespace Ratms.Networking
         public static Color TeamTextColor(int team) => Color.Lerp(TeamColor(team), Color.white, 0.35f);
 
         /// <summary>¿Partida local? (los equipos tienen nombre propio en vez del del jugador).</summary>
-        private static bool IsHotseat(NetworkTurnManager tm) => tm.TeamNames.Count > 1 && !tm.TeamNames[0].IsEmpty;
+        private static bool IsHotseat(NetworkTurnManager tm) => MatchRules.Mode == MatchMode.Local;
 
         private struct TeamInfo { public int hp, max, alive, total; }
         private readonly System.Collections.Generic.SortedDictionary<int, TeamInfo> teamInfo = new();

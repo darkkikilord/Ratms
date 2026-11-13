@@ -32,6 +32,7 @@ El usuario habla español: responde, comenta el código y escribe los commits en
 - **Píxeles de decoración**: alfa 254 (`DestructibleTerrain.DecorAlpha`) = se ven pero NO son sólidos. Usa siempre `DestructibleTerrain.IsSolidPixel(c)` en vez de `c.a > 0`.
 - Cráteres: cuenco (`craterDepthRatio` 0.65) + embudo a 45° (`craterFunnelHeight`) para que nunca queden paredes en voladizo, borde chamuscado y limpieza de decoración flotante.
 - La rata se "aparca" quieta en el suelo (gravedad 0) para no resbalar en cuestas (`holdOnSlopes` en `NetworkPlayerMovement`). Cualquier empujón debe pasar por `BeginKnockbackFlight` (ya lo hace `ApplyKnockbackClientRpc`) para soltarla.
+- Al andar con suelo bajo los pies, la velocidad va PARALELA a la cuesta de delante (`TryGetGroundNormal(dir)`, límite `maxWalkSlopeNormalY` 0.6 ≈ 53°). Empujar solo en X contra la pendiente hacía que la fricción clavase la rata.
 - **Un arma por turno** (`firedThisTurn`): tras usarla puedes moverte (huir) pero no volver a disparar.
 - Para añadir componentes a un prefab, mejor un método en `Assets/Editor/RatmsPrefabSetup.cs` ejecutado en batchmode (`-executeMethod`) que editar el YAML a mano (el prefab de la rata es una variante con `m_AddedComponents`).
 
@@ -46,7 +47,7 @@ Prefabs de red: `Assets/Prefabs/Prefabs multiplayer/` (`rat.network`, `missile.n
 
 Armas (`WeaponsMenuUI.WeaponId`, teclas 1-7): Bazooka (`NetworkBazooka` → `NetworkMissile`), Granada (`NetworkGrenadeThrower` → `NetworkGrenade`), **Dinamita** (mismo prefab que la granada con `PrepareAsDynamite`: sin rebote, mecha 5 s, el turno dura la mecha para huir), **Escopeta** (`NetworkShotgun`, rayo, 2 disparos/turno), **Bate** (`NetworkBat`), **Teletransporte** (`NetworkTeleport`, ratón/clic, el servidor valida), **Cuerda ninja** (`NetworkNinjaRope`, DistanceJoint2D del dueño, no gasta el arma del turno; con cuerda la rata nunca se "aparca"). Los componentes de armas van en la raíz de la rata y se añaden con `RatmsPrefabSetup.EnsureRatComponents` (batchmode). Visuales de armas en el mundo (sin padre) y `[DefaultExecutionOrder(100)]`.
 
-Estética (estilo **trinchera + gore + humor negro**, lo pidió el usuario): `RatAppearance` dibuja por código una rata sarnosa con casco de trinchera (franja = color del equipo por `OwnerClientId`), oreja rota, ojo rojo, dientes amarillos, cigarro; sustituye al sprite .ase (`useProceduralRat`). `Fx` (partículas locales: explosiones, humo, chispas, salpicadura, lápida, **sangre que mancha el terreno** vía `DestructibleTerrain.StainAtWorld`, vísceras al morir). `Sfx` (18 sonidos sintetizados, volumen = opt_master × opt_sfx). `NetworkHealth`: quejidos, frases de muerte y la rata del turno se ríe. Gore desactivable con PlayerPrefs `opt_gore` = 0 (aún sin botón en Opciones).
+Estética (estilo **trinchera + gore + humor negro**, lo pidió el usuario): `RatAppearance` dibuja por código una rata sarnosa con casco de trinchera (franja = color del equipo por `OwnerClientId`), oreja rota, ojo rojo, dientes amarillos, cigarro; sustituye al sprite .ase (`useProceduralRat`). `Fx` (partículas locales: explosiones, humo, chispas, salpicadura, lápida, **sangre que mancha el terreno** vía `DestructibleTerrain.StainAtWorld`, vísceras al morir). Motor propio en `Fx`: array de structs `P` + pool de SpriteRenderers, `ref P New(...)` y se rellenan campos (stretch = gota alargada, collides/bounces/sticks = rebota y se queda tirado por píxeles del terreno, stains = mancha, trailKind = estela sangre/humo, midT = color en 3 fases, wind). Sprites pixel-art de vísceras con `Pix(...)` (filas de caracteres, 32 px/u). Al morir: `Fx.Gibs(punto, RatAppearance.Team)` (casco con la franja del equipo); golpe → `RatAppearance.HitFlash()`; <35 % de vida → gotea. Autotest: escaparate G01–G08. `Sfx` (18 sonidos sintetizados, volumen = opt_master × opt_sfx). `NetworkHealth`: quejidos, frases de muerte y la rata del turno se ríe. Gore desactivable con PlayerPrefs `opt_gore` = 0 (aún sin botón en Opciones).
 
 Menú: "Jugar" = **modo Práctica** (`PracticeSession`: host local + 3 dianas que se reponen). ESC×2 sale al menú (`TurnHUD.ExitToMenu`).
 
@@ -68,7 +69,7 @@ También prueba escopeta, teletransporte y cuerda. Otros papeles (`-autoTestRole
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilar sin abrir Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.13 (+ commits sueltos de práctica, sonido, rata de trinchera y gore).
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.13 (+ commits sueltos de práctica, sonido, rata de trinchera, gore, efectos de calidad y andar siguiendo el suelo).
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Estado y roadmap (nov 2026)

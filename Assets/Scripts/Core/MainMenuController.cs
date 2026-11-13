@@ -88,12 +88,24 @@ namespace Ratms.UI
             ShowMain();
         }
 
-        private void OnPlay()
+        /// <summary>Botón "Jugar" (público para poder lanzarlo desde la prueba automática).</summary>
+        public void OnPlay()
         {
             // Opción: el botón 'Jugar' va directo al panel multijugador.
             if (playGoesToMultiplayer && multiplayerMenu != null)
             {
                 OnMultiplayer();
+                return;
+            }
+
+            // MODO PRÁCTICA: partida local tú solo contra ratas diana.
+            // (Antes cargaba la escena "Escenario 1", que ya no existe.)
+            if (multiplayerMenu != null)
+            {
+                multiplayerMenu.HideAllPanels();
+                if (mainPanel) mainPanel.SetActive(false);
+                if (optionsPanel) optionsPanel.SetActive(false);
+                PracticeSession.Begin(multiplayerMenu.GameSceneName);
                 return;
             }
 

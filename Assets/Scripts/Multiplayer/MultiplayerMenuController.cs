@@ -83,6 +83,9 @@ namespace Ratms.Networking
         [Tooltip("Nombre EXACTO de la escena del escenario de juego. Añádela en Build Settings.")]
         [SerializeField] private string gameSceneName = "Escenario 1";
 
+        /// <summary>Escena de juego (la usa también el modo Práctica).</summary>
+        public string GameSceneName => gameSceneName;
+
         [Tooltip("Mínimo de jugadores para poder empezar (por defecto 2 — host + 1).")]
         [SerializeField] private int minPlayersToStart = 2;
 

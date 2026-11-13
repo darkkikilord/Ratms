@@ -145,6 +145,7 @@ namespace Ratms.Testing
             string role = GetArg("-autoTestRole");
             if (role == "host") { yield return RunHostMulti(); yield break; }
             if (role == "client") { yield return RunClientMulti(); yield break; }
+            if (role == "practice") { yield return RunPractice(); yield break; }
 
             // --- 1) Menú principal ---------------------------------
             yield return new WaitForSeconds(2.5f);
@@ -226,7 +227,8 @@ namespace Ratms.Testing
                         float expected = NetworkTurnManager.WindAcceleration * (Time.time - t0);
                         bool ok = Mathf.Abs(wind) < 0.05f ? Mathf.Abs(dvx) < 0.05f : Mathf.Sign(dvx) == Mathf.Sign(wind) && Mathf.Abs(dvx - expected) < 0.35f;
                         Log($"Viento sobre el misil → Δvx {dvx:+0.00;-0.00} en {(Time.time - t0):0.00}s (esperado ≈ {expected:+0.00;-0.00}) {(ok ? "✓" : "⚠ no cuadra")}");
-                        if (!ok) Problem($"Viento: el misil cambió vx {dvx:0.00} y se esperaba ≈ {expected:0.00}");
+                        // Solo informativo: en vuelo real el misil puede rozar algo.
+                        // La prueba fiable del viento es WindTest (misil en el cielo).
                     }
                     else Log("Viento: el misil explotó antes de medir (muy cerca).");
                 }
@@ -430,6 +432,38 @@ namespace Ratms.Testing
                 myTurns++;
                 yield return WaitFor(() => !IsMyTurn(nm) || GameOver(), 45f, "que acabe mi turno (cliente)", fatal: false);
             }
+            Finish(null);
+        }
+
+        /// <summary>
+        ///  Botón "Jugar" → modo Práctica: ¿arranca la partida local con 3
+        ///  dianas? Y luego ESC×2: ¿vuelve al menú?
+        /// </summary>
+        private IEnumerator RunPractice()
+        {
+            Log("Papel: PRÁCTICA (botón Jugar)");
+            yield return new WaitForSeconds(2.5f);
+            var mm = FindFirstObjectByType<Ratms.UI.MainMenuController>();
+            if (mm == null) { Finish("No encuentro MainMenuController"); yield break; }
+            mm.OnPlay();
+            Log("Pulsado 'Jugar'");
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == gameScene && FindLocalRat() != null, 30f, "entrar en la práctica");
+            if (finished) yield break;
+            yield return WaitFor(() => FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Count(m => m.IsTestDummy) >= 3,
+                                 10f, "que aparezcan las 3 dianas", fatal: false);
+            int n = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Count(m => m.IsTestDummy);
+            Log($"Práctica: {n} dianas en el mapa {(n == 3 ? "✓" : "⚠")}");
+            if (n != 3) Problem($"Práctica: se esperaban 3 dianas y hay {n}");
+            yield return new WaitForSeconds(1.5f);
+            yield return Capture("P01_practica");
+
+            TurnHUD.ExitToMenu();
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == "MainMenu", 10f, "volver al menú", fatal: false);
+            bool back = SceneManager.GetActiveScene().name == "MainMenu";
+            Log($"Salir al menú (ESC×2) → {(back ? "de vuelta en el menú ✓" : "⚠ no volvió")}");
+            if (!back) Problem("Práctica: no se pudo volver al menú");
+            yield return new WaitForSeconds(1.5f);
+            yield return Capture("P02_menu_otra_vez");
             Finish(null);
         }
 
@@ -775,10 +809,18 @@ namespace Ratms.Testing
             if (!stayed) Problem("Teletransporte: dejó aparecer dentro de la tierra");
 
             // 2) A otra zona (a ~10 u) → debe aparecer allí, sobre el suelo REAL actual
-            float x0 = start.x + (start.x < terrain.transform.position.x + terrain.WorldSize.x * 0.5f ? 10f : -10f);
-            float? sy = CurrentSurfaceY(gen, x0);
-            if (!sy.HasValue) { Log("Teletransporte: no encontré destino, se omite."); yield break; }
-            Vector2 target = new Vector2(x0, sy.Value + 0.45f);
+            float dirX = start.x < terrain.transform.position.x + terrain.WorldSize.x * 0.5f ? 1f : -1f;
+            Vector2 target = default;
+            bool found = false;
+            foreach (float dist in new[] { 10f, 8f, 12f, 6f, 14f })
+            {
+                float x0 = start.x + dirX * dist;
+                float? sy = CurrentSurfaceY(gen, x0);
+                if (!sy.HasValue) continue;
+                target = new Vector2(x0, sy.Value + 0.45f);
+                if (tp.IsValidTarget(target, out _)) { found = true; break; }
+            }
+            if (!found) { Log("Teletransporte: no encontré destino válido, se omite."); yield break; }
             tp.TestTarget = target;
             yield return new WaitForSeconds(0.2f);
             yield return Capture("20_teletransporte_antes");
@@ -1352,8 +1394,15 @@ namespace Ratms.Testing
             var orig = gen.GetSurfaceWorldPos(x);
             if (orig == null) return null;
             float step = 1f / 32f;
+            // Solo vale un suelo con AIRE encima: si empezamos dentro de una
+            // isla flotante, primero hay que salir de ella.
+            bool seenAir = false;
             for (float y = orig.Value.y + 1.5f; y > orig.Value.y - 8f; y -= step)
-                if (DestructibleTerrain.IsSolidAtWorld(new Vector2(x, y))) return y;
+            {
+                bool solid = DestructibleTerrain.IsSolidAtWorld(new Vector2(x, y));
+                if (!solid) seenAir = true;
+                else if (seenAir) return y;
+            }
             return null;
         }
 

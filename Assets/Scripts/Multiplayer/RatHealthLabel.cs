@@ -173,7 +173,8 @@ namespace Ratms.Networking
         {
             var netObj = GetComponent<NetworkObject>();
             ulong ownerId = netObj != null ? netObj.OwnerClientId : 0;
-            string name = PlayerNameRegistry.GetName(ownerId);
+            var move = GetComponent<NetworkPlayerMovement>();
+            string name = move != null && move.IsTestDummy ? "Diana" : PlayerNameRegistry.GetName(ownerId);
             // Nombre en tamaño menor (65%) usando la etiqueta <size> de TMP
             // + un salto de línea antes del HP para separarlos visualmente.
             return $"<size=65%>{name}</size>\n{hp}";

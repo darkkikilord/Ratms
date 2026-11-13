@@ -39,6 +39,30 @@ namespace Ratms.Networking
         private GUIStyle whoStyle, timeStyle, windStyle;
         private bool wasMyTurn;
         private int lastTickSecond = -1;
+
+        // ==============================================================
+        // SALIR AL MENÚ: ESC dos veces (la primera solo avisa)
+        // ==============================================================
+        private float escConfirmUntil = -1f;
+
+        private void Update()
+        {
+            if (!Input.GetKeyDown(KeyCode.Escape)) return;
+            if (Time.unscaledTime < escConfirmUntil) ExitToMenu();
+            else escConfirmUntil = Time.unscaledTime + 2.5f;
+        }
+
+        /// <summary>
+        ///  Sale de la partida y vuelve al menú principal (desconecta de la
+        ///  sala). Si eras el host, la partida se acaba para todos.
+        /// </summary>
+        public static void ExitToMenu()
+        {
+            var nm = NetworkManager.Singleton;
+            if (nm != null && nm.IsListening) nm.Shutdown();
+            PlayerNameRegistry.Clear();
+            UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+        }
         private Texture2D panelTex, barBackTex, barFillTex;
         private float stylesForScale = -1f;
 
@@ -119,6 +143,20 @@ namespace Ratms.Networking
 
             // --- Fila 3: viento ----------------------------------------
             GUI.Label(new Rect(panel.x, panel.y + 102f, panel.width, 28f), WindText(tm.Wind.Value), windStyle);
+
+            // --- Aviso de salida (ESC) ----------------------------------
+            {
+                bool confirming = Time.unscaledTime < escConfirmUntil;
+                string hint = confirming ? "Pulsa ESC otra vez para salir al menú" : "ESC ×2: salir";
+                var r = new Rect(virtualWidth - 360f, 8f, 350f, 24f);
+                var prevAlign = windStyle.alignment;
+                var prevCol = windStyle.normal.textColor;
+                windStyle.alignment = TextAnchor.MiddleRight;
+                windStyle.normal.textColor = confirming ? new Color(1f, 0.6f, 0.4f) : new Color(1f, 1f, 1f, 0.45f);
+                GUI.Label(r, hint, windStyle);
+                windStyle.alignment = prevAlign;
+                windStyle.normal.textColor = prevCol;
+            }
 
             // --- Debajo del panel: tu arma (solo en tu turno) ----------
             if (myTurn)

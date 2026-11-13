@@ -60,6 +60,17 @@ namespace Ratms.Networking
                  "Cada rata aparece en un lugar distinto y sorprendente cada partida.")]
         [SerializeField] private bool useRandomValidSpawn = true;
 
+        [Tooltip("Distancia mínima (u) entre ratas al aparecer en modo aleatorio. Si el mapa no da para tanto, se usa el sitio más alejado posible.")]
+        [SerializeField] private float minDistanceBetweenSpawns = 12f;
+
+        [Tooltip("Altura (u) sobre el suelo a la que se coloca el pivote de la rata en modo aleatorio. " +
+                 "Pequeña a propósito: el cuerpo ya queda ~0.5 u por encima del pivote, y si la soltamos muy alto " +
+                 "dentro de una cueva podía quedar metida en el techo.")]
+        [SerializeField] private float randomSpawnOffsetY = 0.15f;
+
+        // Sitios ya usados en esta partida (para separar las ratas).
+        private readonly List<Vector3> usedSpawns = new();
+
         [Header("Spawn en islas flotantes (modo antiguo)")]
         [Tooltip("Solo si useRandomValidSpawn está en OFF. Probabilidad (0-1) de spawnear en cima de una isla " +
                  "en lugar de en el suelo principal.")]
@@ -353,10 +364,15 @@ namespace Ratms.Networking
                     // filtrado por el escaneo de terreno).
                     if (useRandomValidSpawn)
                     {
-                        Vector3? validPos = generator.GetRandomValidSpawnWorld();
+                        // Lejos de las demás ratas (salvo la propia, si es un rescate).
+                        var avoid = new List<Vector3>(usedSpawns);
+                        if (index < avoid.Count) avoid.RemoveAt(index);
+                        Vector3? validPos = generator.GetRandomValidSpawnWorld(avoid, minDistanceBetweenSpawns);
                         if (validPos.HasValue)
                         {
-                            pos = validPos.Value + Vector3.up * surfaceOffsetY;
+                            while (usedSpawns.Count <= index) usedSpawns.Add(validPos.Value);
+                            usedSpawns[index] = validPos.Value;
+                            pos = validPos.Value + Vector3.up * randomSpawnOffsetY;
                             if (debugLogs)
                                 Debug.Log($"[GameSceneSpawnManager] Spawn #{index} en punto válido random: {pos}");
                             return pos;   // saltamos la lógica antigua

@@ -59,10 +59,33 @@ namespace Ratms.World
             var result = new List<Vector2[]>();
             if (pixels == null || w <= 0 || h <= 0) return result;
 
-            // ---- 1) Rejilla sólido/aire ----
-            int n = w * h;
+            // ---- 1) Rejilla sólido/aire CON BORDE ----
+            // La rejilla mide (w+2)×(h+2): un marco de aire alrededor. Así
+            // leemos vecinos sin comprobar límites (lo que antes era una
+            // función por esquina, ~8 M de llamadas por explosión).
+            // De paso clasificamos cada fila: toda aire / toda sólida / mixta.
+            int W = w + 2, H = h + 2;
+            int n = W * H;
             if (solid == null || solid.Length < n) solid = new byte[n];
-            for (int i = 0; i < n; i++) solid[i] = DestructibleTerrain.IsSolidPixel(pixels[i]) ? (byte)1 : (byte)0;
+            if (rowKind == null || rowKind.Length < H) rowKind = new byte[H];
+            System.Array.Clear(solid, 0, W);                          // fila de borde inferior
+            System.Array.Clear(solid, (H - 1) * W, W);                // fila de borde superior
+            rowKind[0] = rowKind[H - 1] = RowEmpty;
+            for (int y = 0; y < h; y++)
+            {
+                int dst = (y + 1) * W, src = y * w;
+                solid[dst] = 0;
+                solid[dst + W - 1] = 0;
+                int count = 0;
+                for (int x = 0; x < w; x++)
+                {
+                    var c = pixels[src + x];
+                    byte s = (c.a > 0 && c.a != DestructibleTerrain.DecorAlpha) ? (byte)1 : (byte)0;
+                    solid[dst + 1 + x] = s;
+                    count += s;
+                }
+                rowKind[y + 1] = count == 0 ? RowEmpty : count == w ? RowFull : RowMixed;
+            }
 
             // ---- 2) Trozos de borde dirigidos ----
             // Las esquinas de cada celda son CENTROS de píxel. Las celdas van de
@@ -78,15 +101,27 @@ namespace Ratms.World
             }
             starts.Clear();
 
-            for (int j = -1; j < h; j++)
+            // jp = fila de esquinas (en la rejilla con borde) de abajo de la celda.
+            for (int jp = 0; jp < H - 1; jp++)
             {
-                for (int i = -1; i < w; i++)
+                byte kLow = rowKind[jp], kHigh = rowKind[jp + 1];
+                // Dos filas de cielo puro → ninguna celda tiene borde. Fuera.
+                if (kLow == RowEmpty && kHigh == RowEmpty) continue;
+                // Dos filas de tierra maciza → solo hay borde en los extremos
+                // (contra el marco de aire): miramos solo la primera y la última celda.
+                bool onlyEnds = kLow == RowFull && kHigh == RowFull;
+
+                int rowLow = jp * W, rowHigh = (jp + 1) * W;
+                for (int ip = 0; ip < W - 1; ip++)
                 {
-                    int bl = S(i, j, w, h), br = S(i + 1, j, w, h);
-                    int tr = S(i + 1, j + 1, w, h), tl = S(i, j + 1, w, h);
+                    if (onlyEnds && ip > 0 && ip < W - 2) { ip = W - 3; continue; }
+
+                    int bl = solid[rowLow + ip], br = solid[rowLow + ip + 1];
+                    int tl = solid[rowHigh + ip], tr = solid[rowHigh + ip + 1];
                     int c = bl | (br << 1) | (tr << 2) | (tl << 3);
                     if (c == 0 || c == 15) continue;
 
+                    int i = ip - 1, j = jp - 1;                        // coordenadas de píxel de la esquina inf-izq
                     int B = (j + 1) * (w + 1) + (i + 1);              // arista inferior
                     int T = (j + 2) * (w + 1) + (i + 1);              // arista superior
                     int L = hCount + (j + 1) * (w + 2) + (i + 1);     // arista izquierda
@@ -142,8 +177,8 @@ namespace Ratms.World
             return result;
         }
 
-        private static int S(int i, int j, int w, int h) =>
-            (i < 0 || j < 0 || i >= w || j >= h) ? 0 : solid[j * w + i];
+        private const byte RowEmpty = 0, RowFull = 2, RowMixed = 1;
+        private static byte[] rowKind;
 
         private static void Link(int from, int to)
         {

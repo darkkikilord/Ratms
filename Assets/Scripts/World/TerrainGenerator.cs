@@ -258,16 +258,36 @@ namespace Ratms.World
 
         /// <summary>Elige un píxel de spawn ALEATORIO del pool. Devuelve WORLD position
         /// listo para spawnear una rata.</summary>
-        public Vector3? GetRandomValidSpawnWorld()
+        public Vector3? GetRandomValidSpawnWorld() => GetRandomValidSpawnWorld(null, 0f);
+
+        /// <summary>
+        ///  Como <see cref="GetRandomValidSpawnWorld()"/> pero LEJOS de otras
+        ///  posiciones (las ratas ya colocadas). Prueba varios puntos al azar y
+        ///  se queda con el primero que esté a ≥ <paramref name="minDistance"/>
+        ///  de todos; si ninguno lo cumple, con el más alejado. Así dos ratas
+        ///  no aparecen una pegada a la otra.
+        /// </summary>
+        public Vector3? GetRandomValidSpawnWorld(System.Collections.Generic.IList<Vector3> avoid, float minDistance)
         {
             if (validSpawnPixels.Count == 0 || terrain == null) return null;
-            var p = validSpawnPixels[Random.Range(0, validSpawnPixels.Count)];
             float ppu = terrain.PixelsPerUnit;
             Vector3 tPos = terrain.transform.position;
-            return new Vector3(
-                tPos.x + (p.x + 0.5f) / ppu,
-                tPos.y + (p.y + 0.5f) / ppu,
-                tPos.z);
+            Vector3 ToWorld(Vector2Int p) => new Vector3(tPos.x + (p.x + 0.5f) / ppu, tPos.y + (p.y + 0.5f) / ppu, tPos.z);
+
+            if (avoid == null || avoid.Count == 0)
+                return ToWorld(validSpawnPixels[Random.Range(0, validSpawnPixels.Count)]);
+
+            Vector3 best = default;
+            float bestDist = -1f;
+            for (int i = 0; i < 40; i++)
+            {
+                Vector3 c = ToWorld(validSpawnPixels[Random.Range(0, validSpawnPixels.Count)]);
+                float d = float.MaxValue;
+                foreach (var a in avoid) d = Mathf.Min(d, Vector2.Distance(c, a));
+                if (d >= minDistance) return c;
+                if (d > bestDist) { bestDist = d; best = c; }
+            }
+            return best;
         }
 
         private void Awake()
@@ -928,14 +948,19 @@ namespace Ratms.World
             // Requisitos: la rata mide ~32 px de alto → dejamos 32 px libres arriba.
             const int RAT_HEIGHT_PX = 32;
             const int GROUND_DEPTH_PX = 8;   // píxeles sólidos debajo del pie
-            // Excluir la franja lateral erosionada (donde puede haber salientes al vacío)
-            int lateralMargin = edgeErosionWidthPx + 10;
+            // Excluir los BORDES del mapa: la franja erosionada y también la
+            // mitad exterior de la pendiente que baja al agua (antes las ratas
+            // podían aparecer en la "playa", a un paso de ahogarse).
+            int lateralMargin = Mathf.Max(edgeErosionWidthPx, edgeSlopeWidthPx / 2) + 10;
+            // Y nada demasiado bajo: el agua está ~1 u por encima del fondo del
+            // mapa; exigimos al menos 4 u de altura (≈ 3 u por encima del agua).
+            int minSpawnY = Mathf.RoundToInt(4f * (terrain != null ? terrain.PixelsPerUnit : 32f));
             // No spawnear más arriba de este límite (evita picos aislados en el cielo)
             int maxY = height - RAT_HEIGHT_PX - 5;
 
             for (int x = lateralMargin; x < width - lateralMargin; x++)
             {
-                for (int y = GROUND_DEPTH_PX; y < maxY; y++)
+                for (int y = Mathf.Max(GROUND_DEPTH_PX, minSpawnY); y < maxY; y++)
                 {
                     // Este píxel debe ser AIRE
                     if (DestructibleTerrain.IsSolidPixel(pixels[y * width + x])) continue;

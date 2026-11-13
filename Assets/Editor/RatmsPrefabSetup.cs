@@ -27,6 +27,7 @@ public static class RatmsPrefabSetup
             changed |= Ensure<NetworkShotgun>(root);
             changed |= Ensure<NetworkTeleport>(root);
             changed |= Ensure<NetworkNinjaRope>(root);
+            changed |= Ensure<NetworkArsenal>(root);   // 0.18: lanzallamas, metralleta, ataque aéreo
 
             if (changed)
             {

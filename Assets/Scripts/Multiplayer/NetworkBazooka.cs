@@ -60,6 +60,9 @@ namespace Ratms.Networking
         /// <summary>Expone el firePoint para que otras armas (granada, dinamita...) puedan reutilizar la misma salida.</summary>
         public Transform FirePoint => firePoint;
 
+        /// <summary>Prefab del misil (lo reutiliza el ataque aéreo para sus bombas).</summary>
+        public GameObject MissilePrefab => missilePrefab;
+
         /// <summary>Expone el TrajectoryDots para que otras armas puedan reutilizar el mismo indicador.</summary>
         public TrajectoryDots TrajectoryDots => trajectoryDots;
 
@@ -116,7 +119,8 @@ namespace Ratms.Networking
                 // (ninguna, dinamita, bate...) no tiene parábola → ocultamos,
                 // o se quedarían los puntos congelados en pantalla.
                 if (weaponsMenu != null &&
-                    weaponsMenu.SelectedWeapon != WeaponsMenuUI.WeaponId.Grenade)
+                    weaponsMenu.SelectedWeapon != WeaponsMenuUI.WeaponId.Grenade &&
+                    weaponsMenu.SelectedWeapon != WeaponsMenuUI.WeaponId.ClusterBomb)
                 {
                     trajectoryDots.Hide();
                 }

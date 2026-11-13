@@ -72,16 +72,52 @@ namespace Ratms.Networking
         [SerializeField] private AudioClip explosionSfx;
         [SerializeField] private float explosionSfxVolume = 0.7f;
 
+        /// <summary>
+        ///  Tipo de proyectil: 0 = obús de bazuca, 1 = bomba de AVIÓN,
+        ///  2 = bomba de NAPALM (explota poco y lo llena todo de fuego).
+        ///  Lo decide el servidor ANTES del Spawn (ver <see cref="PrepareAsAirBomb"/>).
+        /// </summary>
+        public readonly NetworkVariable<byte> Variant = new(0);
+
+        private byte pendingVariant;
+        private bool shortenTurnOnImpact = true;
+
         private Rigidbody2D rb;
         private NetworkObject ownerNetObj;
         private float spawnTime;
         private bool exploded;
 
         // ==============================================================
+        /// <summary>
+        ///  (Servidor, ANTES de Spawn) Convierte el misil en bomba del ataque
+        ///  aéreo. Las bombas de avión SÍ dañan a quien las pidió (cuidado
+        ///  con pedirlas encima de tu rata) y no acortan el turno: caen varias.
+        /// </summary>
+        public void PrepareAsAirBomb(bool napalm)
+        {
+            pendingVariant = (byte)(napalm ? 2 : 1);
+            shortenTurnOnImpact = false;
+            allowSelfDamage = true;
+            ownerIgnoreTime = 0f;
+            windFactor = 0.3f;
+            if (napalm) { maxDamage = 12; explosionRadius = 1.1f; knockbackForce = 10f; minKnockback = 4f; }
+            else { maxDamage = 32; explosionRadius = 1.9f; knockbackForce = 22f; }
+            impactPauseSeconds = 0.35f;
+            shakeAmplitude *= 0.8f;
+        }
+
+        private void ApplySkin()
+        {
+            var sprite = Variant.Value == 1 ? WeaponArt.AirBomb() : Variant.Value == 2 ? WeaponArt.NapalmBomb() : WeaponArt.Missile();
+            ProjectileSkin.Apply(gameObject, sprite, 0.85f, faceVelocity: true);
+        }
+
         public override void OnNetworkSpawn()
         {
             rb = GetComponent<Rigidbody2D>();
             spawnTime = Time.time;
+            if (IsServer && pendingVariant != 0) Variant.Value = pendingVariant;
+            Variant.OnValueChanged += (_, __) => ApplySkin();
 
             // Los clientes no simulan física: dejamos que NetworkTransform
             // interpole la posición. Evita que el misil "rebote" distinto
@@ -89,9 +125,9 @@ namespace Ratms.Networking
             if (!IsServer && rb != null)
                 rb.simulated = false;
 
-            Sfx.Play(Sfx.Id.Launch);
-            // Obús de trinchera que apunta a su trayectoria (local, en todos los clientes).
-            ProjectileSkin.Apply(gameObject, WeaponArt.Missile(), 0.85f, faceVelocity: true);
+            Sfx.Play(Variant.Value == 0 ? Sfx.Id.Launch : Sfx.Id.Whistle, Variant.Value == 0 ? 1f : 0.6f);
+            // Obús de trinchera (o bomba de avión) que apunta a su trayectoria (local, en todos los clientes).
+            ApplySkin();
 
             // Colisión CONTINUA: el terreno es una línea fina (EdgeCollider2D)
             // y un misil rápido podría saltársela entre dos pasos de física.
@@ -101,7 +137,8 @@ namespace Ratms.Networking
             // Avisamos a TODOS los clientes para que sus cámaras sigan al
             // proyectil mientras vuela (como en Worms). Cada cámara volverá
             // sola a su rata cuando el misil se destruya o caduque el seguimiento.
-            if (IsServer)
+            // (Las bombas del avión no: caen cinco a la vez y la cámara iría loca.)
+            if (IsServer && Variant.Value == 0)
                 FollowWithCameraClientRpc(selfDestructSeconds);
         }
 
@@ -251,8 +288,12 @@ namespace Ratms.Networking
             if (NetworkDestructibleTerrain.Instance != null)
                 NetworkDestructibleTerrain.Instance.ServerCarveAt(at, explosionRadius);
 
+            // 2b) NAPALM: revienta en un charco de fuego.
+            if (Variant.Value == 2)
+                FireSystem.ServerIgnite((Vector2)at + Vector2.up * 0.15f, new Vector2(0f, 3.5f), 3.2f, 11, 4.5f, 7.5f);
+
             // 3) Notificamos VFX/SFX a todos los clientes
-            ExplosionFxClientRpc(at);
+            ExplosionFxClientRpc(at, explosionRadius);
 
             // 4) Cámara: temblor + pausa dramática sobre el punto de impacto.
             //    Al caducar la pausa, la cámara vuelve sola a la rata del dueño.
@@ -263,7 +304,7 @@ namespace Ratms.Networking
             //    mientras el misil está en vuelo (endTurnDelay es 3.5s por
             //    defecto), pero en cuanto explotamos, dejamos 1s de margen
             //    para ver la pausa dramática y cambiamos de turno.
-            if (ownerNetObj != null)
+            if (ownerNetObj != null && shortenTurnOnImpact)
             {
                 var ownerMove = ownerNetObj.GetComponent<NetworkPlayerMovement>();
                 if (ownerMove != null) ownerMove.ShortenEndTurnClientRpc(1f);
@@ -277,7 +318,7 @@ namespace Ratms.Networking
         }
 
         [ClientRpc]
-        private void ExplosionFxClientRpc(Vector3 at)
+        private void ExplosionFxClientRpc(Vector3 at, float radius)
         {
             if (explosionVfxPrefab != null)
                 Instantiate(explosionVfxPrefab, at, Quaternion.identity);
@@ -285,13 +326,14 @@ namespace Ratms.Networking
             if (explosionSfx != null)
                 AudioSource.PlayClipAtPoint(explosionSfx, at, explosionSfxVolume);
 
-            Fx.Explosion(at, explosionRadius);
-            Sfx.Play(Sfx.Id.Explosion);
+            Fx.Explosion(at, radius);
+            if (Variant.Value == 2) Fx.FireBurst(at, 1.2f);
+            Sfx.Play(Sfx.Id.Explosion, Variant.Value == 0 ? 1f : 0.75f);
 
             // POPUP DE IMPACTO: SIEMPRE pintamos un "BOOM!" en el punto de la
             // explosión, aunque no haya rata dañada. Así el jugador siempre
             // ve feedback de su disparo (especialmente útil en testing solo).
-            WorldDamagePopup.SpawnImpact(at, "BOOM!", new Color(1f, 0.6f, 0.1f));
+            WorldDamagePopup.SpawnImpact(at, Variant.Value == 2 ? "¡FUSH!" : "BOOM!", new Color(1f, 0.6f, 0.1f));
         }
 
         [ClientRpc]

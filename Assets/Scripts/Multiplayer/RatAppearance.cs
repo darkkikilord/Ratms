@@ -114,6 +114,44 @@ namespace Ratms.Networking
         /// <summary>Al recibir un golpe: parpadeo rojo, mueca y "aplastón" un instante.</summary>
         public void HitFlash() => flashUntil = Time.time + 0.32f;
 
+        private float flipStart = -10f;
+        private const float FlipSeconds = 0.45f;
+
+        /// <summary>Voltereta hacia atrás (el salto doble): el dibujo da una vuelta entera.</summary>
+        public void Backflip() => flipStart = Time.time;
+
+        /// <summary>
+        ///  Punto de la MANO de esta rata en el mundo (donde agarra las armas),
+        ///  calculado con SU anatomía: la flaca la tiene más alta, la topo casi
+        ///  en el suelo... Antes las armas iban a la mano del rig antiguo y
+        ///  flotaban delante de la rata. Se puede llamar en cualquier momento
+        ///  (no depende de que este LateUpdate haya corrido).
+        /// </summary>
+        public bool TryGetHand(out Vector3 world)
+        {
+            world = default;
+            if (movement == null || box == null || !box.enabled) return false;
+            var a = AnatomyOf(Look.body);
+            bool crawl = health != null && health.Crawling;
+            // Punta del brazo (la "pata" con la que agarra), un pelín hacia dentro.
+            float ax = a.armX + a.armR * 0.4f;
+            float ay = a.armY;
+            if (crawl) { ax = a.armX + 1f; ay = 2.4f; }   // a rastras todo va pegado al suelo
+            Vector3 feet = FeetPoint();
+            float side = movement.FacingRight ? 1f : -1f;
+            world = new Vector3(feet.x + side * (ax - PivotX) / PPU, feet.y + (ay - PivotY) / PPU, transform.position.z);
+            return true;
+        }
+
+        /// <summary>Pies del dibujo (centro del collider, abajo), desde el transform.</summary>
+        private Vector3 FeetPoint()
+        {
+            Vector2 localBottom = box.offset - new Vector2(0f, box.size.y * 0.5f);
+            Vector3 wb = transform.TransformPoint(localBottom);
+            Vector3 wc = transform.TransformPoint(box.offset);
+            return new Vector3(wc.x, wb.y - box.edgeRadius, transform.position.z);
+        }
+
         /// <summary>Color de un equipo (0-3).</summary>
         public static Color32 ColorForTeam(int teamIndex) => TeamColors[Mathf.Abs(teamIndex) % TeamColors.Length];
 
@@ -243,6 +281,19 @@ namespace Ratms.Networking
                 float limp = lame && f >= Frame.Walk0 && f <= Frame.Walk3 && ((int)f % 2 == 1) ? 1f / 32f : 0f;
                 sr.transform.position = new Vector3(b.center.x, bottom + limp, transform.position.z);
             }
+            // VOLTERETA: una vuelta entera alrededor del CENTRO del cuerpo
+            // (no de los pies, o daría la vuelta como una noria).
+            float ft = (Time.time - flipStart) / FlipSeconds;
+            if (ft >= 0f && ft < 1f)
+            {
+                float ang = Mathf.SmoothStep(0f, 360f, ft) * (movement.FacingRight ? 1f : -1f);
+                var rot = Quaternion.Euler(0f, 0f, ang);
+                Vector3 up = new Vector3(0f, 0.4f, 0f);
+                sr.transform.rotation = rot;
+                sr.transform.position += up - rot * up;
+            }
+            else if (sr.transform.rotation != Quaternion.identity) sr.transform.rotation = Quaternion.identity;
+
             Vector3 ls = transform.lossyScale;
             float squash = flash * flash;
             sr.transform.localScale = new Vector3((1f + 0.22f * squash) / Mathf.Max(0.0001f, Mathf.Abs(ls.x)),

@@ -32,8 +32,17 @@ namespace Ratms.Networking
             Bat       = 4,
             Teleport  = 5,
             Rope      = 6,
-            SelectRat = 7
+            SelectRat = 7,
+            // 0.18 — arsenal ampliado
+            Flamethrower = 8,
+            MachineGun   = 9,
+            ClusterBomb  = 10,
+            AirStrike    = 11,
+            Napalm       = 12,
         }
+
+        /// <summary>Número de armas (tamaño del bloque de munición por equipo).</summary>
+        public const int Count = 13;
 
         private struct WeaponEntry
         {
@@ -78,6 +87,18 @@ namespace Ratms.Networking
             new WeaponEntry { id = WeaponId.Teleport, displayName = "Teletransporte (clic)",      implemented = true,  shortcut = KeyCode.Alpha6 },
             new WeaponEntry { id = WeaponId.Rope,     displayName = "Cuerda ninja",               implemented = true,  shortcut = KeyCode.Alpha7 },
             new WeaponEntry { id = WeaponId.SelectRat, displayName = "Cambiar rata (clic, gasta turno)", implemented = true, shortcut = KeyCode.Alpha8 },
+            new WeaponEntry { id = WeaponId.Flamethrower, displayName = "Lanzallamas (mantén ESPACIO)", implemented = true, shortcut = KeyCode.Alpha9 },
+            new WeaponEntry { id = WeaponId.MachineGun,   displayName = "Metralleta (ráfaga)",        implemented = true, shortcut = KeyCode.Q },
+            new WeaponEntry { id = WeaponId.ClusterBomb,  displayName = "Bomba de racimo",            implemented = true, shortcut = KeyCode.E },
+            new WeaponEntry { id = WeaponId.AirStrike,    displayName = "Ataque aéreo (clic)",        implemented = true, shortcut = KeyCode.R },
+            new WeaponEntry { id = WeaponId.Napalm,       displayName = "Napalm aéreo (clic)",        implemented = true, shortcut = KeyCode.F },
+        };
+
+        /// <summary>Tecla que se pinta en el arsenal.</summary>
+        private static string KeyLabel(WeaponEntry w) => w.shortcut switch
+        {
+            KeyCode.Q => "Q", KeyCode.E => "E", KeyCode.R => "R", KeyCode.F => "F",
+            _ => w.id == WeaponId.None ? "0" : $"{(int)w.id + 1}",
         };
 
         /// <summary>Nombre corto del arma para el HUD.</summary>
@@ -91,6 +112,11 @@ namespace Ratms.Networking
             WeaponId.Teleport => "Teletransporte",
             WeaponId.Rope     => "Cuerda ninja",
             WeaponId.SelectRat => "Cambiar rata",
+            WeaponId.Flamethrower => "Lanzallamas",
+            WeaponId.MachineGun   => "Metralleta",
+            WeaponId.ClusterBomb  => "Bomba de racimo",
+            WeaponId.AirStrike    => "Ataque aéreo",
+            WeaponId.Napalm       => "Napalm aéreo",
             _                 => "Ninguna",
         };
 
@@ -195,7 +221,12 @@ namespace Ratms.Networking
         public bool HasAmmo(WeaponId id) => AmmoLeft(id) != 0;
 
         /// <summary>¿Hace falta tener brazos para usar esta arma?</summary>
-        public static bool NeedsHands(WeaponId id) => id != WeaponId.None && id != WeaponId.Teleport && id != WeaponId.SelectRat;
+        public static bool NeedsHands(WeaponId id) => id != WeaponId.None && id != WeaponId.Teleport && id != WeaponId.SelectRat
+                                                      && id != WeaponId.AirStrike && id != WeaponId.Napalm;   // el avión se pide por radio
+
+        /// <summary>¿Se apunta con el RATÓN (clic en el mapa) en vez de con W/S?</summary>
+        public static bool ClickTargeted(WeaponId id) => id == WeaponId.Teleport || id == WeaponId.SelectRat
+                                                         || id == WeaponId.AirStrike || id == WeaponId.Napalm;
 
         private NetworkHealth ownerHealth;
 
@@ -232,6 +263,11 @@ namespace Ratms.Networking
             WeaponId.Teleport => WeaponArt.TeleportIcon(),
             WeaponId.Rope => WeaponArt.RopeIcon(),
             WeaponId.SelectRat => WeaponArt.WeaponCrate(),
+            WeaponId.Flamethrower => WeaponArt.Flamethrower(),
+            WeaponId.MachineGun => WeaponArt.MachineGun(),
+            WeaponId.ClusterBomb => WeaponArt.ClusterBomb(),
+            WeaponId.AirStrike => WeaponArt.Plane(),
+            WeaponId.Napalm => WeaponArt.NapalmIcon(),
             _ => null,
         };
 
@@ -245,7 +281,7 @@ namespace Ratms.Networking
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
             float vh = Screen.height / scale;
 
-            const float W = 360f, rowH = 40f, pad = 12f;
+            const float W = 360f, rowH = 34f, pad = 12f;
             float H = 52f + weapons.Length * (rowH + 4f) + 34f;
             float x = panelOffset.x, y = vh - H - panelOffset.y;
             GUI.DrawTexture(new Rect(x, y, W, H), panelTex);
@@ -275,7 +311,7 @@ namespace Ratms.Networking
                     GUI.color = pc;
                 }
 
-                string number = w.id == WeaponId.None ? "0" : $"{(int)w.id + 1}";
+                string number = KeyLabel(w);
                 string name = w.id == WeaponId.None ? "Guardar arma" : ShortName(w.id);
                 if (GUI.Button(new Rect(r.x + 64f, r.y, r.width - 64f - 60f, rowH), $"{number}  {name}", sel ? rowSel : rowStyle) && !empty)
                     SelectedIndexNet.Value = (int)w.id;

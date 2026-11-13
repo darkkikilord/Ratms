@@ -22,7 +22,7 @@ namespace Ratms.Networking
     /// </summary>
     public partial class NetworkTurnManager
     {
-        public const int WeaponCount = 8;   // WeaponsMenuUI.WeaponId 0..7
+        public const int WeaponCount = WeaponsMenuUI.Count;   // WeaponsMenuUI.WeaponId 0..12
 
         /// <summary>Munición: índice = equipo × WeaponCount + arma. -1 = infinita.</summary>
         public NetworkList<int> Ammo;
@@ -137,8 +137,19 @@ namespace Ratms.Networking
             (WeaponsMenuUI.WeaponId.Teleport, 1, "+1 Teletransporte"),
             (WeaponsMenuUI.WeaponId.SelectRat, 1, "+1 Cambiar rata"),
             (WeaponsMenuUI.WeaponId.Grenade, 1, "+1 Granada"),
+            (WeaponsMenuUI.WeaponId.Flamethrower, 1, "+1 Lanzallamas"),
+            (WeaponsMenuUI.WeaponId.ClusterBomb, 1, "+1 Bomba de racimo"),
+            (WeaponsMenuUI.WeaponId.AirStrike, 1, "+1 Ataque aéreo"),
+            (WeaponsMenuUI.WeaponId.Napalm, 1, "+1 Napalm aéreo"),
         };
         private const byte TrapContent = 250;
+
+        /// <summary>(Prueba) dónde está el primer objeto de ese tipo que siga en el mapa.</summary>
+        public Vector2? TestItemPosition(ItemKind kind)
+        {
+            foreach (var it in items.Values) if (it.kind == kind && !it.gone) return it.pos;
+            return null;
+        }
 
         /// <summary>(Prueba) cuántas cajas/barriles quedan.</summary>
         public int ItemCount(ItemKind kind)
@@ -397,6 +408,8 @@ namespace Ratms.Networking
             BlastFxClientRpc(at, radius, big);
             if (NetworkDestructibleTerrain.Instance != null)
                 NetworkDestructibleTerrain.Instance.ServerCarveAt(at, radius * 0.8f);
+            // Barril de gasolina: deja FUEGO DE VERDAD alrededor (quema a quien pase).
+            if (big) FireSystem.ServerIgnite(at + Vector2.up * 0.2f, Vector2.up * 4.5f, 4f, 9, 4f, 7f);
         }
 
         [ClientRpc]

@@ -179,6 +179,130 @@ namespace Ratms.Networking
             ".oooooooooo.");
 
         // ============================================================
+        //  ARMAS NUEVAS (0.18)
+        // ============================================================
+        /// <summary>Lanzallamas de trinchera: depósito de gasolina a la espalda, manguera y lanza con piloto encendido.</summary>
+        public static Sprite Flamethrower() => Make("flamer", new Vector2(6.5f, 2.5f), 32f,
+            ".oooo....................",
+            "oKKkKo..............ooo..",
+            "oKKkKoooooooooooooooMMMoQ",
+            "oKKkKommmmmmmmmmmmmmmmmoO",
+            "oKKkKoowwoooooooooooooo..",
+            "okkkko.owo...............",
+            ".oooo..oo................");
+
+        /// <summary>Metralleta de trinchera: culata de madera, cañón con camisa agujereada y cargador lateral.</summary>
+        public static Sprite MachineGun() => Make("mgun", new Vector2(8.5f, 2.5f), 32f,
+            "........oooo..............",
+            "oooo...oommooooooooooooo..",
+            "oWWWoooMMMMMMoMoMoMoMoMMoo",
+            "owwwwWWmmmmmmomomomomommmo",
+            ".ooooowooommmooooooooooo..",
+            "......owo.omo.............",
+            "......oo..omo.............",
+            "..........oo..............");
+
+        /// <summary>Bomba de racimo: lata gorda con franja roja y remaches; revienta en bombetas.</summary>
+        public static Sprite ClusterBomb() => Make("cluster", new Vector2(5f, 4.5f), 32f,
+            "...oooo...",
+            "..oMMMMo..",
+            ".oMSSMMMo.",
+            "oMSMMMMmmo",
+            "oRRRRRRRro",
+            "oMMbMMbMmo",
+            "omMMMMMmmo",
+            ".ommmmmmo.",
+            "..oooooo..");
+
+        /// <summary>Bombeta (lo que suelta la bomba de racimo).</summary>
+        public static Sprite Bomblet() => Make("bomblet", new Vector2(2.5f, 2.5f), 32f,
+            ".ooo.",
+            "oMSmo",
+            "oRRro",
+            "ommmo",
+            ".ooo.");
+
+        /// <summary>Biplano de reconocimiento que cruza el cielo en el ataque aéreo (mira a la DERECHA).</summary>
+        public static Sprite Plane() => Make("plane", new Vector2(20f, 7f), 32f,
+            "..........oooooooooooooooooo..........",
+            ".........oHHHHHHHHHHHHHHHHHHo.........",
+            "oo........oooooooooooooooooo..........",
+            "oGo...........o......o...........ooo..",
+            "oGGo..........o......o.........ooMMo..",
+            "oGGGoooooooooooooooooooooooooooomMMo.o",
+            "oGGGGGGGGGGGGGGGGGGGGGGGGGGGRRGGoMMoMo",
+            "oggggggggggggggggggggggggggggggoomMmoM",
+            ".oooooggggggggggggggggggggggggo.omMo.o",
+            "......ooooooooooooooooooooooooo..ooo..",
+            ".........oHHHHHHHHHHHHHHHHHHo.........",
+            "..........oooooooooooooooooo..........",
+            "...................oo.oo..............",
+            "..................oMMoMMo.............",
+            "...................oo.oo..............");
+
+        /// <summary>Bomba de aviación (cae girada hacia donde va): cuerpo gris, aletas y punta.</summary>
+        public static Sprite AirBomb() => Make("airbomb", new Vector2(6f, 3f), 32f,
+            "oo..........",
+            "oSoooooooo..",
+            ".oSMMMMMMMoo",
+            ".oSmmmmmmmmMo",
+            ".oSmmmmmmmoo",
+            "oSoooooooo..",
+            "oo..........");
+
+        /// <summary>Bomba de NAPALM: igual pero con bidón rojo y un trapo ardiendo.</summary>
+        public static Sprite NapalmBomb() => Make("napalmbomb", new Vector2(6f, 3f), 32f,
+            "oo.......Q..",
+            "oSoooooooOo.",
+            ".oSKKKKKKKoo",
+            ".oSkkYYkkkkKo",
+            ".oSkkkkkkkoo",
+            "oSoooooooo..",
+            "oo..........");
+
+        /// <summary>Icono del napalm: bidón con llamas encima.</summary>
+        public static Sprite NapalmIcon() => Make("napalmicon", new Vector2(6f, 0.5f), 32f,
+            "...Q...Q....",
+            "..QOQ.QOQ.Q.",
+            "..OOOQOOOQO.",
+            ".ooooooooooo",
+            ".oKkKYYYKkKo",
+            ".oKkYoYYKkKo",
+            ".omMMMMMMMmo",
+            ".oKkKKKKKkKo",
+            ".oKkKKKKKkKo",
+            ".ooooooooooo");
+
+        /// <summary>Llama (fotograma 0-2) para el fuego del suelo: lengua naranja con corazón amarillo.</summary>
+        public static Sprite Flame(int frame) => (frame % 3) switch
+        {
+            0 => Make("flame0", new Vector2(3f, 0f), 32f,
+                "...O...",
+                "..OO...",
+                "..OQO..",
+                ".OQQO..",
+                ".OQQQO.",
+                "OOQQQOO",
+                ".OOOOO."),
+            1 => Make("flame1", new Vector2(3f, 0f), 32f,
+                "....O..",
+                "...OO..",
+                "..OQO..",
+                "..OQQO.",
+                ".OQQQO.",
+                "OOQQQOO",
+                ".OOOOO."),
+            _ => Make("flame2", new Vector2(3f, 0f), 32f,
+                "..O....",
+                "..OO.O.",
+                ".OQOOO.",
+                ".OQQO..",
+                ".OQQQO.",
+                "OOQQQOO",
+                ".OOOOO."),
+        };
+
+        // ============================================================
         private static Sprite Make(string key, Vector2 pivotPx, float ppu, params string[] rows)
         {
             if (cache.TryGetValue(key, out var s)) return s;
@@ -220,6 +344,8 @@ namespace Ratms.Networking
             'c' => new Color32(180, 172, 156, 255),
             'K' => new Color32(168, 64, 36, 255),     // bidón oxidado
             'k' => new Color32(112, 40, 24, 255),
+            'O' => new Color32(255, 132, 30, 255),    // llama naranja
+            'Q' => new Color32(255, 222, 96, 255),    // llama amarilla (corazón)
             _ => new Color32(0, 0, 0, 0),
         };
     }

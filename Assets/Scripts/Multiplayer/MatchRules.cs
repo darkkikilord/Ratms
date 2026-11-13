@@ -106,7 +106,11 @@ namespace Ratms.Networking
                 WeaponsMenuUI.WeaponId.Dynamite => 1,
                 WeaponsMenuUI.WeaponId.Teleport => 1,
                 WeaponsMenuUI.WeaponId.SelectRat => 1,
-                _ => -1,   // bazuca, escopeta, bate y cuerda: infinitas
+                WeaponsMenuUI.WeaponId.Flamethrower => 2,
+                WeaponsMenuUI.WeaponId.ClusterBomb => 2,
+                WeaponsMenuUI.WeaponId.AirStrike => 1,
+                WeaponsMenuUI.WeaponId.Napalm => 1,
+                _ => -1,   // bazuca, escopeta, bate, cuerda y metralleta: infinitas
             };
         }
 

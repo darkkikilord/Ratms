@@ -161,6 +161,7 @@ namespace Ratms.Testing
             if (role == "host") { yield return RunHostMulti(); yield break; }
             if (role == "client") { yield return RunClientMulti(); yield break; }
             if (role == "practice") { yield return RunPractice(); yield break; }
+            if (role == "arsenal") { yield return RunArsenal(); yield break; }
 
             // --- 1) Menú principal ---------------------------------
             yield return new WaitForSeconds(2.5f);
@@ -1265,6 +1266,292 @@ namespace Ratms.Testing
         }
 
         /// <summary>Escopeta: dos disparos a la diana y el tercero bloqueado.</summary>
+        // =========================================================
+        // ARSENAL 0.18 (papel "arsenal")
+        // =========================================================
+        /// <summary>
+        ///  Prueba la 0.18: dónde agarra la rata cada arma (la MANO nueva),
+        ///  lanzallamas, metralleta, bomba de racimo, ataque aéreo, napalm,
+        ///  barril que arde, voltereta, escalar una pared y los sitios de spawn.
+        ///  Capturas A00–A15.
+        /// </summary>
+        private IEnumerator RunArsenal()
+        {
+            Log("Papel: ARSENAL 0.18 (armas nuevas, fuego, mano, salto y spawn)");
+            MatchRules.OverrideCrateChance = 0f;
+            MatchRules.OverrideBarrels = 0;
+            MatchRules.OverrideTurnSeconds = 90;
+            MatchRules.OverrideSuddenDeathSeconds = 0f;
+            yield return new WaitForSeconds(2.5f);
+
+            NetworkManager nm = null;
+            yield return WaitFor(() => (nm = NetworkManager.Singleton) != null, 10f, "NetworkManager en el menú");
+            if (finished) yield break;
+            var menu = FindFirstObjectByType<MultiplayerMenuController>();
+            if (menu != null) menu.HideAllPanels();
+            var utp = nm.GetComponent<UnityTransport>();
+            if (utp != null) utp.SetConnectionData("127.0.0.1", 7777, "127.0.0.1");
+            if (!nm.StartHost()) { Finish("No se pudo arrancar el host local"); yield break; }
+            nm.SceneManager.LoadScene(gameScene, LoadSceneMode.Single);
+
+            NetworkPlayerMovement rat = null;
+            yield return WaitFor(() => (rat = FindLocalRat()) != null, 20f, "que aparezca la rata local");
+            if (finished) yield break;
+            yield return WaitFor(() => NetworkTurnManager.Instance != null && NetworkTurnManager.Instance.IsTurnOf(nm.LocalClientId), 15f, "el primer turno");
+            if (finished) yield break;
+            yield return new WaitForSeconds(1.5f);
+            var tm = NetworkTurnManager.Instance;
+            var weapons = rat.GetComponentInChildren<WeaponsMenuUI>();
+            var h = rat.GetComponent<NetworkHealth>();
+            var rb = rat.GetComponent<Rigidbody2D>();
+            var arsenal = rat.GetComponent<NetworkArsenal>();
+            var thrower = rat.GetComponentInChildren<NetworkGrenadeThrower>();
+            if (arsenal == null) { Finish("La rata no tiene NetworkArsenal (falta RatmsPrefabSetup)"); yield break; }
+
+            // --- 0) Spawn ---
+            var gen = FindFirstObjectByType<TerrainGenerator>();
+            int spots = gen != null ? gen.GetValidSpawnPixels().Count : 0;
+            Log($"Sitios buenos para aparecer (llanos, anchos y con salida): {spots} {(spots >= 8 ? "✓" : "⚠")}");
+            if (spots < 8) Problem("Spawn: muy pocos sitios válidos con el filtro nuevo");
+            yield return Capture("A00_spawn");
+
+            // --- 1) La MANO con cada arma ---
+            yield return PlaceOnFlatSpot(rat, 0.4f, 0.6f, "mano");
+            yield return new WaitForSeconds(0.5f);
+            var handWeapons = new[]
+            {
+                (WeaponsMenuUI.WeaponId.Bazooka, "A01_mano_bazuca"), (WeaponsMenuUI.WeaponId.Shotgun, "A02_mano_escopeta"),
+                (WeaponsMenuUI.WeaponId.Flamethrower, "A03_mano_lanzallamas"), (WeaponsMenuUI.WeaponId.MachineGun, "A04_mano_metralleta"),
+                (WeaponsMenuUI.WeaponId.ClusterBomb, "A05_mano_racimo"),
+            };
+            foreach (var (w, shot) in handWeapons)
+            {
+                weapons.SelectedIndexNet.Value = (int)w;
+                rat.TestSetAim(15f);
+                yield return new WaitForSeconds(0.4f);
+                float d = Vector2.Distance(rat.HandPosition, h.BodyCenter);
+                Log($"Mano con {WeaponsMenuUI.ShortName(w)}: a {d:0.00} u del centro del cuerpo {(d < 0.4f ? "✓" : "⚠")}");
+                if (d >= 0.4f) Problem($"Mano: el arma ({WeaponsMenuUI.ShortName(w)}) queda lejos del cuerpo ({d:0.00} u)");
+                yield return CloseupWithColliders(rat, shot, 1.1f, overlay: false);
+            }
+
+            float side = rat.FacingRight ? 1f : -1f;
+            NetworkHealth dh = null;
+            IEnumerator FreshDummy(float dist)
+            {
+                if (dh != null && !dh.IsDead.Value) dh.GetComponent<NetworkObject>().Despawn(true);
+                side = rat.FacingRight ? 1f : -1f;
+                var dm = SpawnDummy((Vector2)rat.transform.position + new Vector2(side * dist, 0.6f));
+                dh = dm != null ? dm.GetComponent<NetworkHealth>() : null;
+                yield return new WaitForSeconds(1f);
+            }
+
+            // --- 2) LANZALLAMAS ---
+            Log("---- Lanzallamas ----");
+            yield return WaitFreshTurn(nm, rat);
+            if (finished) yield break;
+            yield return PlaceOnFlatSpot(rat, 0.4f, 0.6f, "lanzallamas");
+            yield return FreshDummy(2.2f);
+            if (dh == null) { Finish("No se pudo crear la diana"); yield break; }
+            weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Flamethrower;
+            AimAt(rat, dh.BodyCenter + Vector2.up * 0.4f);
+            yield return new WaitForSeconds(0.3f);
+            int hp0 = dh.CurrentHealth.Value;
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.8f);
+            yield return Capture("A06_lanzallamas");
+            yield return new WaitForSeconds(0.8f);
+            rat.TestReleaseFire();
+            yield return new WaitForSeconds(2f);
+            yield return Capture("A07_fuego_en_el_suelo");
+            int burnt = hp0 - dh.CurrentHealth.Value;
+            Log($"Lanzallamas → llamas vivas {FireSystem.ActiveCount} · la diana pierde {burnt} {(burnt > 0 && FireSystem.ActiveCount > 0 ? "✓" : "⚠")}");
+            if (FireSystem.ActiveCount == 0) Problem("Lanzallamas: no quedan llamas ardiendo");
+            if (burnt <= 0) Problem("Lanzallamas: la diana no se quema");
+            yield return new WaitForSeconds(2f);
+
+            // --- 3) METRALLETA ---
+            Log("---- Metralleta ----");
+            yield return WaitFreshTurn(nm, rat);
+            if (finished) yield break;
+            // Sitio con LÍNEA DE TIRO libre hasta la diana (como la escopeta).
+            foreach (var zone in new[] { (0.55f, 0.75f), (0.4f, 0.6f), (0.15f, 0.3f), (0.7f, 0.85f) })
+            {
+                yield return PlaceOnFlatSpot(rat, zone.Item1, zone.Item2, "metralleta");
+                yield return FreshDummy(3f);
+                if (dh == null) break;
+                bool clear = true;
+                foreach (var hh in Physics2D.LinecastAll(h.BodyCenter, dh.BodyCenter))
+                    if (hh.collider != null && !hh.collider.isTrigger && hh.collider.GetComponentInParent<NetworkHealth>() == null) { clear = false; break; }
+                if (clear) break;
+                Log("Metralleta: terreno en medio, pruebo otro sitio");
+            }
+            if (dh == null) { Finish("No se pudo crear la diana"); yield break; }
+            weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.MachineGun;
+            AimAt(rat, dh.BodyCenter);
+            yield return new WaitForSeconds(0.3f);
+            hp0 = dh.CurrentHealth.Value;
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.45f);
+            yield return Capture("A08_metralleta");
+            yield return new WaitForSeconds(1.2f);
+            int mg = hp0 - dh.CurrentHealth.Value;
+            Log($"Metralleta → la diana pierde {mg} {(mg > 0 ? "✓" : "⚠")}");
+            if (mg <= 0) Problem("Metralleta: ninguna bala dio a la diana");
+
+            // --- 4) BOMBA DE RACIMO ---
+            Log("---- Bomba de racimo ----");
+            yield return WaitFreshTurn(nm, rat);
+            if (finished) yield break;
+            weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.ClusterBomb;
+            rat.TestSetAim(50f);
+            yield return new WaitForSeconds(0.3f);
+            thrower.StartCharging();
+            thrower.TickCharging(0.55f, rat.WeaponForward);
+            bool thrown = thrower.ReleaseShot(rat.WeaponForward);
+            int maxGrenades = 0;
+            bool shotTaken = false;
+            for (float t = 0f; t < 6f; t += Time.deltaTime)
+            {
+                int n = FindObjectsByType<NetworkGrenade>(FindObjectsSortMode.None).Length;
+                maxGrenades = Mathf.Max(maxGrenades, n);
+                if (n > 1 && !shotTaken) { shotTaken = true; yield return new WaitForSeconds(0.35f); yield return Capture("A09_racimo"); }
+                yield return null;
+            }
+            Log($"Bomba de racimo lanzada: {thrown} · bombetas a la vez: {maxGrenades - 1} {(maxGrenades >= 4 ? "✓" : "⚠")}");
+            if (maxGrenades < 4) Problem("Bomba de racimo: no soltó bombetas");
+
+            // --- 5) ATAQUE AÉREO y 6) NAPALM ---
+            foreach (var napalm in new[] { false, true })
+            {
+                string nombre = napalm ? "Napalm" : "Ataque aéreo";
+                Log($"---- {nombre} ----");
+                yield return WaitFreshTurn(nm, rat);
+                if (finished) yield break;
+                // Objetivo a CIELO ABIERTO (si hay una isla encima, las bombas
+                // caen en la isla: eso es correcto, pero no prueba nada).
+                foreach (var zone in new[] { (0.6f, 0.8f), (0.2f, 0.4f), (0.4f, 0.6f), (0.1f, 0.25f), (0.75f, 0.9f) })
+                {
+                    yield return PlaceOnFlatSpot(rat, zone.Item1, zone.Item2, nombre);
+                    yield return FreshDummy(5f);
+                    if (dh == null) break;
+                    bool open = true;
+                    for (float y = dh.BodyCenter.y + 0.8f; y < dh.BodyCenter.y + 25f && open; y += 0.25f)
+                        for (float dx = -1f; dx <= 1f; dx += 0.5f)
+                            if (DestructibleTerrain.IsSolidAtWorld(new Vector2(dh.BodyCenter.x + dx, y))) { open = false; break; }
+                    if (open) break;
+                    Log($"{nombre}: hay terreno encima de la diana, pruebo otro sitio");
+                }
+                if (dh == null) { Finish("No se pudo crear la diana"); yield break; }
+                weapons.SelectedIndexNet.Value = (int)(napalm ? WeaponsMenuUI.WeaponId.Napalm : WeaponsMenuUI.WeaponId.AirStrike);
+                yield return new WaitForSeconds(0.3f);
+                hp0 = dh.CurrentHealth.Value;
+                arsenal.TestStrikeTarget = dh.BodyCenter;
+                yield return WaitFor(() => FindFirstObjectByType<PlaneFlyby>() != null, 2f, "que aparezca el avión", fatal: false);
+                yield return new WaitForSeconds(0.9f);
+                yield return Capture(napalm ? "A11_napalm_avion" : "A10_avion");
+                yield return WaitFor(() => FindFirstObjectByType<NetworkMissile>() != null, 4f, "que caigan las bombas", fatal: false);
+                yield return WaitFor(() => FindFirstObjectByType<NetworkMissile>() == null, 8f, "que exploten las bombas", fatal: false);
+                yield return new WaitForSeconds(napalm ? 1.5f : 0.3f);
+                yield return Capture(napalm ? "A12_napalm_ardiendo" : "A13_bombardeo");
+                int lost = hp0 - (dh != null ? dh.CurrentHealth.Value : 0);
+                Log($"{nombre} → la diana pierde {lost} · llamas {FireSystem.ActiveCount} {(lost > 0 ? "✓" : "⚠")}");
+                if (lost <= 0) Problem($"{nombre}: no le dio a la diana");
+                if (napalm && FireSystem.ActiveCount < 5) Problem("Napalm: casi no dejó fuego");
+                yield return new WaitForSeconds(2f);
+            }
+            if (dh != null && !dh.IsDead.Value) dh.GetComponent<NetworkObject>().Despawn(true);
+
+            // --- 7) BARRIL + FUEGO ---
+            Log("---- Barril que arde ----");
+            FireSystem.TestClearAll();
+            yield return PlaceOnFlatSpot(rat, 0.4f, 0.6f, "barril");
+            side = rat.FacingRight ? 1f : -1f;
+            Vector2 barrelAt = h.BodyCenter + new Vector2(-side * 3.5f, 0.5f);
+            float? groundAtBarrel = CurrentSurfaceY(gen, barrelAt.x);
+            if (groundAtBarrel != null) barrelAt.y = groundAtBarrel.Value + 0.3f;
+            tm.SpawnItemServer(NetworkTurnManager.ItemKind.Barrel, 0, barrelAt);
+            yield return new WaitForSeconds(2f);
+            int barrels0 = tm.ItemCount(NetworkTurnManager.ItemKind.Barrel);
+            Vector2 barrelNow = tm.TestItemPosition(NetworkTurnManager.ItemKind.Barrel) ?? barrelAt;
+            FireSystem.ServerIgnite(barrelNow + new Vector2(0f, 0.25f), Vector2.zero, 0.3f, 4, 3f, 4f);
+            yield return new WaitForSeconds(3f);
+            int barrels1 = tm.ItemCount(NetworkTurnManager.ItemKind.Barrel);
+            yield return Capture("A14_barril_ardiendo");
+            if (barrels0 == 0) Log("Fuego sobre un barril: el barril se perdió antes de probar (cayó al agua), se omite.");
+            else
+            {
+                Log($"Fuego sobre un barril → barriles {barrels0} → {barrels1} {(barrels1 < barrels0 ? "✓ revienta" : "⚠")}");
+                if (barrels1 >= barrels0) Problem("Fuego: el barril no reventó al arder");
+            }
+
+            // --- 8) SALTO normal vs VOLTERETA ---
+            Log("---- Salto y voltereta ----");
+            yield return new WaitForSeconds(4f);   // que se apague el fuego
+            yield return PlaceOnFlatSpot(rat, 0.6f, 0.8f, "salto");
+            IEnumerator Peak(bool flip, Action<float> result)
+            {
+                yield return Settle(rb);
+                float y0 = rb.position.y, peak = y0;
+                rat.TestJumpHeld = true;
+                rat.TestPressJump();
+                bool second = false;
+                for (float t = 0f; t < 1.4f; t += Time.deltaTime)
+                {
+                    if (flip && !second && t >= 0.12f) { second = true; rat.TestPressJump(); }
+                    peak = Mathf.Max(peak, rb.position.y);
+                    yield return null;
+                }
+                rat.TestJumpHeld = false;
+                result(peak - y0);
+                yield return new WaitForSeconds(0.6f);
+            }
+            float hNormal = 0f, hFlip = 0f;
+            yield return Peak(false, v => hNormal = v);
+            yield return Peak(true, v => hFlip = v);
+            Log($"Salto normal {hNormal:0.00} u · voltereta {hFlip:0.00} u {(hFlip > hNormal * 1.2f ? "✓" : "⚠")}");
+            if (hFlip <= hNormal * 1.2f) Problem("Voltereta: no sube más que un salto normal");
+
+            // --- 9) ESCALAR una pared de 1.3 u (el salto normal sube ~0.75) ---
+            Log("---- Escalar pared ----");
+            yield return PlaceOnFlatSpot(rat, 0.3f, 0.5f, "pared");
+            yield return Settle(rb);
+            side = rat.FacingRight ? 1f : -1f;
+            var col = rat.GetComponent<Collider2D>();
+            Bounds bb = col.bounds;
+            float feet = bb.min.y, wallH = 1.3f;
+            float front = side > 0f ? bb.max.x + 0.45f : bb.min.x - 0.45f;
+            Vector2 wMin = new Vector2(Mathf.Min(front, front + side * 3f), feet - 0.6f);
+            Vector2 wMax = new Vector2(Mathf.Max(front, front + side * 3f), feet + wallH);
+            DestructibleTerrain.TestFillRectWorld(wMin, wMax, new Color32(110, 78, 48, 255));
+            yield return null; yield return null;
+            rat.TestInputX = side;
+            yield return new WaitForSeconds(0.5f);
+            rat.TestPressJump();   // toque corto: la ayuda de escalar no depende de mantener
+            float peakFeet = feet, xAtPeak = 0f;
+            var trace = new StringBuilder();
+            for (float t = 0f; t < 1.4f; t += Time.deltaTime)
+            {
+                if (t > 1.0f) rat.TestInputX = 0f;   // arriba: que no siga andando hasta caerse por el otro lado
+                if (col.bounds.min.y > peakFeet) { peakFeet = col.bounds.min.y; xAtPeak = col.bounds.center.x; }
+                if (trace.Length < 900 && Time.frameCount % 3 == 0)
+                    trace.Append($"({col.bounds.center.x - front:+0.00;-0.00},{col.bounds.min.y - feet:0.00} v{rb.linearVelocity.x:0.0},{rb.linearVelocity.y:0.0}) ");
+                yield return null;
+            }
+            Log($"Escalar: pico de los pies +{peakFeet - feet:0.00} u (pared {wallH}) · x respecto a la pared {xAtPeak - front:+0.00;-0.00}");
+            Log("Escalar traza (x rel. pared, altura, vel): " + trace);
+            rat.TestInputX = 0f;
+            yield return new WaitForSeconds(0.4f);
+            rat.TestInputX = null;
+            float nowFeet = col.bounds.min.y;
+            bool onTop = nowFeet >= feet + wallH - 0.25f;
+            Log($"Pared de {wallH} u delante → pies {feet:0.00} → {nowFeet:0.00} {(onTop ? "✓ escala" : "⚠ no sube")}");
+            if (!onTop) Problem($"Escalar: la rata no sube una pared de {wallH} u saltando contra ella");
+            yield return CloseupWithColliders(rat, "A15_escalar", 2f, overlay: true);
+
+            Finish(null);
+        }
+
         private IEnumerator ShotgunTest(NetworkManager nm, NetworkPlayerMovement rat)
         {
             if (finished || rat == null || !rat.gameObject.activeInHierarchy) yield break;

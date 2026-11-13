@@ -79,8 +79,15 @@ namespace Ratms.Networking
         public bool IsCharging => charging;
         public float CurrentForce => currentForce;
         public float MaxForce => maxForce;
+        /// <summary>Granada o BOMBA DE RACIMO (se cargan y lanzan igual).</summary>
         public bool IsGrenadeEquipped =>
-            weaponsMenu != null && weaponsMenu.SelectedWeapon == WeaponsMenuUI.WeaponId.Grenade;
+            weaponsMenu != null && (weaponsMenu.SelectedWeapon == WeaponsMenuUI.WeaponId.Grenade || IsClusterEquipped);
+
+        /// <summary>¿La bomba de racimo (en vez de la granada)?</summary>
+        public bool IsClusterEquipped =>
+            weaponsMenu != null && weaponsMenu.SelectedWeapon == WeaponsMenuUI.WeaponId.ClusterBomb;
+
+        private bool shownCluster;
 
         // ==============================================================
         private void Awake()
@@ -177,6 +184,12 @@ namespace Ratms.Networking
             bool shouldShow = IsGrenadeEquipped;
             if (grenadeVisual.activeSelf != shouldShow)
                 grenadeVisual.SetActive(shouldShow);
+            // En la mano: granada de palo o bomba de racimo según lo equipado.
+            if (shouldShow && shownCluster != IsClusterEquipped && grenadeVisual.TryGetComponent<SpriteRenderer>(out var sr))
+            {
+                shownCluster = IsClusterEquipped;
+                sr.sprite = shownCluster ? WeaponArt.ClusterBomb() : WeaponArt.StickGrenade();
+            }
         }
 
         /// <summary>
@@ -251,7 +264,7 @@ namespace Ratms.Networking
             Vector3 spawnPos = firePoint != null ? firePoint.position : transform.position;
             float force = Mathf.Max(0.1f, currentForce);
 
-            ThrowServerRpc(spawnPos, dir, force);
+            ThrowServerRpc(spawnPos, dir, force, IsClusterEquipped);
 
             currentForce = 0f;
             return true;
@@ -325,7 +338,7 @@ namespace Ratms.Networking
         // SERVIDOR: spawn de la granada
         // ==============================================================
         [ServerRpc]
-        private void ThrowServerRpc(Vector3 spawnPos, Vector2 direction, float force, ServerRpcParams rpcParams = default)
+        private void ThrowServerRpc(Vector3 spawnPos, Vector2 direction, float force, bool cluster, ServerRpcParams rpcParams = default)
         {
             if (!IsServer || grenadePrefab == null) return;
 
@@ -346,9 +359,12 @@ namespace Ratms.Networking
                 return;
             }
 
+            var grenade = go.GetComponent<NetworkGrenade>();
+            // Bomba de racimo: mismo prefab, otra configuración (antes del Spawn).
+            if (cluster && grenade != null) grenade.PrepareAsCluster(grenadePrefab);
+
             no.Spawn(destroyWithScene: true);
 
-            var grenade = go.GetComponent<NetworkGrenade>();
             if (grenade != null)
                 grenade.ServerInit(NetworkObject, direction * force);
         }

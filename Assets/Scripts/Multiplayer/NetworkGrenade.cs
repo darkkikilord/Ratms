@@ -101,6 +101,47 @@ namespace Ratms.Networking
         private int bounceCount;
         private GameObject dynamiteVisual;
         private bool pendingDynamite;   // solo servidor: PrepareAsDynamite antes del Spawn
+
+        /// <summary>0 = granada/dinamita, 1 = BOMBA DE RACIMO, 2 = bombeta (lo que suelta la de racimo).</summary>
+        public readonly NetworkVariable<byte> Variant = new(0);
+        private byte pendingVariant;
+        private GameObject clusterPrefab;   // servidor: con qué prefab soltar las bombetas
+        private bool shortenTurn = true;
+
+        [Header("Bomba de racimo")]
+        [Tooltip("Bombetas que suelta la bomba de racimo al reventar.")]
+        [SerializeField] private int clusterBomblets = 5;
+
+        /// <summary>(Servidor, ANTES de Spawn) Granada → BOMBA DE RACIMO: explota y suelta bombetas.</summary>
+        public void PrepareAsCluster(GameObject prefabForBomblets)
+        {
+            pendingVariant = 1;
+            clusterPrefab = prefabForBomblets;
+            fuseSeconds = 2.5f;
+            maxDamage = 30;
+            explosionRadius = 2.2f;
+            knockbackForce = 8f;
+        }
+
+        /// <summary>(Servidor, ANTES de Spawn) Bombeta: pequeña, mecha corta, rebota.</summary>
+        public void PrepareAsBomblet(float fuse)
+        {
+            pendingVariant = 2;
+            fuseSeconds = fuse;
+            maxDamage = 22;
+            explosionRadius = 1.5f;
+            knockbackForce = 6.5f;
+            maxBounces = 2;
+            shortenTurn = false;   // las bombetas no tocan el turno (ya lo hizo la grande)
+            impactPauseSeconds = 0.25f;
+            shakeAmplitude *= 0.6f;
+        }
+
+        private void ApplyVariantSkin()
+        {
+            if (Variant.Value == 1) ProjectileSkin.Apply(gameObject, WeaponArt.ClusterBomb(), 0.8f, faceVelocity: false, spinPerUnit: 120f);
+            else if (Variant.Value == 2) ProjectileSkin.Apply(gameObject, WeaponArt.Bomblet(), 0.8f, faceVelocity: false, spinPerUnit: 220f);
+        }
         private float nextFuseSpark;
 
         // ==============================================================
@@ -143,6 +184,7 @@ namespace Ratms.Networking
             {
                 fuseNet.Value = fuseSeconds;
                 if (pendingDynamite) IsDynamite.Value = true;
+                if (pendingVariant != 0) Variant.Value = pendingVariant;
             }
             timeRemaining = fuseNet.Value;
 
@@ -156,14 +198,16 @@ namespace Ratms.Networking
                 rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
             if (IsDynamite.Value) ApplyDynamiteVisual();
+            else if (Variant.Value != 0) ApplyVariantSkin();
             else ProjectileSkin.Apply(gameObject, WeaponArt.StickGrenade(), 0.8f, faceVelocity: false, spinPerUnit: 160f);
+            Variant.OnValueChanged += (_, __) => ApplyVariantSkin();
             IsDynamite.OnValueChanged += OnDynamiteChanged;
             Sfx.Play(Sfx.Id.Throw, IsDynamite.Value ? 0.5f : 1f);
 
             // Pedimos a todas las cámaras que sigan a la granada mientras vuela
             // y rebota. La DINAMITA no: el jugador tiene que ver a su rata para
             // huir mientras arde la mecha.
-            if (IsServer && !IsDynamite.Value)
+            if (IsServer && !IsDynamite.Value && Variant.Value != 2)
                 FollowWithCameraClientRpc(fuseSeconds + 0.5f);
         }
 
@@ -343,11 +387,27 @@ namespace Ratms.Networking
             // turno". Con la granada esto importa MUCHO porque el fusible es
             // de 3s + rebotes: si no lo acortamos, el turno cambiaría antes
             // de la explosión y el receptor podría escapar.
-            if (ownerNetObj != null)
+            if (ownerNetObj != null && shortenTurn)
             {
                 var ownerMove = ownerNetObj.GetComponent<NetworkPlayerMovement>();
-                if (ownerMove != null) ownerMove.ShortenEndTurnClientRpc(1f);
+                // La de racimo deja tiempo a que revienten sus bombetas.
+                if (ownerMove != null) ownerMove.ShortenEndTurnClientRpc(Variant.Value == 1 ? 2.8f : 1f);
             }
+
+            // BOMBA DE RACIMO: suelta bombetas en abanico hacia arriba.
+            if (Variant.Value == 1 && clusterPrefab != null)
+                for (int i = 0; i < clusterBomblets; i++)
+                {
+                    float a = Mathf.Lerp(-55f, 55f, clusterBomblets == 1 ? 0.5f : i / (float)(clusterBomblets - 1)) + Random.Range(-8f, 8f);
+                    Vector2 v = (Vector2)(Quaternion.Euler(0f, 0f, a) * Vector2.up) * Random.Range(5f, 7.5f);
+                    var go = Instantiate(clusterPrefab, at + Vector3.up * 0.3f, Quaternion.identity);
+                    var no = go.GetComponent<NetworkObject>();
+                    var g = go.GetComponent<NetworkGrenade>();
+                    if (no == null || g == null) { Destroy(go); continue; }
+                    g.PrepareAsBomblet(Random.Range(1.1f, 1.7f));
+                    no.Spawn(destroyWithScene: true);
+                    g.ServerInit(ownerNetObj, v * (g.rb != null ? g.rb.mass : 1f));
+                }
 
             // Fuera del mundo
             if (NetworkObject != null && NetworkObject.IsSpawned)
@@ -365,7 +425,7 @@ namespace Ratms.Networking
             if (explosionSfx != null)
                 AudioSource.PlayClipAtPoint(explosionSfx, at, explosionSfxVolume);
 
-            Fx.Explosion(at, IsDynamite.Value ? Mathf.Max(explosionRadius, 4f) : explosionRadius);
+            Fx.Explosion(at, IsDynamite.Value ? Mathf.Max(explosionRadius, 4f) : Variant.Value == 2 ? 1.5f : Variant.Value == 1 ? 2.2f : explosionRadius);
             Sfx.Play(IsDynamite.Value ? Sfx.Id.BigExplosion : Sfx.Id.Explosion);
 
             // POPUP DE IMPACTO: feedback visual fijo aunque la granada

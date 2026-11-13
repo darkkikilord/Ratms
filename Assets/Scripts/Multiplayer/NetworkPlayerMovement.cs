@@ -99,6 +99,7 @@ namespace Ratms.Networking
         private NetworkShotgun shotgun;
         private NetworkTeleport teleport;
         private NetworkNinjaRope rope;
+        private NetworkArsenal arsenal;
         private int shotsThisTurn;
 
         [Tooltip("Menú de armas de la propia rata (se auto-resuelve). Sirve para saber qué arma está equipada y disparar la correcta.")]
@@ -207,6 +208,48 @@ namespace Ratms.Networking
         [Tooltip("Velocidad vertical del saltito de escalón (u/s). Ojo: al no pulsar saltar se aplica la gravedad de 'salto corto' " +
                  "(lowJumpMultiplier), así que 2.7 sube ~0.23 u.")]
         [SerializeField] private float stepUpVelocity = 2.7f;
+
+        [Header("Salir de agujeros (0.18)")]
+        [Tooltip("Altura máxima (u) de una pared que se puede ESCALAR saltando contra ella. El salto normal sube ~0.75 u y la rata mide ~0.5 u.")]
+        [SerializeField] private float maxLedgeClimb = 1.6f;
+        [Tooltip("Segundo toque de salto (en estos segundos) = VOLTERETA hacia atrás, más alta.")]
+        [SerializeField] private float backflipWindow = 0.35f;
+        [Tooltip("Cuánto más alto que un salto normal sube la voltereta (multiplica la velocidad).")]
+        [SerializeField] private float backflipBoost = 1.28f;
+        [SerializeField] private float backflipBackSpeed = 2.4f;
+
+        private float lastJumpTime = -10f, climbAssistUntil = -10f;
+        private bool backflipUsed;
+
+        /// <summary>
+        ///  Si delante hay PARED (a la altura del pecho) y su borde está a menos
+        ///  de <see cref="maxLedgeClimb"/>, devuelve la velocidad vertical para
+        ///  llegar justo por encima del borde. 0 = no hay pared que escalar.
+        /// </summary>
+        private float LedgeClimbVelocity(float dir)
+        {
+            var col = GetComponent<Collider2D>();
+            if (col == null || rb == null) return 0f;
+            Bounds b = col.bounds;
+            float frontX = dir > 0f ? b.max.x : b.min.x;
+            // ¿Pared delante? (a media altura; los escalones ya los sube stepAssist)
+            if (!WallAhead(new Vector2(frontX - dir * 0.01f, b.min.y + 0.3f), dir, 0.35f)) return 0f;
+
+            // Buscamos el borde: el primer hueco de aire (con sitio para la rata) subiendo.
+            float probeX = frontX + dir * 0.18f;
+            float feet = b.min.y;
+            for (float h = 0.3f; h <= maxLedgeClimb; h += 1f / 32f)
+            {
+                Vector2 p = new Vector2(probeX, feet + h);
+                if (Ratms.World.DestructibleTerrain.IsSolidAtWorld(p)) continue;
+                // Sitio para la rata encima del borde y sin techo justo encima de ella.
+                if (Ratms.World.DestructibleTerrain.IsSolidAtWorld(p + Vector2.up * 0.35f)) continue;
+                if (Ratms.World.DestructibleTerrain.IsSolidAtWorld(new Vector2(b.center.x, feet + h + b.size.y))) return 0f;
+                float g = Mathf.Abs(Physics2D.gravity.y) * (defaultGravityScale > 0f ? defaultGravityScale : Mathf.Max(0.1f, rb.gravityScale));
+                return Mathf.Sqrt(2f * g * (h + 0.6f));
+            }
+            return 0f;   // demasiado alta: ni con esas
+        }
 
         private float nextStepTime;
         private readonly RaycastHit2D[] stepHits = new RaycastHit2D[6];
@@ -397,6 +440,7 @@ namespace Ratms.Networking
             shotgun = GetComponent<NetworkShotgun>();
             teleport = GetComponent<NetworkTeleport>();
             rope = GetComponent<NetworkNinjaRope>();
+            arsenal = GetComponent<NetworkArsenal>();
             if (weaponsMenu == null) weaponsMenu = GetComponentInChildren<WeaponsMenuUI>();
             if (health == null) health = GetComponent<NetworkHealth>();
 
@@ -510,6 +554,7 @@ namespace Ratms.Networking
             //  · Continuous → a las velocidades de un empujón de explosión la
             //    rata ya no puede atravesar paredes finas del terreno.
             ApplyAuthorityPhysics();
+            spawnedAt = Time.time;
 
             // Aplica el flip inicial al spawnear (importante para clientes que
             // entran después y ven al jugador ya girado)
@@ -626,6 +671,7 @@ namespace Ratms.Networking
                 inputX = 0f;
                 if (bazooka != null && bazooka.IsCharging) bazooka.CancelCharging();
                 if (grenadeThrower != null && grenadeThrower.IsCharging) grenadeThrower.CancelCharging();
+                if (arsenal != null) arsenal.CancelAll();
                 return;
             }
 
@@ -698,9 +744,42 @@ namespace Ratms.Networking
                 WorldDamagePopup.SpawnImpact(health.BodyCenter + Vector2.up * 0.9f, "¡No tengo patas!", new Color(1f, 0.6f, 0.4f));
                 jumpRequestedTime = -10f;
             }
+            // VOLTERETA HACIA ATRÁS: segundo toque de salto justo después de
+            // saltar (aún subiendo) → salto mucho más alto, hacia atrás. Es la
+            // forma "de pro" de salir de un agujero hondo.
+            if (jumpKeyDown && !canCoyoteJump && jumpMul > 0f && !backflipUsed
+                && Time.time - lastJumpTime < backflipWindow && rb.linearVelocity.y > 0f)
+            {
+                backflipUsed = true;
+                float side = facingRight.Value ? -1f : 1f;
+                rb.linearVelocity = new Vector2(side * backflipBackSpeed, Mathf.Max(rb.linearVelocity.y, jumpForce * jumpMul * backflipBoost));
+                climbAssistUntil = Time.time + 0.6f;   // que soltar la tecla no corte la voltereta
+                jumpRequestedTime = -10f;
+                Sfx.Play(Sfx.Id.Jump, 0.8f, 0.02f);
+                Sfx.Play(Sfx.Id.Swish, 0.6f);
+                var lookFlip = GetComponent<RatAppearance>();
+                if (lookFlip != null) lookFlip.Backflip();
+            }
+
             if (canCoyoteJump && jumpBuffered && cooldownOk && jumpMul > 0f)
             {
-                rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce * jumpMul);
+                // ESCALAR: si hay una pared delante con borde alcanzable, el
+                // salto sale con la fuerza justa para subirla (y un empujoncito
+                // hacia ella). Antes, con paredes de ~2.5 u no había manera.
+                float vy = jumpForce * jumpMul;
+                float dirFace = facingRight.Value ? 1f : -1f;
+                float climbVy = LedgeClimbVelocity(dirFace) * Mathf.Max(0.75f, jumpMul);
+                float vx = rb.linearVelocity.x;
+                if (climbVy > vy)
+                {
+                    vy = climbVy;
+                    vx = 0f;   // nada de empujar contra la pared al despegar (el roce frena)
+                    climbAssistUntil = Time.time + 0.7f;
+                    Debug.Log($"[NetworkPlayerMovement] {name} ESCALA: salto de {vy:0.0} u/s (normal {jumpForce * jumpMul:0.0})");
+                }
+                rb.linearVelocity = new Vector2(vx, vy);
+                lastJumpTime = Time.time;
+                backflipUsed = false;
                 nextJumpAllowedTime = Time.time + jumpCooldown;
                 Sfx.Play(Sfx.Id.Jump, 0.7f);
                 // "Consumimos" la petición y el coyote para que no se ejecuten
@@ -831,7 +910,8 @@ namespace Ratms.Networking
 
             // SIN BRAZOS: no hay armas que sujetar → MORDISCO (ESPACIO).
             // Teletransporte y cambiar rata no necesitan manos.
-            if (!hands && equipped != WeaponsMenuUI.WeaponId.Teleport && equipped != WeaponsMenuUI.WeaponId.SelectRat)
+            if (!hands && equipped != WeaponsMenuUI.WeaponId.Teleport && equipped != WeaponsMenuUI.WeaponId.SelectRat
+                && equipped != WeaponsMenuUI.WeaponId.AirStrike && equipped != WeaponsMenuUI.WeaponId.Napalm)
             {
                 if (fireDown && bat != null && bat.Bite(GetWeaponForward()))
                 {
@@ -905,12 +985,25 @@ namespace Ratms.Networking
                 return;
             }
 
+            // ARSENAL 0.18: lanzallamas (mantener), metralleta (ráfaga) y
+            // ataques aéreos (clic en el mapa).
+            if (arsenal != null && NetworkArsenal.Handles(equipped))
+            {
+                if (arsenal.HandleInput(equipped, fireDown, fireUp, GetWeaponForward(), out float endIn))
+                {
+                    firedThisTurn = true;
+                    SpendAmmo(equipped);
+                    ScheduleEndTurn(endIn);
+                }
+                return;
+            }
+
             // === START: al pulsar ESPACIO, arrancamos la carga del arma correspondiente ===
             if (fireDown)
             {
                 if (equipped == WeaponsMenuUI.WeaponId.Bazooka && bazooka != null)
                     bazooka.StartCharging();
-                else if (equipped == WeaponsMenuUI.WeaponId.Grenade && grenadeThrower != null)
+                else if ((equipped == WeaponsMenuUI.WeaponId.Grenade || equipped == WeaponsMenuUI.WeaponId.ClusterBomb) && grenadeThrower != null)
                     grenadeThrower.StartCharging();
                 // Armas SIN carga: actúan al pulsar.
                 else if (equipped == WeaponsMenuUI.WeaponId.Dynamite && grenadeThrower != null)
@@ -1155,6 +1248,16 @@ namespace Ratms.Networking
                 walkVel = tangent * along / Mathf.Max(0.5f, tangent.x);  // misma velocidad horizontal que en llano
                 walkVel = Vector2.ClampMagnitude(walkVel, maxSpeed * 1.35f);
             }
+            // EN EL AIRE CONTRA UNA PARED: no empujamos hacia ella. Si lo
+            // hacemos, el ROZAMIENTO con la pared frena la subida y el salto
+            // se queda en nada (por eso no había forma de salir de algunos
+            // agujeros: saltabas pegado a la pared y no subías). Al pasar el
+            // borde, la pared deja de estar delante y avanza sola encima.
+            if (Mathf.Abs(inputX) > 0.01f && (!HasFootContact() || rb.linearVelocity.y > 1f) && TouchingWall(Mathf.Sign(inputX)))
+                walkVel.x = 0f;
+            // Y en el aire, SIN rozamiento: así no se queda pegada a las paredes
+            // (subiendo o cayendo). En el suelo vuelve el rozamiento de siempre.
+            SetSlippery(!HasFootContact() || rb.linearVelocity.y > 1f);
             rb.linearVelocity = walkVel;
 
             if (stepAssist && Mathf.Abs(inputX) > 0.01f) TryStepUp(Mathf.Sign(inputX));
@@ -1172,7 +1275,7 @@ namespace Ratms.Networking
                 // Cae con MÁS gravedad que la de subir
                 vel.y += extraGravity * (fallGravityMultiplier - 1f) * Time.fixedDeltaTime;
             }
-            else if (vel.y > 0.01f && !(Input.GetKey(KeyCode.UpArrow) || TestJumpHeld))
+            else if (vel.y > 0.01f && !(Input.GetKey(KeyCode.UpArrow) || TestJumpHeld) && Time.time > climbAssistUntil)
             {
                 // Sube pero no está pulsando salto → cortar el salto
                 vel.y += extraGravity * (lowJumpMultiplier - 1f) * Time.fixedDeltaTime;
@@ -1185,8 +1288,13 @@ namespace Ratms.Networking
         ///  hasta el primer hueco libre (máx. 1.5 u) y la para. Lo comprobamos
         ///  cada paso de física: es solo mirar un píxel.
         /// </summary>
+        private float spawnedAt = -1f;
+
         private void UnstuckFromTerrain()
         {
+            // Recién aparecida, la física aún puede tener la posición del prefab
+            // (antes de colocarla en su sitio): no la "rescatamos" de un sitio falso.
+            if (spawnedAt < 0f || Time.time - spawnedAt < 0.5f) return;
             var col = GetComponent<Collider2D>();
             if (col == null) return;
             Vector2 center = col.bounds.center;
@@ -1266,6 +1374,33 @@ namespace Ratms.Networking
             nextStepTime = Time.time + 0.18f;
         }
 
+        private static PhysicsMaterial2D slipperyMat;
+        private PhysicsMaterial2D groundMat;
+        private bool slippery, groundMatCached;
+
+        /// <summary>Quita (o devuelve) el rozamiento del cuerpo de la rata.</summary>
+        private void SetSlippery(bool on)
+        {
+            if (on == slippery) return;
+            var col = GetComponent<Collider2D>();
+            if (col == null) return;
+            if (!groundMatCached) { groundMat = col.sharedMaterial; groundMatCached = true; }
+            if (slipperyMat == null) slipperyMat = new PhysicsMaterial2D("RataEnElAire") { friction = 0f, bounciness = 0f };
+            col.sharedMaterial = on ? slipperyMat : groundMat;
+            slippery = on;
+        }
+
+        /// <summary>¿Pegada a una pared por ese lado (a la altura de los pies o del cuerpo)?</summary>
+        private bool TouchingWall(float dir)
+        {
+            var col = GetComponent<Collider2D>();
+            if (col == null) return false;
+            Bounds b = col.bounds;
+            float frontX = (dir > 0f ? b.max.x : b.min.x) - dir * 0.01f;
+            return WallAhead(new Vector2(frontX, b.min.y + 0.06f), dir, 0.06f)
+                || WallAhead(new Vector2(frontX, b.center.y), dir, 0.06f);
+        }
+
         /// <summary>¿Hay una superficie casi vertical (no una cuesta suave) delante, que no sea de esta rata?</summary>
         private bool WallAhead(Vector2 origin, float dir, float dist)
         {
@@ -1338,9 +1473,22 @@ namespace Ratms.Networking
         // arma temblaba).
         private float shownAim;
 
+        private RatAppearance appearance;
+
         private void LateUpdate()
         {
             ApplyFlipVisual(facingRight.Value);
+            // LA MANO DE VERDAD: el weaponHolder era la mano del rig antiguo y
+            // las armas flotaban delante de la rata nueva. Ahora lo llevamos a
+            // la pata delantera del dibujo (cambia con la anatomía y a rastras).
+            // Todo lo que cuelga de él (bazuca, granada, Firepoint) y todo lo
+            // que usa HandPosition (escopeta, bate, dinamita...) le sigue.
+            if (weaponHolder != null)
+            {
+                if (appearance == null) appearance = GetComponent<RatAppearance>();
+                if (appearance != null && appearance.TryGetHand(out Vector3 hand))
+                    weaponHolder.position = new Vector3(hand.x, hand.y, weaponHolder.position.z);
+            }
             shownAim = IsOwner ? aimAngle.Value
                                : Mathf.LerpAngle(shownAim, aimAngle.Value, 1f - Mathf.Exp(-18f * Time.deltaTime));
             ApplyAimRotation(shownAim + AimWobble(), facingRight.Value);
@@ -1384,15 +1532,17 @@ namespace Ratms.Networking
         private void ApplyAuthorityPhysics()
         {
             if (rb == null) return;
+            // (Solo si cambia: reasignar el tipo recrea el cuerpo físico y, justo
+            // al aparecer, puede leer una posición vieja.)
             if (IsOwner)
             {
-                rb.bodyType = RigidbodyType2D.Dynamic;
+                if (rb.bodyType != RigidbodyType2D.Dynamic) rb.bodyType = RigidbodyType2D.Dynamic;
                 rb.interpolation = RigidbodyInterpolation2D.Interpolate;
                 rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
             }
             else
             {
-                rb.bodyType = RigidbodyType2D.Kinematic;
+                if (rb.bodyType != RigidbodyType2D.Kinematic) rb.bodyType = RigidbodyType2D.Kinematic;
                 rb.linearVelocity = Vector2.zero;
                 rb.angularVelocity = 0f;
                 rb.interpolation = RigidbodyInterpolation2D.None;

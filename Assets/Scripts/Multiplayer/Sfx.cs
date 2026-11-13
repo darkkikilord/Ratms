@@ -18,7 +18,7 @@ namespace Ratms.Networking
     /// </summary>
     public class Sfx : MonoBehaviour
     {
-        public enum Id { Explosion, BigExplosion, Shot, Whack, Swish, Launch, Throw, Splash, Teleport, Rope, Jump, TurnStart, Tick, Victory, Squeak, Laugh, Splat, Ouch }
+        public enum Id { Explosion, BigExplosion, Shot, Whack, Swish, Launch, Throw, Splash, Teleport, Rope, Jump, TurnStart, Tick, Victory, Squeak, Laugh, Splat, Ouch, Flame, Burn, MachineGun, Plane, Whistle }
 
         private const int Rate = 44100;
         private static Sfx instance;
@@ -96,6 +96,13 @@ namespace Ratms.Networking
                 Id.Splat => Mix(Mix(Noise(0.32f, 12f, 0.9f, lowpass: 0.12f), Sine(0.14f, 130f, 45f, 0.7f)),
                                 Delay(Chain(new[] { 300f, 240f, 200f }, 0.04f, 0.03f, 0.25f), 0.06f)),   // chof + chapoteo
                 // Quejido corto al recibir daño
+                // 0.18: lanzallamas (soplido grave), fuego que crepita, ráfaga de
+                // metralleta, motor del avión y silbido de la bomba que cae.
+                Id.Flame => Noise(0.32f, 3f, 0.45f, lowpass: 0.07f),
+                Id.Burn => Mix(Noise(0.25f, 9f, 0.3f, lowpass: 0.3f), Delay(Noise(0.08f, 40f, 0.25f, lowpass: 0.6f), 0.11f)),
+                Id.MachineGun => Mix(Noise(0.09f, 40f, 0.8f, lowpass: 0.55f), Sine(0.05f, 180f, 70f, 0.5f)),
+                Id.Plane => Sine(2.2f, 95f, 80f, 0.35f, tremolo: 22f),
+                Id.Whistle => Sine(0.9f, 1600f, 500f, 0.22f),
                 Id.Ouch => Sine(0.14f, 900f, 600f, 0.3f, tremolo: 25f),
                 _ => null,
             };

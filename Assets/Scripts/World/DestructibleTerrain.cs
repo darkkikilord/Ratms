@@ -671,6 +671,28 @@ namespace Ratms.World
         ///  Atajo estático: carvea en TODOS los terrenos de la escena a la vez.
         ///  Úsalo desde misil / granada sin tener que buscar referencias.
         /// </summary>
+        /// <summary>
+        ///  SOLO PRUEBAS: rellena de tierra un rectángulo del mundo (para
+        ///  levantar una pared y comprobar que la rata la escala). Local: no
+        ///  pasa por la red.
+        /// </summary>
+        public static void TestFillRectWorld(Vector2 min, Vector2 max, Color32 color)
+        {
+            foreach (var t in s_all)
+            {
+                if (t == null || t.pixels == null) continue;
+                Vector3 a = t.transform.InverseTransformPoint(min), b = t.transform.InverseTransformPoint(max);
+                int x0 = Mathf.Clamp(Mathf.FloorToInt(a.x * t.pixelsPerUnit), 0, t.textureWidth - 1);
+                int x1 = Mathf.Clamp(Mathf.CeilToInt(b.x * t.pixelsPerUnit), 0, t.textureWidth - 1);
+                int y0 = Mathf.Clamp(Mathf.FloorToInt(a.y * t.pixelsPerUnit), 0, t.textureHeight - 1);
+                int y1 = Mathf.Clamp(Mathf.CeilToInt(b.y * t.pixelsPerUnit), 0, t.textureHeight - 1);
+                for (int y = y0; y <= y1; y++)
+                    for (int x = x0; x <= x1; x++)
+                        t.pixels[y * t.textureWidth + x] = color;
+                t.dirty = true;
+            }
+        }
+
         public static void CarveAllAt(Vector2 worldPos, float worldRadius)
         {
             for (int i = s_all.Count - 1; i >= 0; i--)

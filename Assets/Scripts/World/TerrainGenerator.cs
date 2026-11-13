@@ -942,6 +942,61 @@ namespace Ratms.World
         ///   · Suelo de cuevas navegables (aire dentro de la tierra).
         ///   · Cimas de islas flotantes.
         /// </summary>
+        /// <summary>
+        ///  ¿Es un sitio DIGNO para aparecer? (0.18 — antes salían ratas en
+        ///  fosos de los que no se podía salir, en cuestas resbaladizas o en
+        ///  rendijas). Pide tres cosas:
+        ///   1. LLANO: el suelo a ±10 px no sube ni baja más de 8 px.
+        ///   2. ANCHO: sitio para la rata a lo ancho (±10 px sin techo bajo).
+        ///   3. CON SALIDA: andando hacia algún lado (3.5 u) no hay una pared
+        ///      más alta de lo que se puede escalar saltando (~2.8 u).
+        /// </summary>
+        private bool IsGoodSpawn(Color32[] pixels, int x, int y)
+        {
+            bool Solid(int px, int py) =>
+                px >= 0 && py >= 0 && px < width && py < height && DestructibleTerrain.IsSolidPixel(pixels[py * width + px]);
+
+            // Suelo de la columna px cerca de la altura ref: primer aire con tierra debajo (±range).
+            int FloorNear(int px, int refY, int range)
+            {
+                if (Solid(px, refY))
+                {
+                    for (int k = 1; k <= range; k++) if (!Solid(px, refY + k)) return refY + k;
+                    return int.MaxValue;   // muro
+                }
+                for (int k = 0; k <= range; k++) if (Solid(px, refY - k - 1)) return refY - k;
+                return int.MinValue;       // precipicio
+            }
+
+            // 1 + 2: llano y ancho
+            foreach (int dx in new[] { -10, -5, 5, 10 })
+            {
+                int f = FloorNear(x + dx, y, 10);
+                if (f == int.MaxValue || f == int.MinValue || Mathf.Abs(f - y) > 8) return false;
+                for (int dy = 1; dy < 30; dy++) if (Solid(x + dx, f + dy)) return false;
+            }
+
+            // 3: ¿se puede salir andando/saltando hacia algún lado?
+            float ppu = terrain != null ? terrain.PixelsPerUnit : 32f;
+            int walk = Mathf.RoundToInt(3.5f * ppu);
+            int climbable = Mathf.RoundToInt(2.8f * ppu);
+            bool Escape(int dir)
+            {
+                int cur = y;
+                for (int i = 1; i <= walk; i++)
+                {
+                    int px = x + dir * i;
+                    if (px < 2 || px >= width - 2) return false;
+                    int f = FloorNear(px, cur, climbable + 2);
+                    if (f == int.MaxValue) return false;          // pared más alta que un salto
+                    if (f == int.MinValue) return true;           // un bajón: por ahí se sale
+                    cur = f;
+                }
+                return true;                                      // 3.5 u de camino libre
+            }
+            return Escape(1) || Escape(-1);
+        }
+
         private void ScanValidSpawnPixels(Color32[] pixels)
         {
             validSpawnPixels.Clear();
@@ -982,6 +1037,9 @@ namespace Ratms.World
                         if (!DestructibleTerrain.IsSolidPixel(pixels[(y - dy) * width + x])) { hasGround = false; break; }
                     }
                     if (!hasGround) continue;
+
+                    // 0.18: además, que sea un BUEN sitio (llano, ancho y con salida).
+                    if (!IsGoodSpawn(pixels, x, y)) continue;
 
                     validSpawnPixels.Add(new Vector2Int(x, y));
                     // Saltamos las siguientes filas para no acumular píxeles

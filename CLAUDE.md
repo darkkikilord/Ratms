@@ -44,7 +44,11 @@ El usuario habla español: responde, comenta el código y escribe los commits en
 
 Prefabs de red: `Assets/Prefabs/Prefabs multiplayer/` (`rat.network`, `missile.network`, `Grenade`), registrados en `Assets/DefaultNetworkPrefabs.asset`. Todo prefab nuevo con `NetworkObject` debe añadirse ahí.
 
-Armas (`WeaponsMenuUI.WeaponId`, teclas 1-5): Bazooka (`NetworkBazooka` → `NetworkMissile`), Granada (`NetworkGrenadeThrower` → `NetworkGrenade`), **Dinamita** (mismo prefab que la granada con `PrepareAsDynamite`: sin rebote, mecha 5 s, el turno dura la mecha para huir), Escopeta (sin hacer), **Bate** (`NetworkBat` en la raíz de la rata, golpe cuerpo a cuerpo con gran empujón).
+Armas (`WeaponsMenuUI.WeaponId`, teclas 1-7): Bazooka (`NetworkBazooka` → `NetworkMissile`), Granada (`NetworkGrenadeThrower` → `NetworkGrenade`), **Dinamita** (mismo prefab que la granada con `PrepareAsDynamite`: sin rebote, mecha 5 s, el turno dura la mecha para huir), **Escopeta** (`NetworkShotgun`, rayo, 2 disparos/turno), **Bate** (`NetworkBat`), **Teletransporte** (`NetworkTeleport`, ratón/clic, el servidor valida), **Cuerda ninja** (`NetworkNinjaRope`, DistanceJoint2D del dueño, no gasta el arma del turno; con cuerda la rata nunca se "aparca"). Los componentes de armas van en la raíz de la rata y se añaden con `RatmsPrefabSetup.EnsureRatComponents` (batchmode). Visuales de armas en el mundo (sin padre) y `[DefaultExecutionOrder(100)]`.
+
+Estética (estilo **trinchera + gore + humor negro**, lo pidió el usuario): `RatAppearance` dibuja por código una rata sarnosa con casco de trinchera (franja = color del equipo por `OwnerClientId`), oreja rota, ojo rojo, dientes amarillos, cigarro; sustituye al sprite .ase (`useProceduralRat`). `Fx` (partículas locales: explosiones, humo, chispas, salpicadura, lápida, **sangre que mancha el terreno** vía `DestructibleTerrain.StainAtWorld`, vísceras al morir). `Sfx` (18 sonidos sintetizados, volumen = opt_master × opt_sfx). `NetworkHealth`: quejidos, frases de muerte y la rata del turno se ríe. Gore desactivable con PlayerPrefs `opt_gore` = 0 (aún sin botón en Opciones).
+
+Menú: "Jugar" = **modo Práctica** (`PracticeSession`: host local + 3 dianas que se reponen). ESC×2 sale al menú (`TurnHUD.ExitToMenu`).
 
 Tipos de daño: `DamageType` (Generic, Explosion, Fire*, Water, Fall, Melee). *Reservado sin uso.
 
@@ -57,13 +61,14 @@ Tipos de daño: `DamageType` (Generic, Explosion, Fire*, Water, Fall, Melee). *R
 `powershell -ExecutionPolicy Bypass -File tools\autotest.ps1` (Unity cerrado; `-SkipBuild` reutiliza la build, `-Biome Sewer` fuerza bioma).
 Compila la build y el juego se juega solo (~90 s, host local sin internet): mide andar/saltar/cuestas con números, saca primeros planos con las líneas de los colliders dibujadas (`*_colliders.png`: terreno magenta, rata cian), prueba a salir de cráteres, comprueba el viento con misiles de prueba, dispara bazooka y granada, y prueba dinamita, bate y agua contra una **rata diana** (`NetworkPlayerMovement.SpawnNextAsTestDummy`: no cuenta para turnos ni victoria). Deja ~20 capturas + `informe.txt` (línea de tiempo, ✓/⚠, errores y warnings) en `AutoTest\Run_<fecha>\`. Mira las PNG con Read. Al añadir armas o mecánicas, amplía el guion en `Assets/Scripts/Testing/AutoPlayTest.cs` (hay ganchos `TestInputX`, `TestPressJump`, `TestPressFire`, `TestSetAim` en la rata).
 Resultado de referencia (13 nov 2026): `Resultado: OK`, 0 errores, 0 warnings.
+También prueba escopeta, teletransporte y cuerda. Otros papeles (`-autoTestRole`): `practice` (botón Jugar → 3 dianas → ESC → menú) y **multijugador real**: `powershell -ExecutionPolicy Bypass -File tools\autotest-multi.ps1` (host + cliente por 127.0.0.1: turnos, viento igual en ambos, dinamita vista en el cliente, el host gana si el cliente se va). Las pruebas usan `CurrentSurfaceY` (suelo real con cráteres) y buscan línea de tiro/destinos válidos; algunos resultados (salir de cráteres) dependen del mapa aleatorio.
 
 ## Git
 - Rama de trabajo: `Main` (sigue a `origin/Main`, repo `darkkikilord/Ratms`).
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilar sin abrir Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.12.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.13 (+ commits sueltos de práctica, sonido, rata de trinchera y gore).
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Estado y roadmap (nov 2026)
@@ -74,8 +79,9 @@ Pendiente (detalle en `create_roadmap_issues.sh`; aún no se han creado las issu
 - **Ajustar a mano (Inspector)**: fuerza del viento (`maxWindAcceleration` 3.5), empujón del bate (14), radio/mecha de la dinamita (4 u / 5 s), zoom inicial (6).
 - Escenario de producción (ahora solo `Escenario_TerrainTest`); islas flotantes con collider propio (`TerrainGenerator.cs`).
 - Equipos: varias ratas por jugador → el turno rotaría por rata, no por cliente.
-- Armas: escopeta, teletransporte, cuerda ninja.
-- Cajas de suministros, daño por fuego.
+- Cajas de suministros, daño por fuego, munición limitada por arma.
+- Botón de gore (opt_gore) y de "risas" en el menú de Opciones.
+- La mano (weaponHolder) es la del rig antiguo: las armas no caen exactamente en la pata de la rata nueva.
 - El spawn aleatorio a veces pone ratas junto al borde del mapa (muy cerca del agua).
 - Salir de cráteres que se juntan con cuevas profundas a veces no es posible solo saltando (depende del mapa).
 - Reconstruir el collider tarda ~40 ms por explosión: si se nota un tirón, limitar el recálculo a la zona del cráter.

@@ -62,6 +62,9 @@ Tipos de daño: `DamageType` (Generic, Explosion, Fire*, Water, Fall, Melee). *R
 - **Cambiar rata** (`WeaponId.SelectRat`, tecla 8): clic en otra rata tuya → `SelectRatServerRpc` → juega el próximo turno de tu equipo (`Team.forcedRat`) y se pierde el turno actual.
 - Prueba: `tools\autotest.ps1 -Role items`.
 
+## Mutilaciones (0.17)
+`NetworkHealth.Injuries` (byte en red, lo escribe el servidor): bits 0-1 patas perdidas, 2-3 brazos, 4 tuerta, 5 pata de palo, 6 garfio. `TryInjureServer` decide en `ApplyDamageServer` (golpes ≥25, o ≥12 con poca vida; caída ≥20 → patas). La ZONA sale del origen del golpe (`ApplyDamageServer(..., source)`: las explosiones pasan su centro): por debajo → patas, por arriba → cabeza, de lado/bocajarro → brazos. Efectos: `SpeedFactor`/`JumpFactor` (sin patas = `Crawling`, sin salto), `CanUseHands` (sin brazos: `WeaponsMenuUI.NeedsHands` bloquea armas y ESPACIO = **mordisco** `NetworkBat.Bite`, cura un poco), `AimWobbleDeg` (temblor en `NetworkPlayerMovement.AimWobble`, también en el disparo), tuerta = viñeta en `TurnHUD` y solo 3 puntos de trayectoria. Las cajas de armas pueden traer prótesis (`GiveProsthesisServer`). `RatAppearance` dibuja muñones, garfio, venda en el ojo y la rata a rastras (todo el dibujo baja `legH` px). Los defectos de nacimiento (`RatLook.oneArm/pegLeg`) son SOLO aspecto. Regla `MatchRules.Mutilations` (`rule_mutil`). Prueba: `toolsutotest.ps1 -Role mutil` (M01–M07) y la galería R04; en el resto de papeles las mutilaciones van apagadas (`OverrideMutilations = false`).
+
 ## Menús (0.16)
 Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMenu` (Jugar: práctica o local + `RulesEditor` con todas las reglas), `OptionsOverlay` (volúmenes, sangre, risas `opt_laughs`, temblor `opt_shake`, pantalla completa; `OptionsMenu` aplica el mezclador vía `TrenchGUI.OnVolumesChanged`), `PauseMenu` (ESC en partida: seguir, opciones, cómo se juega, desertar). `MenuDressing` viste el menú principal (tinte de guerra, humo, obuses lejanos, desfile de ratas aleatorias, botones de madera, lema y versión). Lobby online: `LobbySync` (mensajes con nombre de NGO: nombres, ¡Listo!, resumen de reglas) + `LobbyCard` (IMGUI junto al panel del lobby; el host edita reglas y solo puede empezar si todos están listos). `Music` sintetiza dos marchas (menú y batalla) y cambia con la escena.
 
@@ -82,12 +85,13 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilar sin abrir Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.16.1 (más gore: ratas salpicadas con `RatAppearance.SplatterAround`, más sangre en `Fx`). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.17 (mutilaciones que afectan al juego; 0.16.1 = más gore y ratas salpicadas con `RatAppearance.SplatterAround`). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)
 1. **0.15 — Partida de verdad** ✅ equipos de 4 ratas con rotación automática, barras de vida por equipo, reglas (`MatchRules`), muerte súbita a los 10 min, partida local en el mismo PC.
 2. **0.16 — Economía de armas** ✅ munición limitada, cajas (armas/botiquín/trampa, "Cambiar rata"), barriles en cadena. (En 0.16 también: ratas por piezas, armas pixel-art, menús 4, música/avisos 5, lobby 6.)
+   **0.17 — Mutilaciones** ✅ (petición del usuario, fuera del plan).
 3. Jugar solo: IA de ratas enemigas con dificultades.
 4. Menús: preparación de partida (configurar reglas antes de empezar, también online), nombres/colores/sombreros, opciones completas (gore, risas, pantalla), menú de pausa, estadísticas y revancha, cómo se juega.
 5. Presentación: música, anuncios, cámara inteligente, más biomas de trinchera, animaciones.

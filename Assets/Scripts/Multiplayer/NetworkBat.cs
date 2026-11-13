@@ -53,6 +53,14 @@ namespace Ratms.Networking
         [Tooltip("Grados del barrido (de +arco/2 a -arco/2 respecto a donde apuntas).")]
         [SerializeField] private float swingArc = 120f;
 
+        [Header("Mordisco (rata sin brazos)")]
+        [Tooltip("Daño del mordisco. La rata SIN BRAZOS no puede usar armas: muerde.")]
+        [SerializeField] private int biteDamage = 30;
+        [Tooltip("Vida que recupera la rata al morder a alguien (se come un trozo).")]
+        [SerializeField] private int biteHeal = 8;
+        [Tooltip("Empujón del mordisco (mucho menor que el bate).")]
+        [SerializeField] private float biteKnockback = 4f;
+
         private WeaponsMenuUI weaponsMenu;
         private NetworkPlayerMovement movement;
         private NetworkHealth ownHealth;
@@ -63,6 +71,9 @@ namespace Ratms.Networking
 
         public bool IsBatEquipped =>
             weaponsMenu != null && weaponsMenu.SelectedWeapon == WeaponsMenuUI.WeaponId.Bat;
+
+        /// <summary>Sin brazos: su "arma" es morder (misma mira que el bate).</summary>
+        public bool IsBiteMode => ownHealth != null && !ownHealth.CanUseHands;
 
         // ==============================================================
         private void Awake()
@@ -126,7 +137,7 @@ namespace Ratms.Networking
 
         private void UpdateAimIndicator()
         {
-            bool show = showAimIndicator && IsOwner && IsBatEquipped && movement != null && !movement.FiredThisTurn
+            bool show = showAimIndicator && IsOwner && (IsBatEquipped || IsBiteMode) && movement != null && !movement.FiredThisTurn
                         && (NetworkTurnManager.Instance == null || NetworkTurnManager.Instance.IsActiveRat(NetworkObjectId));
             if (aimRing == null)
             {
@@ -217,6 +228,49 @@ namespace Ratms.Networking
             Vector2 dir = aimDirection.sqrMagnitude > 0.001f ? aimDirection.normalized : Vector2.right;
             SwingServerRpc(dir);
             return true;
+        }
+
+        /// <summary>MORDISCO (rata sin brazos). Devuelve true si se ha pedido al servidor.</summary>
+        public bool Bite(Vector2 aimDirection)
+        {
+            if (!IsOwner || !IsBiteMode) return false;
+            BiteServerRpc(aimDirection.sqrMagnitude > 0.001f ? aimDirection.normalized : Vector2.right);
+            return true;
+        }
+
+        [ServerRpc]
+        private void BiteServerRpc(Vector2 dir, ServerRpcParams rpcParams = default)
+        {
+            var tm = NetworkTurnManager.Instance;
+            if (tm != null && !tm.CanAct(rpcParams.Receive.SenderClientId, NetworkObjectId)) return;
+            if (ownHealth == null || ownHealth.CanUseHands) return;   // solo sin brazos
+
+            Vector2 origin = ownHealth.BodyCenter;
+            Vector2 center = origin + dir * reach;
+            var done = new HashSet<NetworkHealth>();
+            foreach (var col in Physics2D.OverlapCircleAll(center, hitRadius + 0.04f))
+            {
+                var nh = col != null ? col.GetComponentInParent<NetworkHealth>() : null;
+                if (nh == null || nh == ownHealth || nh.IsDead.Value || !done.Add(nh)) continue;
+                nh.ApplyDamageServer(biteDamage, nh.BodyCenter, DamageType.Melee);
+                nh.ApplyKnockbackClientRpc((dir + Vector2.up * 0.3f).normalized * biteKnockback, 0.4f);
+            }
+            if (done.Count > 0) ownHealth.HealServer(biteHeal);
+            BiteFxClientRpc(center, dir, done.Count > 0);
+            if (done.Count > 0 && movement != null) movement.ShortenEndTurnClientRpc(1.6f);
+        }
+
+        [ClientRpc]
+        private void BiteFxClientRpc(Vector2 at, Vector2 dir, bool hit)
+        {
+            Sfx.Play(hit ? Sfx.Id.Splat : Sfx.Id.Swish, hit ? 1f : 0.7f);
+            if (hit)
+            {
+                Fx.Blood(at, dir, 35f);
+                WorldDamagePopup.SpawnImpact(at + Vector2.up * 0.3f, Random.value < 0.5f ? "¡ÑAM!" : "¡CRUNCH!", new Color(1f, 0.3f, 0.25f));
+                if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.15f, 0.2f);
+            }
+            else WorldDamagePopup.SpawnImpact(at, "ñac", new Color(0.85f, 0.85f, 0.85f));
         }
 
         [ServerRpc]

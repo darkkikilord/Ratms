@@ -144,6 +144,22 @@ namespace Ratms.Networking
             }
         }
 
+        /// <summary>
+        ///  MUTILACIÓN: le arrancan algo a una rata viva. Chorro de sangre,
+        ///  hueso y carne volando (y el ojo si es la cabeza).
+        /// </summary>
+        public static void LimbOff(Vector2 at, int zone)
+        {
+            Blood(at, zone == 0 ? Vector2.down : Vector2.up, 45f);
+            if (!GoreOn) { Gib(at, FurTuft(), 6, stain: false, bloodTrail: false, small: true); return; }
+            Gib(at, Bone(), zone == 2 ? 1 : 2, stain: false, bloodTrail: true);
+            Gib(at, Meat(0), 2);
+            Gib(at, Meat(1), 1);
+            if (zone == 2) Gib(at, Eye(), 1, stain: false);
+            else Gib(at, FurTuft(), 3, stain: false, bloodTrail: false, small: true);
+            I.Later(0.1f, () => Puddle(at + Vector2.down * 0.2f, 0.3f));
+        }
+
         /// <summary>Gota suelta (rata malherida que va sangrando).</summary>
         public static void Drip(Vector2 at)
         {

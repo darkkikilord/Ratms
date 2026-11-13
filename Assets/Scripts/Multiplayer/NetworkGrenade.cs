@@ -313,7 +313,7 @@ namespace Ratms.Networking
                 Debug.Log($"[NetworkGrenade] {(IsDynamite.Value ? "Dinamita" : "Granada")} → {nh.gameObject.name} dist={dist:F2} dmg={dmg}");
                 if (dmg <= 0) continue;
 
-                nh.ApplyDamageServer(dmg, body, DamageType.Explosion);
+                nh.ApplyDamageServer(dmg, body, DamageType.Explosion, (Vector2)at);
 
                 // KNOCKBACK con falloff y componente vertical para "saltar".
                 // La granada empuja más que el misil — es un arma de control de zona.

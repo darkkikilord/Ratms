@@ -52,6 +52,146 @@ namespace Ratms.Networking
 
         public int MaxHealth => MaxHealthNet.Value > 0 ? MaxHealthNet.Value : maxHealth;
 
+        // ==============================================================
+        // MUTILACIONES (las decide el servidor; todos las ven igual)
+        // ==============================================================
+        /// <summary>
+        ///  Lesiones de la rata, empaquetadas en un byte:
+        ///  bits 0-1 = patas perdidas (0-2), bits 2-3 = brazos perdidos (0-2),
+        ///  bit 4 = cabeza herida (tuerta), bit 5 = pata de palo (prótesis),
+        ///  bit 6 = garfio (prótesis).
+        /// </summary>
+        public readonly NetworkVariable<byte> Injuries = new(0);
+
+        public const int ZoneLegs = 0, ZoneArms = 1, ZoneHead = 2;
+
+        public int LegsLost => Injuries.Value & 3;
+        public int ArmsLost => (Injuries.Value >> 2) & 3;
+        public bool HeadHurt => (Injuries.Value & 16) != 0;
+        public bool HasPegLeg => (Injuries.Value & 32) != 0;
+        public bool HasHook => (Injuries.Value & 64) != 0;
+
+        /// <summary>Sin patas (y sin pata de palo): va arrastrándose y no salta.</summary>
+        public bool Crawling => LegsLost >= 2 && !HasPegLeg;
+
+        /// <summary>¿Puede sujetar armas? Sin brazos solo muerde (el garfio lo arregla a medias).</summary>
+        public bool CanUseHands => ArmsLost < 2 || HasHook;
+
+        /// <summary>Multiplicador de la velocidad al andar.</summary>
+        public float SpeedFactor => LegsLost == 0 ? 1f : LegsLost == 1 ? (HasPegLeg ? 0.9f : 0.6f) : (HasPegLeg ? 0.55f : 0.35f);
+
+        /// <summary>Multiplicador del salto (0 = no puede saltar).</summary>
+        public float JumpFactor => LegsLost == 0 ? 1f : LegsLost == 1 ? (HasPegLeg ? 0.92f : 0.72f) : (HasPegLeg ? 0.6f : 0f);
+
+        /// <summary>Grados que TIEMBLA la puntería (manca sin garfio, o tuerta).</summary>
+        public float AimWobbleDeg =>
+            (ArmsLost == 0 || (ArmsLost == 1 && HasHook) ? 0f : 7f) + (HeadHurt ? 5f : 0f);
+
+        /// <summary>¿Le vendría bien una prótesis? (le falta algo sin arreglar)</summary>
+        public bool NeedsProsthesis => (LegsLost > 0 && !HasPegLeg) || (ArmsLost > 0 && !HasHook);
+
+        /// <summary>Texto corto de las lesiones (para el HUD). Vacío si está entera.</summary>
+        public string InjuryText
+        {
+            get
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (LegsLost == 1) parts.Add(HasPegLeg ? "pata de palo" : "coja");
+                else if (LegsLost >= 2) parts.Add(HasPegLeg ? "sin patas (pata de palo)" : "SIN PATAS");
+                if (ArmsLost == 1) parts.Add(HasHook ? "garfio" : "manca");
+                else if (ArmsLost >= 2) parts.Add(HasHook ? "sin brazos (garfio)" : "SIN BRAZOS");
+                if (HeadHurt) parts.Add("tuerta");
+                return string.Join(" · ", parts);
+            }
+        }
+
+        /// <summary>(Servidor) Arranca/rompe una parte del cuerpo. Devuelve false si ya no quedaba nada que romper ahí.</summary>
+        public bool InjureServer(int zone)
+        {
+            if (!IsServer || IsDead.Value) return false;
+            int v = Injuries.Value;
+            switch (zone)
+            {
+                case ZoneLegs: if (LegsLost >= 2) return false; v = (v & ~3) | (LegsLost + 1); break;
+                case ZoneArms: if (ArmsLost >= 2) return false; v = (v & ~12) | ((ArmsLost + 1) << 2); break;
+                default: if (HeadHurt) return false; v |= 16; break;
+            }
+            Injuries.Value = (byte)v;
+            InjuryClientRpc((byte)zone);
+
+            // Aviso grande con humor negro
+            var tm = NetworkTurnManager.Instance;
+            var m = GetComponent<NetworkPlayerMovement>();
+            if (tm != null && m != null && !m.IsTestDummy)
+            {
+                string n = m.RatName.Value.ToString();
+                string text = zone == ZoneLegs ? (LegsLost >= 2 ? $"¡{n} SE QUEDA SIN PATAS!\nA rastras por la trinchera" : $"¡{n} pierde una pata!")
+                            : zone == ZoneArms ? (ArmsLost >= 2 ? $"¡{n} SIN BRAZOS!\nAhora pelea a MORDISCOS" : $"¡{n} pierde un brazo!")
+                            : $"¡A {n} LE HAN SALTADO UN OJO!";
+                tm.AnnounceServer(text, new Color(1f, 0.35f, 0.25f));
+            }
+            return true;
+        }
+
+        /// <summary>(Servidor) Pone una prótesis si le falta algo: pata de palo o garfio. Devuelve el texto o null.</summary>
+        public string GiveProsthesisServer()
+        {
+            if (!IsServer) return null;
+            if (LegsLost > 0 && !HasPegLeg) { Injuries.Value = (byte)(Injuries.Value | 32); return "¡PATA DE PALO!"; }
+            if (ArmsLost > 0 && !HasHook) { Injuries.Value = (byte)(Injuries.Value | 64); return "¡GARFIO!"; }
+            return null;
+        }
+
+        /// <summary>Si es true, el próximo golpe que no mate SIEMPRE arranca algo (prueba automática).</summary>
+        public static bool ForceInjuries;
+
+        /// <summary>
+        ///  (Servidor) ¿Este golpe arranca algo? Probabilidad según el daño y
+        ///  la vida que queda; la ZONA según de dónde venga: por debajo
+        ///  (dinamita a los pies, caída) → patas; por arriba → cabeza; de
+        ///  lado o a bocajarro → brazos.
+        /// </summary>
+        private void TryInjureServer(int amount, int newHp, DamageType type, Vector2? source)
+        {
+            if (!MatchRules.EffectiveMutilations || type == DamageType.Water || newHp <= 0) return;
+            float hpFrac = newHp / (float)Mathf.Max(1, MaxHealth);
+            float chance = type == DamageType.Fall ? (amount >= 20 ? 0.5f : 0f)
+                         : amount >= 35 ? 0.75f : amount >= 25 ? 0.45f : (amount >= 12 && hpFrac <= 0.4f) ? 0.3f : 0f;
+            if (ForceInjuries && amount >= 5) chance = 1f;
+            if (Random.value >= chance) return;
+
+            int zone;
+            if (type == DamageType.Fall) zone = ZoneLegs;
+            else if (source.HasValue)
+            {
+                Vector2 d = source.Value - BodyCenter;
+                zone = d.y < -0.18f ? ZoneLegs : d.y > 0.4f ? ZoneHead : ZoneArms;
+            }
+            else zone = Random.value < 0.65f ? ZoneArms : ZoneHead;
+
+            // Si esa parte ya no tiene nada que romper, pasa a la siguiente.
+            for (int k = 0; k < 3; k++)
+            {
+                if (InjureServer(zone)) return;
+                zone = (zone + 1) % 3;
+            }
+        }
+
+        [ClientRpc]
+        private void InjuryClientRpc(byte zone)
+        {
+            Vector2 b = BodyCenter;
+            Vector2 at = zone == ZoneLegs ? b + Vector2.down * 0.2f : zone == ZoneHead ? b + Vector2.up * 0.25f : b;
+            Fx.LimbOff(at, zone);
+            Sfx.Play(Sfx.Id.Splat, 0.9f);
+            Sfx.Play(Sfx.Id.Ouch, 1f, 0.1f);
+            if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.15f, 0.25f);
+            string t = zone == ZoneLegs ? (LegsLost >= 2 ? "¡MIS PATAS!" : "¡MI PATA!")
+                     : zone == ZoneArms ? (ArmsLost >= 2 ? "¡MIS BRAZOS!" : "¡MI BRAZO!")
+                     : "¡MI OJO!";
+            WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.15f, t, new Color(1f, 0.3f, 0.25f));
+        }
+
         /// <summary>Vida inicial para la PRÓXIMA rata que se spawnee (servidor). 0 = la del prefab.</summary>
         public static int SpawnNextMaxHealth;
 
@@ -150,7 +290,14 @@ namespace Ratms.Networking
         ///  Aplica daño con un tipo específico — explosión, agua, fuego...
         ///  El popup pintará el color/símbolo correspondiente.
         /// </summary>
-        public void ApplyDamageServer(int amount, Vector3 hitPoint, DamageType type)
+        public void ApplyDamageServer(int amount, Vector3 hitPoint, DamageType type) => ApplyDamageServer(amount, hitPoint, type, null);
+
+        /// <summary>
+        ///  Igual, sabiendo DE DÓNDE viene el golpe (<paramref name="source"/>,
+        ///  p. ej. el centro de la explosión): sirve para decidir qué parte
+        ///  del cuerpo se arranca.
+        /// </summary>
+        public void ApplyDamageServer(int amount, Vector3 hitPoint, DamageType type, Vector2? source)
         {
             if (!IsServer) return;
             if (IsDead.Value || amount <= 0) return;
@@ -167,6 +314,7 @@ namespace Ratms.Networking
                 IsDead.Value = true;
                 OnDiedServer?.Invoke(this);
             }
+            else TryInjureServer(amount, newHp, type, source);
         }
 
         /// <summary>(Servidor) Cura a la rata (botiquín), sin pasar de su vida máxima.</summary>

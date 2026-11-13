@@ -22,7 +22,7 @@ namespace Ratms.Networking
             if (menu == null || !menu.LobbyVisible || nm == null || !nm.IsListening) return;
             TrenchGUI.Begin();
             bool host = nm.IsServer;
-            float w = 640f, h = host ? 760f : 520f;
+            float w = 640f, h = host ? 810f : 540f;
             var r = new Rect(TrenchGUI.VW - w - 30f, (TrenchGUI.VH - h) * 0.5f, w, h);
             TrenchGUI.Panel(r);
             float x = r.x + 30f, cw = w - 60f, y = r.y + 14f;

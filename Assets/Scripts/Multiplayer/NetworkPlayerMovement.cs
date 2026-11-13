@@ -695,9 +695,16 @@ namespace Ratms.Networking
                           $"| groundMask={(int)groundMask.value}");
             }
 
-            if (canCoyoteJump && jumpBuffered && cooldownOk)
+            // SIN PATAS no se salta (a rastras). Coja: salta menos.
+            float jumpMul = health != null ? health.JumpFactor : 1f;
+            if (jumpMul <= 0f && jumpKeyDown && canCoyoteJump && health != null)
             {
-                rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
+                WorldDamagePopup.SpawnImpact(health.BodyCenter + Vector2.up * 0.9f, "¡No tengo patas!", new Color(1f, 0.6f, 0.4f));
+                jumpRequestedTime = -10f;
+            }
+            if (canCoyoteJump && jumpBuffered && cooldownOk && jumpMul > 0f)
+            {
+                rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce * jumpMul);
                 nextJumpAllowedTime = Time.time + jumpCooldown;
                 Sfx.Play(Sfx.Id.Jump, 0.7f);
                 // "Consumimos" la petición y el coyote para que no se ejecuten
@@ -812,7 +819,8 @@ namespace Ratms.Networking
             testFireDown = testFireUp = false;
 
             // CUERDA NINJA: herramienta de movimiento, NO gasta el arma del turno.
-            if (equipped == WeaponsMenuUI.WeaponId.Rope && rope != null)
+            bool hands = health == null || health.CanUseHands;
+            if (equipped == WeaponsMenuUI.WeaponId.Rope && rope != null && hands)
             {
                 if (fireDown)
                 {
@@ -824,6 +832,18 @@ namespace Ratms.Networking
 
             // Ya usaste tu arma este turno → solo puedes moverte (huir).
             if (firedThisTurn) return;
+
+            // SIN BRAZOS: no hay armas que sujetar → MORDISCO (ESPACIO).
+            // Teletransporte y cambiar rata no necesitan manos.
+            if (!hands && equipped != WeaponsMenuUI.WeaponId.Teleport && equipped != WeaponsMenuUI.WeaponId.SelectRat)
+            {
+                if (fireDown && bat != null && bat.Bite(GetWeaponForward()))
+                {
+                    firedThisTurn = true;
+                    ScheduleEndTurn();
+                }
+                return;
+            }
 
             // MUNICIÓN: sin balas de esta arma no se dispara (no gasta el turno).
             if (equipped != WeaponsMenuUI.WeaponId.None && weaponsMenu != null && !weaponsMenu.HasAmmo(equipped))
@@ -1120,7 +1140,8 @@ namespace Ratms.Networking
             // Este enfoque da un arranque y frenado lineales suaves, se
             // siente mucho más "jugoso" que el impulso+drag.
             // ----------------------------------------------------------------
-            float targetVx = inputX * maxSpeed;
+            // Mutilaciones: coja va más lenta y sin patas, a rastras.
+            float targetVx = inputX * maxSpeed * (health != null ? health.SpeedFactor : 1f);
             float accel = Mathf.Abs(targetVx) > 0.01f ? moveAcceleration : moveDeceleration;
             float newVx = Mathf.MoveTowards(rb.linearVelocity.x, targetVx, accel * Time.fixedDeltaTime);
             Vector2 walkVel = new Vector2(newVx, rb.linearVelocity.y);
@@ -1326,7 +1347,20 @@ namespace Ratms.Networking
             ApplyFlipVisual(facingRight.Value);
             shownAim = IsOwner ? aimAngle.Value
                                : Mathf.LerpAngle(shownAim, aimAngle.Value, 1f - Mathf.Exp(-18f * Time.deltaTime));
-            ApplyAimRotation(shownAim, facingRight.Value);
+            ApplyAimRotation(shownAim + AimWobble(), facingRight.Value);
+        }
+
+        /// <summary>
+        ///  Temblor de la puntería (manca o tuerta). Va en el dibujo del arma
+        ///  y por tanto también en el disparo: apuntas a lo que ves temblar.
+        /// </summary>
+        private float AimWobble()
+        {
+            if (health == null) return 0f;
+            float w = health.AimWobbleDeg;
+            if (w <= 0f) return 0f;
+            float t = Time.time;
+            return Mathf.Sin(t * 2.1f) * w + Mathf.Sin(t * 5.3f + 1f) * w * 0.35f;
         }
 
         // ==================================================================

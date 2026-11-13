@@ -65,6 +65,13 @@ namespace Ratms.Networking
         private int splat;
         private float dripUntil, nextSplatDrip;
 
+        // MUTILACIONES (NetworkHealth.Injuries): patas/brazos arrancados,
+        // ojo vendado, prótesis. Cambian el dibujo (y sin patas, se arrastra).
+        private byte inj;
+        private float nextCrawlDrip;
+
+        private void Redraw() => frames = GetFrames(Look.Pack(), Team, wound, splat, inj);
+
         /// <summary>Cuánta sangre ajena lleva encima (0-3).</summary>
         public int Splat => splat;
 
@@ -81,7 +88,7 @@ namespace Ratms.Networking
             dripUntil = Time.time + 2.5f + levels;
             if (s == splat) return;
             splat = s;
-            frames = GetFrames(Look.Pack(), Team, wound, splat);
+            Redraw();
         }
 
         /// <summary>
@@ -143,6 +150,13 @@ namespace Ratms.Networking
             return new[] { f[(int)Frame.Walk0], f[(int)Frame.Walk1], f[(int)Frame.Walk2], f[(int)Frame.Walk3] };
         }
 
+        /// <summary>Muestra con LESIONES (galería de la prueba). <paramref name="walkFrame"/> 0-3 = andando, -1 = quieta.</summary>
+        public static Sprite PreviewInjured(uint lookCode, Color32 team, byte injuries, int walkFrame = -1)
+        {
+            var f = GetFrames(lookCode, team, 0, 0, injuries);
+            return f[walkFrame >= 0 ? (int)Frame.Walk0 + (walkFrame % 4) : (int)Frame.Idle0];
+        }
+
         /// <summary>Sprite de muestra (quieta) de un aspecto: para menús y pruebas.</summary>
         public static Sprite Preview(uint lookCode, Color32 team) => GetFrames(lookCode, team)[(int)Frame.Idle0];
 
@@ -168,7 +182,8 @@ namespace Ratms.Networking
             else if (Mathf.Abs(vx) > 0.3f)
             {
                 // La pata de palo cojea: paso más lento.
-                float speed = Look.pegLeg ? 0.8f : 1f;
+                bool crawl = health != null && health.Crawling;
+                float speed = crawl ? 0.7f : Look.pegLeg || (health != null && health.LegsLost > 0) ? 0.8f : 1f;
                 animTime += dt * Mathf.Lerp(7f, 12f, Mathf.Clamp01(Mathf.Abs(vx) / 2f)) * speed;
                 f = Frame.Walk0 + ((int)animTime % 4);
             }
@@ -184,7 +199,14 @@ namespace Ratms.Networking
             {
                 float hp = health.CurrentHealth.Value / (float)health.MaxHealth;
                 int w = hp > 0.66f ? 0 : hp > 0.33f ? 1 : 2;
-                if (w != wound) { wound = w; frames = GetFrames(Look.Pack(), Team, wound, splat); }
+                if (w != wound) { wound = w; Redraw(); }
+                if (health.Injuries.Value != inj) { inj = health.Injuries.Value; Redraw(); }
+                // A rastras: deja un reguero de sangre al avanzar.
+                if (health.Crawling && Mathf.Abs(vx) > 0.3f && Time.time > nextCrawlDrip)
+                {
+                    nextCrawlDrip = Time.time + Random.Range(0.08f, 0.18f);
+                    Fx.Drip((Vector2)sr.bounds.center + new Vector2(-Mathf.Sign(vx) * 0.15f, -0.08f));
+                }
             }
             // Recién salpicada: le chorrea la sangre ajena un rato.
             if (Time.time < dripUntil && Time.time > nextSplatDrip)
@@ -204,7 +226,8 @@ namespace Ratms.Networking
                 Bounds b = col.bounds;
                 float bottom = b.min.y - (box != null ? box.edgeRadius : 0f);
                 // Cojera de la pata de palo: un pelín arriba y abajo al andar.
-                float limp = Look.pegLeg && f >= Frame.Walk0 && f <= Frame.Walk3 && ((int)f % 2 == 1) ? 1f / 32f : 0f;
+                bool lame = Look.pegLeg || (health != null && health.LegsLost == 1);
+                float limp = lame && f >= Frame.Walk0 && f <= Frame.Walk3 && ((int)f % 2 == 1) ? 1f / 32f : 0f;
                 sr.transform.position = new Vector3(b.center.x, bottom + limp, transform.position.z);
             }
             Vector3 ls = transform.lossyScale;
@@ -310,13 +333,13 @@ namespace Ratms.Networking
         // ============================================================
         //  DIBUJO
         // ============================================================
-        private static Sprite[] GetFrames(uint lookCode, Color32 team, int wound = 0, int splat = 0)
+        private static Sprite[] GetFrames(uint lookCode, Color32 team, int wound = 0, int splat = 0, byte inj = 0)
         {
-            var key = (lookCode, (team.r << 16) | (team.g << 8) | team.b, wound + splat * 4);
+            var key = (lookCode, (team.r << 16) | (team.g << 8) | team.b, wound + splat * 4 + inj * 16);
             if (cache.TryGetValue(key, out var cached)) return cached;
             var look = RatLook.Unpack(lookCode);
             var result = new Sprite[(int)Frame.Count];
-            for (int i = 0; i < result.Length; i++) result[i] = Draw((Frame)i, look, team, wound, splat);
+            for (int i = 0; i < result.Length; i++) result[i] = Draw((Frame)i, look, team, wound, splat, inj);
             cache[key] = result;
             return result;
         }
@@ -327,8 +350,21 @@ namespace Ratms.Networking
                            Brow = 16, Claw = 17, Wood = 18, Brass = 19, Leather = 20, Rubber = 21, Glass = 22, Gold = 23,
                            Wrinkle = 24, Cigar = 25, Patch = 26, BandD = 27;
 
-        private static Sprite Draw(Frame frame, RatLook look, Color32 team, int wound = 0, int splat = 0)
+        private static Sprite Draw(Frame frame, RatLook look, Color32 team, int wound = 0, int splat = 0, byte inj = 0)
         {
+            // --- Mutilaciones (ver NetworkHealth.Injuries) ---
+            int legsLost = inj & 3, armsLost = (inj >> 2) & 3;
+            bool headHurt = (inj & 16) != 0, peg = (inj & 32) != 0, hook = (inj & 64) != 0;
+            // La pata de delante es la primera que se pierde; si ya era de
+            // palo "de nacimiento", la que se pierde es la de atrás.
+            bool frontLegGone = legsLost >= 1;
+            bool backLegGone = legsLost >= 2 || (legsLost == 1 && look.pegLeg);
+            bool crawl = legsLost >= 2 && !peg;
+            bool frontPeg = look.pegLeg || (frontLegGone && peg);
+            bool frontArmGone = armsLost >= 1 || look.oneArm;
+            bool backArmGone = armsLost >= 2 || (armsLost == 1 && look.oneArm);
+            bool hookShown = hook && armsLost >= 1;
+
             var mat = new byte[S * S];
             var shade = new sbyte[S * S];     // -1 sombra, 0 medio, +1 luz
             var a = AnatomyOf(look.body);
@@ -376,9 +412,13 @@ namespace Ratms.Networking
             else Dot(mat, shade, a.tailX - 0.5f, a.tailY + bob, 0.8f, Scar);   // sin cola: cicatriz
 
             // --- Pata de atrás ---
-            Rect(mat, shade, a.backLegX + backFoot / 2, 2 + footLift, 2, a.legH, Fur, -1);
-            Ellipse(mat, shade, a.backLegX + 1.5f + backFoot, 1.6f + footLift, 2.6f, 1.2f, Pink);
-            Set(mat, shade, a.backLegX + 4 + backFoot, 1 + footLift, Claw, 0);
+            if (backLegGone) LegStump(mat, shade, a.backLegX, a.legH, footLift);
+            else
+            {
+                Rect(mat, shade, a.backLegX + backFoot / 2, 2 + footLift, 2, a.legH, Fur, -1);
+                Ellipse(mat, shade, a.backLegX + 1.5f + backFoot, 1.6f + footLift, 2.6f, 1.2f, Pink);
+                Set(mat, shade, a.backLegX + 4 + backFoot, 1 + footLift, Claw, 0);
+            }
 
             // --- Cuerpo ---
             if (a.hump) Ellipse(mat, shade, a.bx - 1.8f, a.by + 3.2f + bob, 4.2f, 3.6f, Fur);
@@ -421,7 +461,8 @@ namespace Ratms.Networking
                 }
 
             // --- Pata de delante (o pata de palo) ---
-            if (look.pegLeg)
+            if (frontLegGone && !frontPeg) LegStump(mat, shade, a.frontLegX, a.legH, footLift);
+            else if (frontPeg)
             {
                 int px = a.frontLegX + frontFoot / 2;
                 Rect(mat, shade, px, 3 + footLift, 2, Mathf.Max(1, a.legH - 1), Fur, 0);   // muslo
@@ -437,19 +478,49 @@ namespace Ratms.Networking
 
             // --- Brazo de delante (o muñón vendado) ---
             float ay = a.armY + bob + (air ? 2.5f : 0f) + (hurt ? 1.5f : 0f);
-            if (look.oneArm)
+            float armX = a.armX;
+            if (crawl && !air)
+            {
+                // A RASTRAS: el brazo va por el suelo tirando del cuerpo
+                // (alterna delante/detrás al "andar").
+                ay = a.legH + 1.4f;
+                armX += frontFoot * 0.9f + 1f;
+            }
+            // Hombro de atrás vendado si también ha perdido ese brazo
+            if (backArmGone)
+            {
+                Dot(mat, shade, armX - 3.4f, ay + 1.2f, 1.1f, Bandage);
+                Set(mat, shade, Mathf.RoundToInt(armX - 3.4f), Mathf.RoundToInt(ay), Blood, 0);
+            }
+            if (frontArmGone)
             {
                 // Muñón: hombro con venda empapada y gotas de sangre colgando
-                Ellipse(mat, shade, a.armX - 1.2f, ay + 0.4f, 1.8f, 1.4f, Bandage);
-                Set(mat, shade, Mathf.RoundToInt(a.armX - 0.2f), Mathf.RoundToInt(ay), Blood, 0);
-                Set(mat, shade, Mathf.RoundToInt(a.armX - 0.2f), Mathf.RoundToInt(ay) - 1, Blood, 0);
-                Set(mat, shade, Mathf.RoundToInt(a.armX - 1.2f), Mathf.RoundToInt(ay) - 1, Blood, 0);
-                Set(mat, shade, Mathf.RoundToInt(a.armX - 0.2f), Mathf.RoundToInt(ay) - 3, Blood, 0, onlyEmpty: true);
+                Ellipse(mat, shade, armX - 1.2f, ay + 0.4f, 1.8f, 1.4f, Bandage);
+                if (armsLost >= 1 && !hookShown)   // herida FRESCA: venda empapada que gotea
+                {
+                    Dot(mat, shade, armX - 0.6f, ay + 0.2f, 1.0f, Blood);
+                    for (int k = 1; k <= 3; k++) Set(mat, shade, Mathf.RoundToInt(armX - 0.6f), Mathf.RoundToInt(ay) - 1 - k, Blood, (sbyte)(k > 1 ? -1 : 0), onlyEmpty: k > 1);
+                }
+                Set(mat, shade, Mathf.RoundToInt(armX - 0.2f), Mathf.RoundToInt(ay), Blood, 0);
+                Set(mat, shade, Mathf.RoundToInt(armX - 0.2f), Mathf.RoundToInt(ay) - 1, Blood, 0);
+                Set(mat, shade, Mathf.RoundToInt(armX - 1.2f), Mathf.RoundToInt(ay) - 1, Blood, 0);
+                if (hookShown)
+                {
+                    // GARFIO de metal saliendo del muñón
+                    int hx0 = Mathf.RoundToInt(armX + 0.6f), hy0 = Mathf.RoundToInt(ay);
+                    Rect(mat, shade, hx0, hy0 - 1, 2, 2, Brass, 0);                       // abrazadera
+                    Set(mat, shade, hx0 + 2, hy0, Whisker, 0); Set(mat, shade, hx0 + 3, hy0, Whisker, 0);
+                    Set(mat, shade, hx0 + 4, hy0 - 1, Whisker, 0); Set(mat, shade, hx0 + 4, hy0 - 2, Whisker, 0);
+                    Set(mat, shade, hx0 + 4, hy0 - 3, Whisker, -1); Set(mat, shade, hx0 + 3, hy0 - 4, Whisker, -1);
+                    Set(mat, shade, hx0 + 2, hy0 - 3, Whisker, 0);
+                }
+                else
+                    Set(mat, shade, Mathf.RoundToInt(armX - 0.2f), Mathf.RoundToInt(ay) - 3, Blood, 0, onlyEmpty: true);
             }
             else
             {
-                Ellipse(mat, shade, a.armX, ay, a.armR, a.armR * 0.7f, Fur);
-                Dot(mat, shade, a.armX + a.armR, ay, a.armR * 0.5f, Pink);
+                Ellipse(mat, shade, armX, ay, a.armR, a.armR * 0.7f, Fur);
+                Dot(mat, shade, armX + a.armR, ay, a.armR * 0.5f, Pink);
             }
 
             // --- Bufanda del equipo (se reconoce el equipo en todas las ratas) ---
@@ -619,6 +690,20 @@ namespace Ratms.Networking
                     Set(mat, shade, wx + 1 + k, Mathf.RoundToInt(hy - 1.0f - k * 0.2f), Whisker, 0, onlyEmpty: true);
                 }
 
+            // --- TUERTA: venda ensangrentada cruzando la cabeza sobre el ojo ---
+            if (headHurt)
+            {
+                int x0 = Mathf.RoundToInt(hx - a.hrx - 0.5f);
+                for (int x = x0; x <= exx + 1; x++)
+                {
+                    Set(mat, shade, x, ey + 1, Bandage, 0, onlyIfSolid: true);
+                    Set(mat, shade, x, ey, Bandage, (sbyte)(x % 3 == 0 ? -1 : 0), onlyIfSolid: true);
+                }
+                Set(mat, shade, exx, ey, Blood, 0); Set(mat, shade, exx + 1, ey, Blood, 0); Set(mat, shade, exx, ey + 1, Blood, -1);
+                Set(mat, shade, exx, ey - 1, Blood, 0, onlyIfSolid: true); Set(mat, shade, exx, ey - 2, Blood, -1, onlyIfSolid: true);
+                Set(mat, shade, x0 - 1, ey, Bandage, 0); Set(mat, shade, x0 - 2, ey - 1, Bandage, 0);   // nudo que cuelga
+            }
+
             // --- HERIDAS: cuanto menos vida, más sangre en el pelaje ---
             if (wound > 0)
             {
@@ -664,7 +749,31 @@ namespace Ratms.Networking
                 }
             }
 
+            // --- A RASTRAS: sin patas, la panza va pegada al suelo ---
+            if (crawl)
+            {
+                int drop = Mathf.Max(1, a.legH);
+                for (int y = 0; y < S; y++)
+                    for (int x = 0; x < S; x++)
+                    {
+                        int src = (y + drop) * S + x, dst = y * S + x;
+                        bool inside = y + drop < S;
+                        mat[dst] = inside ? mat[src] : Empty;
+                        shade[dst] = inside ? shade[src] : (sbyte)0;
+                    }
+            }
+
             return ToSprite(mat, shade, look, team);
+        }
+
+        /// <summary>Muñón de pata: un trocito de muslo con venda empapada.</summary>
+        private static void LegStump(byte[] mat, sbyte[] shade, int x, int legH, int footLift)
+        {
+            int top = 2 + footLift + legH;
+            Rect(mat, shade, x, top - 2, 2, 2, Fur, 0);
+            Set(mat, shade, x, top - 3, Bandage, 0); Set(mat, shade, x + 1, top - 3, Bandage, 0);
+            Set(mat, shade, x, top - 4, Blood, 0); Set(mat, shade, x + 1, top - 4, Blood, -1);
+            Set(mat, shade, x + 1, top - 5, Blood, -1, onlyEmpty: true);
         }
 
         private static void DrawHat(byte[] mat, sbyte[] shade, RatLook look, Anat a, float hx, float hy)

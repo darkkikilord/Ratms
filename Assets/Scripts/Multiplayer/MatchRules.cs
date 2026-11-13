@@ -119,6 +119,18 @@ namespace Ratms.Networking
         public static int? OverrideBarrels;
         public static int EffectiveBarrels => OverrideBarrels ?? Barrels;
 
+        /// <summary>
+        ///  MUTILACIONES: los golpes fuertes arrancan patas y brazos o dejan
+        ///  tuerta a la rata, y eso cambia cómo se juega (ver NetworkHealth).
+        /// </summary>
+        public static bool Mutilations
+        {
+            get => PlayerPrefs.GetInt("rule_mutil", 1) == 1;
+            set => PlayerPrefs.SetInt("rule_mutil", value ? 1 : 0);
+        }
+        public static bool? OverrideMutilations;
+        public static bool EffectiveMutilations => OverrideMutilations ?? Mutilations;
+
         /// <summary>Probabilidad (0-1) de que caiga una caja al empezar un turno.</summary>
         public static float CrateChance
         {

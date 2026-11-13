@@ -95,6 +95,12 @@ namespace Ratms.Networking
             float scale = Mathf.Max(0.6f, Screen.height / referenceHeight);
             EnsureStyles(scale);
 
+            // TUERTA: en tu turno ves por un solo ojo (bordes negros y rojizos).
+            var turnRat = tm.InTransition.Value ? null : tm.CurrentRat;
+            var turnHealth = turnRat != null ? turnRat.GetComponent<NetworkHealth>() : null;
+            if (turnRat != null && turnRat.IsOwner && turnHealth != null && turnHealth.HeadHurt)
+                GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), BlindTex());
+
             Matrix4x4 previous = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
 
@@ -200,8 +206,18 @@ namespace Ratms.Networking
                 string weapon = menu != null ? WeaponsMenuUI.ShortName(menu.SelectedWeapon) : "?";
                 int ammo = menu != null && menu.SelectedWeapon != WeaponsMenuUI.WeaponId.None ? menu.AmmoLeft(menu.SelectedWeapon) : -1;
                 string ammoText = ammo >= 0 ? $" x{ammo}" : "";
+                bool armless = menu != null && !menu.HandsOk && menu.SelectedWeapon == WeaponsMenuUI.WeaponId.None;
                 GUI.Label(new Rect(panel.x, panel.y + panelSize.y + 2f, panel.width, 24f),
-                          $"Arma: {weapon}{ammoText}   (1-8 o TAB)", windStyle);
+                          armless ? "Arma: ¡MORDISCO! (ESPACIO)   · sin brazos" : $"Arma: {weapon}{ammoText}   (1-8 o TAB)", windStyle);
+                // Lesiones de la rata del turno
+                string injuries = turnHealth != null ? turnHealth.InjuryText : "";
+                if (!string.IsNullOrEmpty(injuries))
+                {
+                    var prevCol = windStyle.normal.textColor;
+                    windStyle.normal.textColor = new Color(1f, 0.45f, 0.35f);
+                    GUI.Label(new Rect(panel.x, panel.y + panelSize.y + 24f, panel.width, 24f), $"Heridas: {injuries}", windStyle);
+                    windStyle.normal.textColor = prevCol;
+                }
             }
 
             GUI.matrix = previous;
@@ -346,6 +362,30 @@ namespace Ratms.Networking
             announceColor = color;
             announceUntil = Time.unscaledTime + 3f;
             Sfx.Play(Sfx.Id.TurnStart, 0.8f, 0f);
+        }
+
+        private static Texture2D blindTex;
+
+        /// <summary>Viñeta de "un solo ojo": centro despejado, bordes casi negros con tinte de sangre.</summary>
+        private static Texture2D BlindTex()
+        {
+            if (blindTex != null) return blindTex;
+            const int N = 128;
+            blindTex = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, hideFlags = HideFlags.HideAndDontSave };
+            var px = new Color32[N * N];
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    // Óvalo algo desplazado: el ojo bueno es uno solo
+                    float dx = (x - N * 0.52f) / (N * 0.5f), dy = (y - N * 0.5f) / (N * 0.5f);
+                    float d = Mathf.Sqrt(dx * dx * 0.9f + dy * dy * 1.25f);
+                    float a = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.42f, 0.95f, d)) * 0.93f;
+                    float red = Mathf.Clamp01(1f - Mathf.Abs(d - 0.6f) * 4f) * 0.35f;
+                    px[y * N + x] = new Color32((byte)(20 + red * 160), 4, 4, (byte)(a * 255));
+                }
+            blindTex.SetPixels32(px);
+            blindTex.Apply();
+            return blindTex;
         }
 
         private void DrawAnnouncement(float vw, float vh)

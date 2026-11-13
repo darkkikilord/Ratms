@@ -81,10 +81,10 @@ namespace Ratms.UI
                 }
                 case Page.Help:
                 {
-                    var r = Centered(820f, 660f);
+                    var r = Centered(860f, 780f);
                     TrenchGUI.Panel(r);
                     TrenchGUI.Title(new Rect(r.x, r.y + 18f, r.width, 50f), "CÓMO SE JUEGA");
-                    HelpText(new Rect(r.x + 50f, r.y + 86f, r.width - 100f, 480f));
+                    HelpText(new Rect(r.x + 50f, r.y + 86f, r.width - 100f, 600f));
                     if (TrenchGUI.Button(new Rect(r.x + r.width * 0.3f, r.yMax - 76f, r.width * 0.4f, 52f), "Volver", big: true) || esc)
                         page = Page.Main;
                     break;
@@ -121,6 +121,10 @@ namespace Ratms.UI
                 "  que caen en paracaídas dan más (o explotan: ¡trampa!). El BOTIQUÍN cura.",
                 "• Los BARRILES revientan en cadena si les alcanza una explosión.",
                 "• CAMBIAR RATA: haz clic en otra rata tuya; jugará tu próximo turno.",
+                "• MUTILACIONES: los golpes fuertes arrancan patas (por debajo), brazos",
+                "  (de lado) u ojos (por arriba). Coja = lenta; SIN PATAS = a rastras y sin",
+                "  saltar; SIN BRAZOS = solo MORDISCO; tuerta = ves menos y apuntas peor.",
+                "  Las cajas pueden traer PATA DE PALO o GARFIO.",
                 "• El agua mata. En MUERTE SÚBITA sube cada turno.",
                 "• Gana el último equipo con alguna rata viva.",
             };

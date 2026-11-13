@@ -169,13 +169,16 @@ namespace Ratms.Networking
             UpdateMateMarkers(mine && SelectedWeapon == WeaponId.SelectRat);
             if (!mine) { visible = false; return; }
 
+            // Sin brazos: se le cae el arma de las manos (que no tiene).
+            if (!HandsOk && NeedsHands(SelectedWeapon)) SelectedIndexNet.Value = (int)WeaponId.None;
+
             if (Input.GetKeyDown(toggleKey))
                 visible = !visible;
 
             // Atajos numéricos rápidos (0 = desenfundar, 1 = bazooka, etc.)
             foreach (var w in weapons)
             {
-                if (Input.GetKeyDown(w.shortcut) && w.implemented && HasAmmo(w.id))
+                if (Input.GetKeyDown(w.shortcut) && w.implemented && Usable(w.id))
                     SelectedIndexNet.Value = (int)w.id;
             }
         }
@@ -190,6 +193,27 @@ namespace Ratms.Networking
         }
 
         public bool HasAmmo(WeaponId id) => AmmoLeft(id) != 0;
+
+        /// <summary>¿Hace falta tener brazos para usar esta arma?</summary>
+        public static bool NeedsHands(WeaponId id) => id != WeaponId.None && id != WeaponId.Teleport && id != WeaponId.SelectRat;
+
+        private NetworkHealth ownerHealth;
+
+        /// <summary>false = rata SIN BRAZOS (solo muerde, teletransporta o cambia de rata).</summary>
+        public bool HandsOk
+        {
+            get
+            {
+                if (ownerHealth == null)
+                {
+                    if (ownerRat == null) ownerRat = GetComponentInParent<NetworkPlayerMovement>();
+                    if (ownerRat != null) ownerHealth = ownerRat.GetComponent<NetworkHealth>();
+                }
+                return ownerHealth == null || ownerHealth.CanUseHands;
+            }
+        }
+
+        private bool Usable(WeaponId id) => HasAmmo(id) && (HandsOk || !NeedsHands(id));
 
         // ==============================================================
         //  ARSENAL (panel de armas) — estilo caja de munición de trinchera
@@ -231,7 +255,7 @@ namespace Ratms.Networking
             foreach (var w in weapons)
             {
                 int ammo = w.id == WeaponId.None ? -1 : AmmoLeft(w.id);
-                bool empty = ammo == 0;
+                bool empty = ammo == 0 || (!HandsOk && NeedsHands(w.id));
                 bool sel = w.id == SelectedWeapon;
                 var r = new Rect(x + pad, ry, W - pad * 2, rowH);
                 GUI.DrawTexture(r, empty ? rowOffTex : sel ? rowSelTex : rowTex);

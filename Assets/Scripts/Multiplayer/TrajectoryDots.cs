@@ -193,6 +193,7 @@ namespace Ratms.Networking
 
         private readonly RaycastHit2D[] segmentHits = new RaycastHit2D[6];
         private Transform ownerRoot;
+        private NetworkHealth ownerHealth;
 
         // ==============================================================
         private void LateUpdate()
@@ -203,6 +204,10 @@ namespace Ratms.Networking
                 var no = GetComponentInParent<Unity.Netcode.NetworkObject>();
                 ownerRoot = no != null ? no.transform : transform.root;
             }
+
+            // TUERTA: solo ve el principio de la trayectoria.
+            if (ownerHealth == null && ownerRoot != null) ownerHealth = ownerRoot.GetComponent<NetworkHealth>();
+            int maxVisible = ownerHealth != null && ownerHealth.HeadHurt ? 3 : int.MaxValue;
 
             Vector2 start = firePoint.position;
             Vector2 vel = cachedDir * cachedForce;
@@ -224,7 +229,7 @@ namespace Ratms.Networking
                 if (stopAtObstacles && !blocked && i > 0 && SegmentBlocked(prev, p))
                     blocked = true;
 
-                bool show = !blocked;
+                bool show = !blocked && i < maxVisible;
                 if (dots[i].gameObject.activeSelf != show) dots[i].gameObject.SetActive(show);
                 if (show) dots[i].position = new Vector3(p.x, p.y, firePoint.position.z);
                 prev = p;

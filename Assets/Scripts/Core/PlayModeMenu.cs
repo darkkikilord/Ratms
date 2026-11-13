@@ -19,7 +19,7 @@ namespace Ratms.UI
         private void OnGUI()
         {
             TrenchGUI.Begin();
-            var r = new Rect((TrenchGUI.VW - 860f) * 0.5f, (TrenchGUI.VH - 790f) * 0.5f, 860f, 790f);
+            var r = new Rect((TrenchGUI.VW - 860f) * 0.5f, (TrenchGUI.VH - 844f) * 0.5f, 860f, 844f);
             TrenchGUI.Panel(r);
             float x = r.x + 40f, w = r.width - 80f, y = r.y + 18f;
             TrenchGUI.Title(new Rect(r.x, y, r.width, 50f), "¿A QUÉ JUGAMOS?");
@@ -65,6 +65,7 @@ namespace Ratms.UI
             MatchRules.SuddenDeathMinutes = Sd[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Muerte súbita", new[] { "5 min", "10 min", "15 min", "Nunca" }, Idx(Sd, MatchRules.SuddenDeathMinutes, 1))]; y += gap;
             MatchRules.Barrels = Barrels[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Barriles", new[] { "Ninguno", "Pocos", "Normal", "Muchos" }, Idx(Barrels, MatchRules.Barrels, 2))]; y += gap;
             MatchRules.CrateChance = Crates[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Cajas", new[] { "Nunca", "Pocas", "Normal", "Muchas" }, Idx(Crates, MatchRules.CrateChance, 2))]; y += gap;
+            MatchRules.Mutilations = TrenchGUI.Toggle(new Rect(r.x, y, r.width, rowH), "Mutilaciones", MatchRules.Mutilations, 230f); y += gap;
             return y - r.y;
         }
 
@@ -72,7 +73,8 @@ namespace Ratms.UI
         public static string Summary() =>
             $"{MatchRules.RatsPerTeam} ratas · {MatchRules.StartHealth} vida · turnos de {MatchRules.TurnSeconds} s · " +
             $"muerte súbita {(MatchRules.SuddenDeathMinutes > 0 ? MatchRules.SuddenDeathMinutes + " min" : "nunca")} · " +
-            $"{MatchRules.Barrels} barriles · cajas {(MatchRules.CrateChance <= 0f ? "nunca" : MatchRules.CrateChance < 0.3f ? "pocas" : MatchRules.CrateChance < 0.5f ? "normal" : "muchas")}";
+            $"{MatchRules.Barrels} barriles · cajas {(MatchRules.CrateChance <= 0f ? "nunca" : MatchRules.CrateChance < 0.3f ? "pocas" : MatchRules.CrateChance < 0.5f ? "normal" : "muchas")} · " +
+            $"mutilaciones {(MatchRules.Mutilations ? "sí" : "no")}";
 
         private static int Idx(int[] arr, int v, int def) { int i = Array.IndexOf(arr, v); return i < 0 ? def : i; }
         private static int Idx(float[] arr, float v, int def)

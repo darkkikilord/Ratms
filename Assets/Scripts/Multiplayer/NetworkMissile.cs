@@ -218,7 +218,7 @@ namespace Ratms.Networking
                 if (dmg <= 0) continue;
 
                 Debug.Log($"[NetworkMissile] → Aplicando {dmg} de daño a {nh.gameObject.name} (dist={dist:F2}, t={t:F2})");
-                nh.ApplyDamageServer(dmg, body, DamageType.Explosion);
+                nh.ApplyDamageServer(dmg, body, DamageType.Explosion, (Vector2)at);
 
                 // KNOCKBACK: empuja a la rata alejándola del centro de la explosión.
                 // Falloff SQRT (mucho más notorio a media distancia que el lineal):

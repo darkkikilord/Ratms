@@ -143,9 +143,13 @@ namespace Ratms.Testing
         {
             // Partida de DOS jugadores reales (dos copias del juego en el mismo PC).
             string role = GetArg("-autoTestRole");
+            // Las mutilaciones son al azar: fuera de su propia prueba las
+            // apagamos para que las mediciones (andar, armas...) sean fiables.
+            MatchRules.OverrideMutilations = false;
             if (role == "local") { yield return RunLocalMatch(); yield break; }
             if (role == "gallery") { yield return RunGallery(); yield break; }
             if (role == "items") { yield return RunItems(); yield break; }
+            if (role == "mutil") { yield return RunMutilations(); yield break; }
             if (role == "menus") { yield return RunMenus(); yield break; }
 
             // El resto de pruebas miden UNA rata por jugador (como antes de los equipos).
@@ -621,13 +625,17 @@ namespace Ratms.Testing
 
             var rng = new System.Random(1234);
             var root = new GameObject("Gallery");
-            for (int page = 0; page < 3; page++)
+            for (int page = 0; page < 4; page++)
             {
                 foreach (Transform t in root.transform) Destroy(t.gameObject);
                 yield return null;
                 int cols = page == 2 ? 5 : 8, rows = page == 2 ? 4 : 5;
-                cam.orthographicSize = page == 2 ? 3.2f : 3.4f;
+                if (page == 3) { cols = 8; rows = 4; }
+                cam.orthographicSize = page >= 2 ? 3.2f : 3.4f;
                 float sp = page == 2 ? 1.55f : 1.5f;
+                // Página 4: LESIONES (columnas) en 4 ratas distintas (filas):
+                // entera, coja, a rastras, a rastras andando, manca, sin brazos, tuerta, prótesis.
+                byte[] injCols = { 0, 1, 2, 2, 4, 8, 16, 1 | 4 | 32 | 64 };
                 var lines = new List<string>();
                 for (int r = 0; r < rows; r++)
                     for (int c = 0; c < cols; c++)
@@ -646,13 +654,152 @@ namespace Ratms.Testing
                         float k = page == 2 ? 1.5f : 1.15f;
                         go.transform.localScale = new Vector3(k, k, 1f);
                         var sr = go.AddComponent<SpriteRenderer>();
-                        sr.sprite = RatAppearance.Preview(look.Pack(), RatAppearance.ColorForTeam(team));
+                        if (page == 3)
+                        {
+                            look = RatLook.Random(new System.Random(77 + r * 13), r == 0 ? 0 : r == 1 ? 1 : r == 2 ? 3 : 4);
+                            look.oneArm = false; look.pegLeg = false;
+                            sr.sprite = RatAppearance.PreviewInjured(look.Pack(), RatAppearance.ColorForTeam(r), injCols[c], walkFrame: c == 3 ? 1 : -1);
+                        }
+                        else
+                            sr.sprite = RatAppearance.Preview(look.Pack(), RatAppearance.ColorForTeam(team));
                         if (lines.Count < 12) lines.Add(look.ToString());
                     }
                 Log($"Galería {page + 1}: " + string.Join(" | ", lines.Take(6)));
                 yield return new WaitForSeconds(0.3f);
                 yield return Capture($"R0{page + 1}_galeria");
             }
+            Finish(null);
+        }
+
+        /// <summary>
+        ///  MUTILACIONES (papel "mutil"): arranca patas (explosión por debajo),
+        ///  brazos (de lado) y un ojo (por arriba) a la rata del turno y
+        ///  comprueba que se nota al jugar: más lenta, a rastras sin salto,
+        ///  sin armas, mordisco, prótesis de la caja.
+        /// </summary>
+        private IEnumerator RunMutilations()
+        {
+            Log("Papel: MUTILACIONES (2 equipos × 2 ratas)");
+            MatchRules.OverrideLocalTeams = 2;
+            MatchRules.OverrideRatsPerTeam = 2;
+            MatchRules.OverrideTurnSeconds = 90;
+            MatchRules.OverrideSuddenDeathSeconds = 0f;
+            MatchRules.OverrideCrateChance = 0f;
+            MatchRules.OverrideBarrels = 0;
+            MatchRules.OverrideMutilations = true;
+            yield return new WaitForSeconds(2.5f);
+            var mm = FindFirstObjectByType<Ratms.UI.MainMenuController>();
+            if (mm == null) { Finish("No encuentro MainMenuController"); yield break; }
+            mm.StartLocalMatch();
+            NetworkTurnManager tm = null;
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == gameScene && (tm = NetworkTurnManager.Instance) != null, 30f, "entrar en la partida");
+            if (finished) yield break;
+            yield return WaitFor(() => !tm.InTransition.Value && tm.CurrentRatId.Value != ulong.MaxValue, 20f, "el primer turno");
+            if (finished) yield break;
+            yield return new WaitForSeconds(1.5f);
+
+            var rat = tm.CurrentRat;
+            var h = rat.GetComponent<NetworkHealth>();
+            var menu = rat.GetComponentInChildren<WeaponsMenuUI>();
+            NetworkHealth.ForceInjuries = true;
+            yield return PlaceOnFlatSpot(rat, 0.35f, 0.65f, "mutilaciones");
+            yield return new WaitForSeconds(0.5f);
+
+            // Velocidad andando (medida corta; el terreno puede frenar)
+            IEnumerator Walk(float secs, System.Action<float> result)
+            {
+                float x0 = rat.transform.position.x;
+                rat.TestInputX = rat.FacingRight ? 1f : -1f;
+                yield return new WaitForSeconds(secs);
+                rat.TestInputX = 0f;
+                result(Mathf.Abs(rat.transform.position.x - x0) / secs);
+                yield return new WaitForSeconds(0.3f);
+            }
+            float v0 = 0f, v2 = 0f;
+            yield return Walk(0.8f, v => v0 = v);
+
+            // --- 1) Patas: explosión a los pies, dos veces ---
+            Vector2 b = h.BodyCenter;
+            h.ApplyDamageServer(6, b, DamageType.Explosion, b + Vector2.down * 0.5f);
+            yield return new WaitForSeconds(0.5f);
+            Log($"Explosión a los pies → patas perdidas {h.LegsLost} {(h.LegsLost == 1 ? "✓" : "⚠")}");
+            if (h.LegsLost != 1) Problem("Mutilaciones: la explosión por debajo no arrancó una pata");
+            yield return new WaitForSeconds(1.5f);
+            yield return CloseupWithColliders(rat, "M01_coja", 1.3f, overlay: false);
+            b = h.BodyCenter;
+            h.ApplyDamageServer(6, b, DamageType.Explosion, b + Vector2.down * 0.5f);
+            yield return new WaitForSeconds(0.8f);
+            Log($"Segunda explosión → patas {h.LegsLost}, a rastras: {(h.Crawling ? "✓" : "⚠")}");
+            if (!h.Crawling) Problem("Mutilaciones: sin patas no se arrastra");
+            yield return new WaitForSeconds(1.5f);
+            yield return CloseupWithColliders(rat, "M02_a_rastras", 1.3f, overlay: false);
+            yield return Walk(0.8f, v => v2 = v);
+            Log($"Velocidad andando: entera {v0:0.00} u/s → a rastras {v2:0.00} u/s {(v2 < v0 * 0.6f ? "✓" : "⚠")}");
+            if (v2 >= v0 * 0.6f) Problem("Mutilaciones: a rastras no va más lenta");
+            float y0 = rat.transform.position.y;
+            rat.TestPressJump();
+            float maxY = y0;
+            for (float t = 0f; t < 0.5f; t += Time.deltaTime) { maxY = Mathf.Max(maxY, rat.transform.position.y); yield return null; }
+            Log($"Salto sin patas: sube {maxY - y0:0.00} u {(maxY - y0 < 0.15f ? "✓ (no salta)" : "⚠")}");
+            if (maxY - y0 >= 0.15f) Problem("Mutilaciones: sin patas todavía salta");
+
+            // --- 2) Brazos: dos golpes de lado ---
+            for (int k = 0; k < 2; k++)
+            {
+                b = h.BodyCenter;
+                h.ApplyDamageServer(6, b, DamageType.Explosion, b + Vector2.right * 0.6f);
+                yield return new WaitForSeconds(0.5f);
+            }
+            menu.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Bazooka;
+            yield return new WaitForSeconds(0.3f);
+            bool dropped = menu.SelectedWeapon == WeaponsMenuUI.WeaponId.None;
+            Log($"Brazos perdidos {h.ArmsLost} · puede usar armas: {h.CanUseHands} · suelta la bazuca: {(dropped ? "✓" : "⚠")}");
+            if (h.ArmsLost != 2 || h.CanUseHands || !dropped) Problem("Mutilaciones: sin brazos sigue pudiendo usar armas");
+            yield return new WaitForSeconds(1.2f);
+            yield return CloseupWithColliders(rat, "M03_sin_brazos", 1.3f, overlay: false);
+
+            // --- 3) Cabeza: golpe desde arriba ---
+            b = h.BodyCenter;
+            h.ApplyDamageServer(6, b, DamageType.Explosion, b + Vector2.up * 0.8f);
+            yield return new WaitForSeconds(0.6f);
+            Log($"Golpe por arriba → tuerta: {(h.HeadHurt ? "✓" : "⚠")} · heridas: {h.InjuryText}");
+            if (!h.HeadHurt) Problem("Mutilaciones: el golpe por arriba no dejó tuerta");
+            yield return new WaitForSeconds(1.2f);
+            yield return Capture("M04_tuerta_vista");
+            yield return CloseupWithColliders(rat, "M05_tuerta", 1.3f, overlay: false);
+
+            // --- 4) Prótesis en la caja ---
+            tm.SpawnItemServer(NetworkTurnManager.ItemKind.WeaponCrate, 0, h.BodyCenter + Vector2.up * 0.3f);
+            yield return WaitFor(() => tm.ItemCount(NetworkTurnManager.ItemKind.WeaponCrate) == 0, 6f, "coger la caja", fatal: false);
+            yield return new WaitForSeconds(0.4f);
+            Log($"Caja con rata mutilada → pata de palo: {(h.HasPegLeg ? "✓" : "⚠")} · a rastras: {h.Crawling}");
+            if (!h.HasPegLeg || h.Crawling) Problem("Mutilaciones: la caja no puso la pata de palo");
+            yield return CloseupWithColliders(rat, "M06_pata_de_palo", 1.3f, overlay: false);
+
+            // --- 5) MORDISCO a un enemigo pegado ---
+            NetworkPlayerMovement enemy = null;
+            foreach (var r in FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None))
+                if (r.TeamIndex.Value != rat.TeamIndex.Value && r.isActiveAndEnabled) { enemy = r; break; }
+            if (enemy == null) { Problem("Mutilaciones: no hay enemigo para morder"); Finish(null); yield break; }
+            NetworkHealth.ForceInjuries = false;
+            float side = rat.FacingRight ? 1f : -1f;
+            var erb = enemy.GetComponent<Rigidbody2D>();
+            Vector3 ep = rat.transform.position + new Vector3(side * 0.42f, 0.1f, 0f);
+            enemy.transform.position = ep;
+            if (erb != null) { erb.position = ep; erb.linearVelocity = Vector2.zero; }
+            yield return new WaitForSeconds(0.6f);
+            var eh = enemy.GetComponent<NetworkHealth>();
+            int ehp0 = eh.CurrentHealth.Value, myHp0 = h.CurrentHealth.Value;
+            rat.TestSetAim(0f);
+            yield return new WaitForSeconds(0.2f);
+            rat.TestPressFire();
+            yield return new WaitForSeconds(0.15f);
+            yield return Capture("M07_mordisco");
+            yield return new WaitForSeconds(0.6f);
+            int ehp1 = eh.CurrentHealth.Value;
+            Log($"MORDISCO → enemigo {ehp0} → {ehp1} {(ehp1 < ehp0 ? "✓" : "⚠")} · mi vida {myHp0} → {h.CurrentHealth.Value}");
+            if (ehp1 >= ehp0) Problem("Mutilaciones: el mordisco no hizo daño");
+            Log("Mutilaciones: capturas M01–M07 ✓");
             Finish(null);
         }
 

@@ -104,6 +104,12 @@ namespace Ratms.Networking
         // =========================================================
         //  CAJAS Y BARRILES
         // =========================================================
+        /// <summary>(Servidor) Aviso grande para todos (lo usan otros scripts: mutilaciones...).</summary>
+        public void AnnounceServer(string text, Color color)
+        {
+            if (IsServer) AnnounceClientRpc(text, color);
+        }
+
         public enum ItemKind : byte { WeaponCrate, HealthCrate, Barrel }
 
         private class Item
@@ -335,6 +341,12 @@ namespace Ratms.Networking
                 pendingBlasts.Add((Time.time + 0.05f, it.pos + Vector2.up * 0.2f));
                 return (it.id, "¡TRAMPA!", new Color(1f, 0.3f, 0.2f));
             }
+            // PRÓTESIS: si la rata está mutilada, a veces la caja trae una pata de palo o un garfio.
+            if (h != null && h.NeedsProsthesis && (Random.value < 0.5f || NetworkHealth.ForceInjuries))
+            {
+                string pt = h.GiveProsthesisServer();
+                if (pt != null) { AnnounceServer($"¡{rat.RatName.Value} se pone {(pt.Contains("PATA") ? "una pata de palo" : "un garfio")}!", new Color(0.95f, 0.85f, 0.5f)); return (it.id, pt, new Color(1f, 0.9f, 0.4f)); }
+            }
             var loot = CrateLoot[it.content % CrateLoot.Length];
             AddAmmoServer(team.index, loot.w, loot.n);
             return (it.id, loot.text, new Color(1f, 0.9f, 0.4f));
@@ -377,7 +389,7 @@ namespace Ratms.Networking
                 float t = Mathf.Clamp01(1f - Vector2.Distance(at, body) / radius);
                 int dmg = Mathf.CeilToInt(maxDamage * t);
                 if (dmg <= 0) continue;
-                nh.ApplyDamageServer(dmg, body, DamageType.Explosion);
+                nh.ApplyDamageServer(dmg, body, DamageType.Explosion, at);
                 Vector2 away = body - at;
                 if (away.sqrMagnitude < 0.0001f) away = Vector2.up;
                 nh.ApplyKnockbackClientRpc((away.normalized + Vector2.up * 0.8f).normalized * knockback * Mathf.Sqrt(t), 0.6f);

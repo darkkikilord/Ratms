@@ -157,6 +157,7 @@ namespace Ratms.Networking
 
             if (IsDynamite.Value) ApplyDynamiteVisual();
             IsDynamite.OnValueChanged += OnDynamiteChanged;
+            Sfx.Play(Sfx.Id.Throw, IsDynamite.Value ? 0.5f : 1f);
 
             // Pedimos a todas las cámaras que sigan a la granada mientras vuela
             // y rebota. La DINAMITA no: el jugador tiene que ver a su rata para
@@ -364,6 +365,7 @@ namespace Ratms.Networking
                 AudioSource.PlayClipAtPoint(explosionSfx, at, explosionSfxVolume);
 
             Fx.Explosion(at, IsDynamite.Value ? Mathf.Max(explosionRadius, 4f) : explosionRadius);
+            Sfx.Play(IsDynamite.Value ? Sfx.Id.BigExplosion : Sfx.Id.Explosion);
 
             // POPUP DE IMPACTO: feedback visual fijo aunque la granada
             // no le pegue a ninguna rata.

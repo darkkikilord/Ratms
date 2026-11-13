@@ -97,6 +97,7 @@ namespace Ratms.Networking
         [ClientRpc]
         private void TeleportClientRpc(Vector2 from, Vector2 body)
         {
+            Sfx.Play(Sfx.Id.Teleport);
             Fx.Sparks(from, 22, new Color(0.6f, 0.9f, 1f, 1f), 1f, 3.5f);
             Fx.Sparks(body, 22, new Color(0.7f, 1f, 0.9f, 1f), 1f, 3.5f);
             WorldDamagePopup.SpawnImpact(body + Vector2.up * 0.4f, "¡ZAS!", new Color(0.6f, 0.95f, 1f));

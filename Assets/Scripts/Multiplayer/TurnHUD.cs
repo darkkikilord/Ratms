@@ -37,6 +37,8 @@ namespace Ratms.Networking
         [SerializeField] private Color windColor = new Color(0.6f, 0.85f, 1f);
 
         private GUIStyle whoStyle, timeStyle, windStyle;
+        private bool wasMyTurn;
+        private int lastTickSecond = -1;
         private Texture2D panelTex, barBackTex, barFillTex;
         private float stylesForScale = -1f;
 
@@ -71,6 +73,17 @@ namespace Ratms.Networking
                 myTurn = turnOf == nm.LocalClientId;
                 who = myTurn ? "¡TU TURNO!" : $"Turno de {PlayerNameRegistry.GetName(turnOf)}";
             }
+            // Sonidos: "ding" al empezar TU turno y tic-tac en los últimos segundos.
+            if (Event.current.type == EventType.Repaint)
+            {
+                if (myTurn && !wasMyTurn) Sfx.Play(Sfx.Id.TurnStart, 1f, 0f);
+                wasMyTurn = myTurn;
+                int sec = Mathf.CeilToInt(remaining);
+                if (myTurn && sec <= warningSeconds && sec > 0 && sec != lastTickSecond && !tm.InTransition.Value)
+                    Sfx.Play(Sfx.Id.Tick, 0.8f, 0f);
+                lastTickSecond = sec;
+            }
+
             whoStyle.normal.textColor = myTurn ? myTurnColor : normalColor;
             GUI.Label(new Rect(panel.x, panel.y + 6f, panel.width, 26f), who, whoStyle);
 

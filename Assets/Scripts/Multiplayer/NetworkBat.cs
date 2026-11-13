@@ -261,6 +261,7 @@ namespace Ratms.Networking
             if (swingRoutine != null) StopCoroutine(swingRoutine);
             swingRoutine = StartCoroutine(SwingAnim());
 
+            Sfx.Play(hitSomething ? Sfx.Id.Whack : Sfx.Id.Swish);
             if (hitSomething)
             {
                 Fx.Sparks(at, 14, new Color(1f, 0.95f, 0.6f, 1f), 3f, 7f);

@@ -654,6 +654,7 @@ namespace Ratms.Networking
             {
                 rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
                 nextJumpAllowedTime = Time.time + jumpCooldown;
+                Sfx.Play(Sfx.Id.Jump, 0.7f);
                 // "Consumimos" la petición y el coyote para que no se ejecuten
                 // dos saltos seguidos por el mismo input ni por el mismo
                 // contacto de suelo.
@@ -960,7 +961,10 @@ namespace Ratms.Networking
             // APARCADO en cuestas (solo el dueño simula su física).
             if (IsOwner)
             {
-                UpdateParking(CanControl() && Mathf.Abs(inputX) > 0.01f);
+                // Con la cuerda enganchada NUNCA se aparca: anularía la gravedad
+                // y la velocidad, y la rata ni se columpiaría ni podría trepar.
+                bool onRope = rope != null && rope.IsAttached;
+                UpdateParking((CanControl() && Mathf.Abs(inputX) > 0.01f) || onRope);
                 if (parked) return;   // quieta del todo: nada más que hacer este paso
             }
 

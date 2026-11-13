@@ -89,6 +89,8 @@ namespace Ratms.Networking
             if (!IsServer && rb != null)
                 rb.simulated = false;
 
+            Sfx.Play(Sfx.Id.Launch);
+
             // Colisión CONTINUA: el terreno es una línea fina (EdgeCollider2D)
             // y un misil rápido podría saltársela entre dos pasos de física.
             if (IsServer && rb != null)
@@ -282,6 +284,7 @@ namespace Ratms.Networking
                 AudioSource.PlayClipAtPoint(explosionSfx, at, explosionSfxVolume);
 
             Fx.Explosion(at, explosionRadius);
+            Sfx.Play(Sfx.Id.Explosion);
 
             // POPUP DE IMPACTO: SIEMPRE pintamos un "BOOM!" en el punto de la
             // explosión, aunque no haya rata dañada. Así el jugador siempre

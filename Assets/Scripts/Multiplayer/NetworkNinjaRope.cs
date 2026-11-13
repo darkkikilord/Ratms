@@ -55,6 +55,12 @@ namespace Ratms.Networking
 
         public float MaxLength => maxLength;
 
+        public override void OnNetworkSpawn()
+        {
+            // Todos oyen el "fiu" cuando alguien engancha la cuerda.
+            attachedNet.OnValueChanged += (was, now) => { if (now) Sfx.Play(Sfx.Id.Rope); };
+        }
+
         private void Awake()
         {
             weaponsMenu = GetComponentInChildren<WeaponsMenuUI>();

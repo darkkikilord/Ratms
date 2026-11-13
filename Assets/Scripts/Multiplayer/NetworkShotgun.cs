@@ -72,6 +72,7 @@ namespace Ratms.Networking
             if (FirstHit(origin, dir, range, out var hit))
             {
                 end = hit.point;
+                Debug.Log($"[NetworkShotgun] Disparo desde ({origin.x:F2},{origin.y:F2}) dir ({dir.x:F2},{dir.y:F2}) → da en '{hit.collider.name}' a {hit.distance:F2} u");
                 var nh = hit.collider.GetComponentInParent<NetworkHealth>();
                 if (nh != null && !nh.IsDead.Value)
                 {
@@ -130,6 +131,7 @@ namespace Ratms.Networking
             lr.sortingOrder = 300;
             Destroy(go, 0.09f);
 
+            Sfx.Play(Sfx.Id.Shot);
             Fx.Sparks(from, 6, new Color(1f, 0.9f, 0.5f, 1f), 1.5f, 3.5f);   // fogonazo de la boca
             Fx.Sparks(to, hitRat ? 10 : 7, new Color(1f, 0.85f, 0.4f, 1f), 2f, 5f);
             WorldDamagePopup.SpawnImpact(to, hitRat ? "¡PUM!" : "pum", new Color(1f, 0.85f, 0.35f));

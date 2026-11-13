@@ -92,6 +92,7 @@ namespace Ratms.Testing
 
             Log($"Prueba automática iniciada. Salida: {outDir}");
             Log($"Escena: {gameScene} · Bioma: {(forcedBiome?.ToString() ?? "por defecto")} · Resolución: {Screen.width}x{Screen.height}");
+            Log($"Sonidos generados por código: {Sfx.Warmup()}");
         }
 
         private void Start() => StartCoroutine(Run());
@@ -689,12 +690,28 @@ namespace Ratms.Testing
             Log("---- Escopeta ----");
             yield return WaitFreshTurn(nm, rat);
             if (finished) yield break;
-            yield return PlaceOnFlatSpot(rat, 0.4f, 0.6f, "escopeta");
-            float side = rat.FacingRight ? 1f : -1f;
-            var dummy = SpawnDummy((Vector2)rat.transform.position + new Vector2(side * 2.5f, 0.3f));
-            if (dummy == null) yield break;
-            var dh = dummy.GetComponent<NetworkHealth>();
-            yield return new WaitForSeconds(0.9f);
+            // Buscamos un sitio con LÍNEA DE TIRO LIBRE hasta la diana (un bulto
+            // del terreno en medio para el perdigonazo, como en el juego real).
+            NetworkPlayerMovement dummy = null;
+            NetworkHealth dh = null;
+            foreach (var zone in new[] { (0.7f, 0.85f), (0.4f, 0.6f), (0.15f, 0.3f), (0.55f, 0.75f) })
+            {
+                yield return PlaceOnFlatSpot(rat, zone.Item1, zone.Item2, "escopeta");
+                float side = rat.FacingRight ? 1f : -1f;
+                dummy = SpawnDummy((Vector2)rat.transform.position + new Vector2(side * 2.5f, 0.3f));
+                if (dummy == null) yield break;
+                dh = dummy.GetComponent<NetworkHealth>();
+                yield return new WaitForSeconds(0.9f);
+                Vector2 from = rat.GetComponent<NetworkHealth>().BodyCenter;
+                bool clear = true;
+                foreach (var hh in Physics2D.LinecastAll(from, dh.BodyCenter))
+                    if (hh.collider != null && !hh.collider.isTrigger && hh.collider.GetComponentInParent<NetworkHealth>() == null) { clear = false; break; }
+                if (clear) break;
+                Log("Escopeta: terreno en medio, pruebo otro sitio");
+                dummy.GetComponent<NetworkObject>().Despawn(true);
+                dummy = null;
+            }
+            if (dummy == null) { Log("Escopeta: sin línea de tiro libre en ningún sitio, se omite."); yield break; }
 
             var weapons = rat.GetComponentInChildren<WeaponsMenuUI>();
             weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Shotgun;
@@ -703,6 +720,8 @@ namespace Ratms.Testing
             yield return CloseupWithColliders(rat, "18_escopeta_mira", size: 2f, overlay: false);
 
             int h0 = dh.CurrentHealth.Value;
+            Vector2 rb0 = rat.GetComponent<NetworkHealth>().BodyCenter, db0 = dh.BodyCenter;
+            Log($"Escopeta: rata en ({rb0.x:0.00},{rb0.y:0.00}) mirando {(rat.FacingRight ? "dcha" : "izq")}, arma ({rat.WeaponForward.x:0.00},{rat.WeaponForward.y:0.00}) · diana en ({db0.x:0.00},{db0.y:0.00})");
             rat.TestPressFire();
             yield return new WaitForSeconds(0.45f);
             int h1 = dh.CurrentHealth.Value;
@@ -727,7 +746,7 @@ namespace Ratms.Testing
             Log("---- Teletransporte ----");
             yield return WaitFreshTurn(nm, rat);
             if (finished) yield break;
-            yield return PlaceOnFlatSpot(rat, 0.2f, 0.35f, "teletransporte");
+            yield return PlaceOnFlatSpot(rat, 0.15f, 0.28f, "teletransporte");
             var tp = rat.GetComponent<NetworkTeleport>();
             var gen = FindFirstObjectByType<TerrainGenerator>();
             var terrain = gen != null ? gen.GetComponent<DestructibleTerrain>() : null;
@@ -738,9 +757,16 @@ namespace Ratms.Testing
             var health = rat.GetComponent<NetworkHealth>();
             Vector2 start = health.BodyCenter;
 
-            // 1) Dentro de la tierra → no debe moverse
-            var below = gen.GetSurfaceWorldPos(start.x + 3f);
-            tp.TestTarget = below.HasValue ? new Vector2(below.Value.x, below.Value.y - 1.5f) : start + Vector2.down * 3f;
+            // 1) Dentro de la tierra → no debe moverse. Buscamos bajo la rata un
+            //    punto rodeado de tierra MACIZA de verdad (no un hueco de un cráter).
+            Vector2 solidTarget = start + Vector2.down * 3f;
+            for (float y = start.y - 1f; y > terrain.transform.position.y + 3f; y -= 0.25f)
+            {
+                var p = new Vector2(start.x, y);
+                if (DestructibleTerrain.IsSolidAtWorld(p) && DestructibleTerrain.IsSolidAtWorld(p + Vector2.up * 0.3f) &&
+                    DestructibleTerrain.IsSolidAtWorld(p + Vector2.down * 0.3f)) { solidTarget = p; break; }
+            }
+            tp.TestTarget = solidTarget;
             yield return null;
             rat.TestPressFire();
             yield return new WaitForSeconds(0.4f);
@@ -748,11 +774,11 @@ namespace Ratms.Testing
             Log($"Teletransporte dentro de la tierra → {(stayed ? "rechazado ✓" : "⚠ se movió")}");
             if (!stayed) Problem("Teletransporte: dejó aparecer dentro de la tierra");
 
-            // 2) A una zona llana lejos → debe aparecer allí
-            float x0 = terrain.transform.position.x + terrain.WorldSize.x * 0.65f;
-            var s = gen.GetSurfaceWorldPos(x0, 40);
-            if (!s.HasValue) { Log("Teletransporte: no encontré destino, se omite."); yield break; }
-            Vector2 target = new Vector2(s.Value.x, s.Value.y + 0.45f);
+            // 2) A otra zona (a ~10 u) → debe aparecer allí, sobre el suelo REAL actual
+            float x0 = start.x + (start.x < terrain.transform.position.x + terrain.WorldSize.x * 0.5f ? 10f : -10f);
+            float? sy = CurrentSurfaceY(gen, x0);
+            if (!sy.HasValue) { Log("Teletransporte: no encontré destino, se omite."); yield break; }
+            Vector2 target = new Vector2(x0, sy.Value + 0.45f);
             tp.TestTarget = target;
             yield return new WaitForSeconds(0.2f);
             yield return Capture("20_teletransporte_antes");
@@ -773,25 +799,52 @@ namespace Ratms.Testing
             Log("---- Cuerda ninja ----");
             yield return WaitFreshTurn(nm, rat);
             if (finished) yield break;
-            yield return PlaceOnFlatSpot(rat, 0.35f, 0.65f, "cuerda");
             var rope = rat.GetComponent<NetworkNinjaRope>();
             if (rope == null) { Problem("Cuerda: falta componente"); yield break; }
             var weapons = rat.GetComponentInChildren<WeaponsMenuUI>();
             weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Rope;
             var health = rat.GetComponent<NetworkHealth>();
 
-            // Buscamos una dirección (de 85° a 20°, a cada lado) en la que haya
-            // terreno a menos de la longitud máxima.
+            // Buscamos un sitio desde el que haya terreno ALTO a tiro (45°-85°):
+            // con un enganche bajo la rata se queda apoyada y no puede columpiarse.
             float bestAngle = float.NaN, bestSide = 1f;
-            foreach (float sd in new[] { 1f, -1f })
-                for (float a = 85f; a >= 20f && float.IsNaN(bestAngle); a -= 5f)
-                {
-                    Vector2 d = new Vector2(Mathf.Cos(a * Mathf.Deg2Rad) * sd, Mathf.Sin(a * Mathf.Deg2Rad));
-                    foreach (var hh in Physics2D.RaycastAll(health.BodyCenter, d, rope.MaxLength * 0.95f))
-                        if (hh.collider != null && hh.collider.GetComponentInParent<NetworkHealth>() == null && !hh.collider.isTrigger)
-                        { bestAngle = a; bestSide = sd; break; }
-                }
-            if (float.IsNaN(bestAngle)) { Log("Cuerda: no hay terreno a tiro desde aquí, se omite."); yield break; }
+            foreach (var zone in new[] { (0.35f, 0.65f), (0.1f, 0.3f), (0.7f, 0.9f), (0.3f, 0.7f) })
+            {
+                yield return PlaceOnFlatSpot(rat, zone.Item1, zone.Item2, "cuerda");
+                foreach (float sd in new[] { 1f, -1f })
+                    for (float a = 85f; a >= 45f && float.IsNaN(bestAngle); a -= 5f)
+                    {
+                        Vector2 d = new Vector2(Mathf.Cos(a * Mathf.Deg2Rad) * sd, Mathf.Sin(a * Mathf.Deg2Rad));
+                        foreach (var hh in Physics2D.RaycastAll(health.BodyCenter, d, rope.MaxLength * 0.95f))
+                            if (hh.collider != null && hh.collider.GetComponentInParent<NetworkHealth>() == null && !hh.collider.isTrigger &&
+                                hh.distance > 2f)
+                            { bestAngle = a; bestSide = sd; break; }
+                    }
+                if (!float.IsNaN(bestAngle)) break;
+            }
+            if (float.IsNaN(bestAngle))
+            {
+                // Mapa sin techos a tiro: fabricamos una CUEVA con una explosión
+                // enterrada y metemos la rata dentro, colgándose del techo.
+                var gen = FindFirstObjectByType<TerrainGenerator>();
+                var terr = gen != null ? gen.GetComponent<DestructibleTerrain>() : null;
+                if (gen == null || terr == null || NetworkDestructibleTerrain.Instance == null) { Log("Cuerda: no se puede montar la cueva, se omite."); yield break; }
+                float cx = terr.transform.position.x + terr.WorldSize.x * 0.5f;
+                float? top = CurrentSurfaceY(gen, cx);
+                if (top == null) yield break;
+                Vector2 caveCenter = new Vector2(cx, top.Value - 3.2f);
+                NetworkDestructibleTerrain.Instance.ServerCarveAt(caveCenter, 2.6f);
+                yield return new WaitForSeconds(0.4f);
+                var rrb = rat.GetComponent<Rigidbody2D>();
+                Vector2 feetToPivot = (Vector2)rat.transform.position - health.BodyCenter;
+                rrb.position = caveCenter + Vector2.down * 0.6f + feetToPivot;
+                rrb.linearVelocity = Vector2.zero;
+                yield return new WaitForFixedUpdate();
+                rat.TestResetFallTracking();
+                yield return new WaitForSeconds(0.8f);
+                bestAngle = 80f; bestSide = rat.FacingRight ? 1f : -1f;
+                Log("Cuerda: no había techos a tiro → cueva fabricada para la prueba");
+            }
 
             // Mirar hacia ese lado y apuntar
             if (rat.FacingRight != (bestSide > 0f))
@@ -810,6 +863,11 @@ namespace Ratms.Testing
 
             Vector2 anchor = rope.Anchor;
             float len0 = rope.Length;
+            // Primero TREPAR (para despegarse del suelo), como haría un jugador
+            rat.TestRopeClimb = 1f;
+            yield return new WaitForSeconds(0.8f);
+            rat.TestRopeClimb = null;
+            float len1 = rope.Length;
             // Balanceo: A/D alternando
             float minX = float.MaxValue, maxX = float.MinValue, t = 0f;
             while (t < 2.4f && !finished && rope.IsAttached)
@@ -822,11 +880,6 @@ namespace Ratms.Testing
             }
             rat.TestInputX = 0f;
             yield return Capture("23_cuerda_balanceo");
-            // Trepar
-            rat.TestRopeClimb = 1f;
-            yield return new WaitForSeconds(0.5f);
-            rat.TestRopeClimb = null;
-            float len1 = rope.Length;
             // Soltar
             rat.TestPressFire();
             yield return new WaitForSeconds(0.2f);
@@ -1260,29 +1313,48 @@ namespace Ratms.Testing
             float bestX = float.NaN, bestScore = float.MaxValue;
             for (float x = x0 + w * fromFrac; x < x0 + w * toFrac; x += 0.25f)
             {
-                var c = gen.GetSurfaceWorldPos(x);
+                float? c = CurrentSurfaceY(gen, x);
                 if (c == null) continue;
                 float score = 0f;
                 bool valid = true;
                 for (float dx = -2f; dx <= 2f; dx += 0.5f)
                 {
-                    var s = gen.GetSurfaceWorldPos(x + dx);
+                    float? s = CurrentSurfaceY(gen, x + dx);
                     if (s == null) { valid = false; break; }
-                    score += Mathf.Abs(s.Value.y - c.Value.y);
+                    score += Mathf.Abs(s.Value - c.Value);
                 }
                 if (valid && score < bestScore) { bestScore = score; bestX = x; }
             }
             if (float.IsNaN(bestX)) yield break;
 
-            var surf = gen.GetSurfaceWorldPos(bestX).Value;
+            float surfY = CurrentSurfaceY(gen, bestX).Value;
             var rb = rat.GetComponent<Rigidbody2D>();
-            rb.position = new Vector2(surf.x, surf.y + 1.0f);
+            // Colocamos los PIES (fondo del collider) 0.1 u por encima del suelo real.
+            var col = rat.GetComponent<Collider2D>();
+            var box = rat.GetComponent<BoxCollider2D>();
+            float feetOffset = (col.bounds.min.y - (box != null ? box.edgeRadius : 0f)) - rat.transform.position.y;
+            rb.position = new Vector2(bestX, surfY + 0.1f - feetOffset);
             rb.linearVelocity = Vector2.zero;
             yield return new WaitForFixedUpdate();
             rat.TestResetFallTracking();
             yield return new WaitForSeconds(0.3f);
             yield return Settle(rb);
             Log($"({label}: rata colocada en zona llana x={bestX:0.0}, irregularidad {bestScore:0.00})");
+        }
+
+        /// <summary>
+        ///  Altura REAL del suelo ahora mismo en la X dada (mirando los píxeles,
+        ///  así cuenta los cráteres que ya se han hecho). Empieza 1.5 u por
+        ///  encima de la superficie original (por debajo de las islas) y baja.
+        /// </summary>
+        private static float? CurrentSurfaceY(TerrainGenerator gen, float x)
+        {
+            var orig = gen.GetSurfaceWorldPos(x);
+            if (orig == null) return null;
+            float step = 1f / 32f;
+            for (float y = orig.Value.y + 1.5f; y > orig.Value.y - 8f; y -= step)
+                if (DestructibleTerrain.IsSolidAtWorld(new Vector2(x, y))) return y;
+            return null;
         }
 
         /// <summary>Espera a que la rata esté quieta (o 2 s como mucho).</summary>

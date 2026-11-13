@@ -109,6 +109,7 @@ namespace Ratms.Networking
         {
             if (rootPanel == null) return;
             rootPanel.SetActive(true);
+            Sfx.Play(Sfx.Id.Victory, 1f, 0f);
 
             ulong winnerId = cachedTurnManager.WinnerClientId.Value;
             bool isDraw = winnerId == ulong.MaxValue;

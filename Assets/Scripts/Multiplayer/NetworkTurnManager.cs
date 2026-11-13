@@ -144,6 +144,9 @@ namespace Ratms.Networking
             if (FindFirstObjectByType<TurnHUD>() == null)
                 gameObject.AddComponent<TurnHUD>();
 
+            // Genera los sonidos ya (si no, el primero de cada tipo da un tirón).
+            Sfx.Warmup();
+
             if (IsServer)
             {
                 // Al arrancar el servidor, suscribirse a conexiones/desconexiones

@@ -218,7 +218,7 @@ namespace Ratms.Networking
             DamageType type = (DamageType)typeByte;
             lastDamageType = type;
             WorldDamagePopup.Spawn(hitPoint, amount, type);
-            if (type == DamageType.Water) Fx.Splash(hitPoint);
+            if (type == DamageType.Water) { Fx.Splash(hitPoint); Sfx.Play(Sfx.Id.Splash); }
         }
 
         // Último tipo de daño recibido (en cada cliente): para saber si la
@@ -233,6 +233,7 @@ namespace Ratms.Networking
             if (!newValue) return;
             // Lápida donde ha caído (muy Worms). En el agua no: ya hay salpicadura.
             if (lastDamageType != DamageType.Water) Fx.Gravestone(BodyCenter);
+            Sfx.Play(Sfx.Id.Squeak, 0.8f);
             ApplyDeathVisual();
         }
 

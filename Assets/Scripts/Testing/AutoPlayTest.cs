@@ -78,6 +78,8 @@ namespace Ratms.Testing
         {
             // Capturamos TODO lo que pase por la consola desde el primer momento
             Application.logMessageReceived += OnLog;
+            // Con dos ventanas, la que no tiene el foco no debe pausarse.
+            Application.runInBackground = true;
 
             outDir = GetArg("-autoTestOut") ??
                      Path.Combine(Application.persistentDataPath, "AutoTest", DateTime.Now.ToString("yyyyMMdd_HHmmss"));
@@ -138,6 +140,11 @@ namespace Ratms.Testing
         // =========================================================
         private IEnumerator Run()
         {
+            // Partida de DOS jugadores reales (dos copias del juego en el mismo PC).
+            string role = GetArg("-autoTestRole");
+            if (role == "host") { yield return RunHostMulti(); yield break; }
+            if (role == "client") { yield return RunClientMulti(); yield break; }
+
             // --- 1) Menú principal ---------------------------------
             yield return new WaitForSeconds(2.5f);
             yield return Capture("01_menu");
@@ -263,6 +270,211 @@ namespace Ratms.Testing
             yield return CountdownTest(nm);
 
             Finish(null);
+        }
+
+        // =========================================================
+        // MULTIJUGADOR REAL: HOST + CLIENTE (dos ejecutables)
+        // =========================================================
+        private IEnumerator RunHostMulti()
+        {
+            Log("Papel: HOST (partida de 2 jugadores)");
+            yield return new WaitForSeconds(2f);
+            NetworkManager nm = null;
+            yield return WaitFor(() => (nm = NetworkManager.Singleton) != null, 10f, "NetworkManager");
+            if (finished) yield break;
+            var menu = FindFirstObjectByType<MultiplayerMenuController>();
+            if (menu != null) menu.HideAllPanels();
+            var utp = nm.GetComponent<UnityTransport>();
+            if (utp != null) utp.SetConnectionData("127.0.0.1", 7777, "127.0.0.1");
+            if (!nm.StartHost()) { Finish("No se pudo arrancar el host"); yield break; }
+            Log("Host arrancado, esperando al cliente...");
+            yield return WaitFor(() => nm.ConnectedClientsIds.Count >= 2, 60f, "que se conecte el cliente");
+            if (finished) yield break;
+            Log($"Cliente conectado ({nm.ConnectedClientsIds.Count} jugadores). Cargando escena...");
+            yield return new WaitForSeconds(1f);
+            nm.SceneManager.LoadScene(gameScene, LoadSceneMode.Single);
+
+            yield return WaitFor(() => FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Count(m => m.IsSpawned) >= 2,
+                                 30f, "que aparezcan las dos ratas");
+            if (finished) yield break;
+            StartCoroutine(TurnWatcher());
+            yield return new WaitForSeconds(1.5f);
+            var mine = FindLocalRat();
+            var other = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).FirstOrDefault(m => !m.IsOwner);
+            if (mine != null && other != null)
+            {
+                float sep = Vector2.Distance(mine.transform.position, other.transform.position);
+                Log($"Separación entre ratas al aparecer: {sep:0.0} u {(sep >= 10f ? "✓" : "⚠ muy juntas")}");
+            }
+            yield return Capture("M01_host_partida");
+
+            int myTurns = 0;
+            while (!finished)
+            {
+                yield return WaitFor(() => IsMyTurn(nm) || GameOver(), 90f, "mi turno (host)", fatal: false);
+                if (GameOver() || finished) break;
+                mine = FindLocalRat();
+                other = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).FirstOrDefault(m => !m.IsOwner);
+                if (mine == null) break;
+                var weapons = mine.GetComponentInChildren<WeaponsMenuUI>();
+
+                if (myTurns == 0 && other != null)
+                {
+                    // Bazooka hacia el cliente
+                    yield return FaceTowards(mine, other.transform.position.x);
+                    weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Bazooka;
+                    mine.TestSetAim(45f);
+                    yield return new WaitForSeconds(0.3f);
+                    mine.TestPressFire();
+                    yield return new WaitForSeconds(1.0f);
+                    mine.TestReleaseFire();
+                    Log("Host: bazooka disparado hacia el cliente");
+                    yield return new WaitForSeconds(0.5f);
+                    yield return Capture("M02_host_bazooka");
+                }
+                else if (myTurns == 1 && other != null)
+                {
+                    // Escopeta hacia el cliente (si está a tiro)
+                    yield return FaceTowards(mine, other.transform.position.x);
+                    weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Shotgun;
+                    AimAt(mine, other.GetComponent<NetworkHealth>().BodyCenter);
+                    yield return new WaitForSeconds(0.3f);
+                    mine.TestPressFire();
+                    yield return new WaitForSeconds(0.5f);
+                    mine.TestPressFire();
+                    Log("Host: dos tiros de escopeta");
+                }
+                else Log("Host: paso el turno sin hacer nada");
+                myTurns++;
+                yield return WaitFor(() => !IsMyTurn(nm) || GameOver(), 45f, "que acabe mi turno (host)", fatal: false);
+            }
+
+            yield return WaitFor(GameOver, 20f, "fin de la partida", fatal: false);
+            var tm = NetworkTurnManager.Instance;
+            bool won = tm != null && tm.GameEnded.Value && tm.WinnerClientId.Value == nm.LocalClientId;
+            Log($"Fin de partida: {(tm != null && tm.GameEnded.Value ? "terminada" : "⚠ NO terminó")} · ganador = {(tm != null ? tm.WinnerClientId.Value.ToString() : "?")} · " +
+                $"{(won ? "gana el HOST al irse el cliente ✓" : "⚠ el host no gana")}");
+            if (!won) Problem("Multijugador: el host no ganó al desconectarse el cliente");
+            yield return new WaitForSeconds(1f);
+            yield return Capture("M09_host_victoria");
+            Finish(null);
+        }
+
+        private IEnumerator RunClientMulti()
+        {
+            Log("Papel: CLIENTE (partida de 2 jugadores)");
+            yield return new WaitForSeconds(3f);
+            NetworkManager nm = null;
+            yield return WaitFor(() => (nm = NetworkManager.Singleton) != null, 10f, "NetworkManager");
+            if (finished) yield break;
+            var menu = FindFirstObjectByType<MultiplayerMenuController>();
+            if (menu != null) menu.HideAllPanels();
+            var utp = nm.GetComponent<UnityTransport>();
+            if (utp != null) utp.SetConnectionData("127.0.0.1", 7777);
+
+            bool connected = false;
+            for (int attempt = 0; attempt < 10 && !connected && !finished; attempt++)
+            {
+                nm.StartClient();
+                float t = 0f;
+                while (t < 5f && !nm.IsConnectedClient) { t += Time.deltaTime; yield return null; }
+                connected = nm.IsConnectedClient;
+                if (!connected) { nm.Shutdown(); yield return new WaitForSeconds(1f); }
+            }
+            if (!connected) { Finish("El cliente no pudo conectarse al host"); yield break; }
+            Log("Cliente conectado al host ✓");
+
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == gameScene && FindLocalRat() != null, 40f, "entrar en la partida");
+            if (finished) yield break;
+            StartCoroutine(TurnWatcher());
+            StartCoroutine(ClientWatcher());
+            yield return new WaitForSeconds(1.5f);
+            yield return Capture("C01_cliente_partida");
+
+            int myTurns = 0;
+            while (!finished)
+            {
+                yield return WaitFor(() => IsMyTurn(nm) || GameOver(), 90f, "mi turno (cliente)", fatal: false);
+                if (GameOver() || finished) break;
+                var mine = FindLocalRat();
+                if (mine == null) { Log("Cliente: mi rata ha muerto"); break; }
+
+                if (myTurns == 0)
+                {
+                    var weapons = mine.GetComponentInChildren<WeaponsMenuUI>();
+                    weapons.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Dynamite;
+                    yield return new WaitForSeconds(0.4f);
+                    mine.TestPressFire();
+                    yield return new WaitForSeconds(0.6f);
+                    var dyn = FindObjectsByType<NetworkGrenade>(FindObjectsSortMode.None).FirstOrDefault(g => g.IsDynamite.Value);
+                    bool visual = dyn != null && dyn.transform.Find("DynamiteVisual") != null;
+                    Log($"Cliente: suelto dinamita → la veo {(dyn == null ? "⚠ NO existe" : visual ? "COMO DINAMITA ✓" : "⚠ sin dibujo de dinamita")}");
+                    if (!visual) Problem("Multijugador: el cliente no ve la dinamita como dinamita");
+                    yield return Capture("C02_cliente_dinamita");
+                    // Huir
+                    float side = mine.FacingRight ? -1f : 1f;
+                    mine.TestInputX = side;
+                    for (float t = 0f; t < 2.5f; t += 0.5f) { mine.TestPressJump(); mine.TestJumpHeld = true; yield return new WaitForSeconds(0.5f); }
+                    mine.TestInputX = 0f; mine.TestJumpHeld = false;
+                }
+                else
+                {
+                    Log("Cliente: me desconecto A PROPÓSITO (el host debería ganar)");
+                    yield return Capture("C03_cliente_antes_de_irse");
+                    nm.Shutdown();
+                    yield return new WaitForSeconds(0.5f);
+                    Finish(null);
+                    yield break;
+                }
+                myTurns++;
+                yield return WaitFor(() => !IsMyTurn(nm) || GameOver(), 45f, "que acabe mi turno (cliente)", fatal: false);
+            }
+            Finish(null);
+        }
+
+        /// <summary>Apunta cada cambio de turno con su viento (para comparar host y cliente).</summary>
+        private IEnumerator TurnWatcher()
+        {
+            ulong last = ulong.MaxValue - 1;
+            int n = 0;
+            while (!finished)
+            {
+                var tm = NetworkTurnManager.Instance;
+                if (tm != null && tm.CurrentTurnClientId.Value != last && tm.CurrentTurnClientId.Value != ulong.MaxValue)
+                {
+                    last = tm.CurrentTurnClientId.Value;
+                    n++;
+                    Log($"[turno {n}] le toca al cliente {last} · viento {tm.Wind.Value:+0.0;-0.0;0}");
+                }
+                yield return null;
+            }
+        }
+
+        /// <summary>Cliente: ¿ve lo que hace el host?</summary>
+        private IEnumerator ClientWatcher()
+        {
+            bool sawMissile = false;
+            while (!finished && !sawMissile)
+            {
+                if (FindFirstObjectByType<NetworkMissile>() != null) { sawMissile = true; Log("Cliente: veo el misil del host volando ✓"); }
+                yield return null;
+            }
+        }
+
+        private static bool IsMyTurn(NetworkManager nm) =>
+            NetworkTurnManager.Instance != null && NetworkTurnManager.Instance.IsTurnOf(nm.LocalClientId);
+
+        private static bool GameOver() => NetworkTurnManager.Instance != null && NetworkTurnManager.Instance.GameEnded.Value;
+
+        private static IEnumerator FaceTowards(NetworkPlayerMovement rat, float targetX)
+        {
+            bool wantRight = targetX > rat.transform.position.x;
+            if (rat.FacingRight == wantRight) yield break;
+            rat.TestInputX = wantRight ? 1f : -1f;
+            yield return new WaitForSeconds(0.08f);
+            rat.TestInputX = 0f;
+            yield return new WaitForSeconds(0.15f);
+            rat.TestInputX = null;
         }
 
         // =========================================================

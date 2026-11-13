@@ -196,7 +196,7 @@ namespace Ratms.Networking
             }
 
             var tm = NetworkTurnManager.Instance;
-            bool myTurn = (tm == null) || tm.IsTurnOf(OwnerClientId);
+            bool myTurn = (tm == null) || tm.IsActiveRat(NetworkObjectId);
             if (!myTurn)
             {
                 trajectoryDots.Hide();
@@ -302,7 +302,7 @@ namespace Ratms.Networking
             if (!IsServer || grenadePrefab == null) return;
 
             var tm = NetworkTurnManager.Instance;
-            if (tm != null && !tm.IsTurnOf(rpcParams.Receive.SenderClientId))
+            if (tm != null && !tm.CanAct(rpcParams.Receive.SenderClientId, NetworkObjectId))
                 return;
 
             GameObject go = Instantiate(grenadePrefab, pos, Quaternion.identity);
@@ -331,7 +331,7 @@ namespace Ratms.Networking
 
             // Valida turno
             var tm = NetworkTurnManager.Instance;
-            if (tm != null && !tm.IsTurnOf(rpcParams.Receive.SenderClientId))
+            if (tm != null && !tm.CanAct(rpcParams.Receive.SenderClientId, NetworkObjectId))
                 return;
 
             float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;

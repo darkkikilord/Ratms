@@ -105,9 +105,23 @@ namespace Ratms.Networking
             }
         }
 
+        private NetworkPlayerMovement ownerRat;
+
+        /// <summary>
+        ///  Solo atiende teclas/dibuja la rata DEL TURNO: con equipos el
+        ///  jugador tiene varias ratas y si no todas abrirían el menú a la vez.
+        /// </summary>
+        private bool IsMyActiveRat()
+        {
+            if (!IsOwner) return false;
+            if (ownerRat == null) ownerRat = GetComponentInParent<NetworkPlayerMovement>();
+            if (ownerRat == null || NetworkTurnManager.Instance == null) return true;
+            return ownerRat.IsActiveTurnRat;
+        }
+
         private void Update()
         {
-            if (!IsOwner) return;
+            if (!IsMyActiveRat()) { visible = false; return; }
 
             if (Input.GetKeyDown(toggleKey))
                 visible = !visible;
@@ -122,7 +136,7 @@ namespace Ratms.Networking
 
         private void OnGUI()
         {
-            if (!IsOwner || !visible) return;
+            if (!visible || !IsMyActiveRat()) return;
 
             float x = panelOffset.x;
             float y = Screen.height - panelSize.y - panelOffset.y;

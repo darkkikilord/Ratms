@@ -126,7 +126,7 @@ namespace Ratms.Networking
             // Solo enseñamos la trayectoria cuando es TU turno (si no, hay
             // que esperar — no tiene sentido apuntar fuera de turno).
             var tm = NetworkTurnManager.Instance;
-            bool myTurn = (tm == null) || tm.IsTurnOf(OwnerClientId);
+            bool myTurn = (tm == null) || tm.IsActiveRat(NetworkObjectId);
             if (!myTurn)
             {
                 trajectoryDots.Hide();
@@ -217,7 +217,7 @@ namespace Ratms.Networking
 
             // Solo permitimos disparar si es el turno del cliente que lo pide
             var tm = NetworkTurnManager.Instance;
-            if (tm != null && !tm.IsTurnOf(rpcParams.Receive.SenderClientId))
+            if (tm != null && !tm.CanAct(rpcParams.Receive.SenderClientId, NetworkObjectId))
                 return;
 
             // Instanciamos el misil en la posición indicada

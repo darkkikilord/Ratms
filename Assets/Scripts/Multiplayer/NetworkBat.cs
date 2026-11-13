@@ -125,7 +125,7 @@ namespace Ratms.Networking
         private void UpdateAimIndicator()
         {
             bool show = showAimIndicator && IsOwner && IsBatEquipped && movement != null && !movement.FiredThisTurn
-                        && (NetworkTurnManager.Instance == null || NetworkTurnManager.Instance.IsTurnOf(OwnerClientId));
+                        && (NetworkTurnManager.Instance == null || NetworkTurnManager.Instance.IsActiveRat(NetworkObjectId));
             if (aimRing == null)
             {
                 if (!show) return;
@@ -221,7 +221,7 @@ namespace Ratms.Networking
         private void SwingServerRpc(Vector2 dir, ServerRpcParams rpcParams = default)
         {
             var tm = NetworkTurnManager.Instance;
-            if (tm != null && !tm.IsTurnOf(rpcParams.Receive.SenderClientId)) return;
+            if (tm != null && !tm.CanAct(rpcParams.Receive.SenderClientId, NetworkObjectId)) return;
 
             // Desde el CUERPO de la rata (el pivote del prefab está bajo el suelo).
             Vector2 origin = ownHealth != null ? ownHealth.BodyCenter : (Vector2)transform.position;

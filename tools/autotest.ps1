@@ -6,10 +6,11 @@
      PNG y escribe informe.txt (ver Assets/Scripts/Testing/AutoPlayTest.cs).
   3) Muestra el informe.
 
-  Uso (desde la raíz del repo, con Unity CERRADO):
+  Uso (desde la raíz del repo; si Unity tiene el proyecto abierto, compila desde una copia):
     powershell -ExecutionPolicy Bypass -File tools\autotest.ps1
     powershell -ExecutionPolicy Bypass -File tools\autotest.ps1 -SkipBuild
     powershell -ExecutionPolicy Bypass -File tools\autotest.ps1 -Biome Sewer
+    powershell -ExecutionPolicy Bypass -File tools\autotest.ps1 -Role local     (partida local por equipos)
 
   Todo se guarda en AutoTest\ (ignorado por git):
     AutoTest\Build\Ratms.exe        la build
@@ -20,6 +21,7 @@
 param(
     [switch]$SkipBuild,
     [string]$Biome = "",
+    [string]$Role = "",
     [string]$UnityExe = "B:\Juegos\6000.0.50f1\Editor\Unity.exe",
     [int]$TimeoutSeconds = 320
 )
@@ -32,19 +34,29 @@ New-Item -ItemType Directory -Force $autoDir | Out-Null
 
 # --- 1) Build -------------------------------------------------------------
 if (-not $SkipBuild) {
+    # Si Unity tiene el proyecto abierto no se puede compilar encima: se
+    # compila desde una COPIA (Assets/Packages/ProjectSettings) en %TEMP%.
+    # La primera vez tarda más (importa todo); después reutiliza su Library.
+    $projectToBuild = $repo
     if (Get-Process Unity -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*Ratms*" }) {
-        Write-Error "Unity tiene Ratms abierto. Ciérralo antes de compilar en modo batch."
+        $projectToBuild = Join-Path $env:LOCALAPPDATA "Temp\claude\ratms_build"
+        Write-Host ">>> Unity tiene Ratms abierto: compilo desde una copia en $projectToBuild"
+        New-Item -ItemType Directory -Force $projectToBuild | Out-Null
+        foreach ($d in "Assets", "Packages", "ProjectSettings") {
+            robocopy (Join-Path $repo $d) (Join-Path $projectToBuild $d) /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+        }
     }
     $buildLog = Join-Path $autoDir "build.log"
     Write-Host ">>> Compilando build (puede tardar unos minutos)..."
     $p = Start-Process -FilePath $UnityExe -NoNewWindow -Wait -PassThru -ArgumentList @(
         "-batchmode", "-quit",
-        "-projectPath", "`"$repo`"",
+        "-projectPath", "`"$projectToBuild`"",
         "-executeMethod", "AutoTestBuild.BuildWindows",
         "-autoTestBuildPath", "`"$buildExe`"",
         "-logFile", "`"$buildLog`""
     )
-    $csErrors = Select-String -Path $buildLog -Pattern "error CS\d+" | ForEach-Object { $_.Line.Trim() } | Select-Object -Unique
+    # (Los errores de Library/PackageCache al importar por primera vez son del paquete, no nuestros.)
+    $csErrors = Select-String -Path $buildLog -Pattern "error CS\d+" | Where-Object { $_.Line -notmatch "PackageCache" } | ForEach-Object { $_.Line.Trim() } | Select-Object -Unique
     if ($p.ExitCode -ne 0 -or $csErrors) {
         Write-Host "!!! La build FALLÓ (exit $($p.ExitCode)). Errores:"
         $csErrors | ForEach-Object { Write-Host "    $_" }
@@ -67,6 +79,7 @@ $gameArgs = @(
     "-logFile", "`"$(Join-Path $runDir 'player.log')`""
 )
 if ($Biome) { $gameArgs += @("-autoTestBiome", $Biome) }
+if ($Role)  { $gameArgs += @("-autoTestRole", $Role) }   # local, practice (host/client: usa autotest-multi.ps1)
 
 Write-Host ">>> Ejecutando prueba automática..."
 $game = Start-Process -FilePath $buildExe -ArgumentList $gameArgs -PassThru

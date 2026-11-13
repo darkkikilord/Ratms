@@ -1,135 +1,126 @@
 using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 
 namespace Ratms.Networking
 {
     /// <summary>
-    ///  Gestor de turnos en MULTIJUGADOR.
+    ///  Gestor de turnos POR EQUIPOS (multijugador y partida local).
     ///
     ///  Cómo funciona:
-    ///   • Es un NetworkBehaviour que vive en una única instancia en la escena
-    ///     (ponlo en un GameObject vacío llamado "NetworkTurnManager" en la escena
-    ///     de juego, con un NetworkObject encima).
-    ///   • SOLO el servidor (el host) decide de quién es el turno y cuánto queda.
-    ///   • Los clientes leen ese estado vía NetworkVariables y reaccionan
-    ///     (habilitar/deshabilitar su input).
-    ///
-    ///  Flujo:
-    ///   1. Al arrancar (servidor), mete los clientes conectados en una cola y
-    ///      arranca el primer turno.
-    ///   2. Cada frame el servidor decrementa el tiempo restante. Cuando llega a 0,
-    ///      pasa al siguiente jugador (round-robin).
-    ///   3. Cuando un jugador "termina su turno" explícitamente (por ejemplo al
-    ///      disparar), llama a <see cref="EndTurnServerRpc"/>.
+    ///   • Es un NetworkBehaviour único en la escena de juego. SOLO el
+    ///     servidor (el host) decide de quién es el turno y cuánto queda; los
+    ///     clientes leen el estado vía NetworkVariables.
+    ///   • Cada rata tiene un EQUIPO (<see cref="NetworkPlayerMovement.TeamIndex"/>).
+    ///     Online hay un equipo por jugador; en partida local todos los
+    ///     equipos son del host y se pasan el teclado.
+    ///   • Los turnos van alternando EQUIPOS, y dentro de cada equipo la rata
+    ///     ROTA SOLA (como en Worms): cada vez le toca a la siguiente viva.
+    ///   • Un equipo queda eliminado cuando no le quedan ratas vivas (o su
+    ///     jugador se desconecta). Si queda uno → gana. Si no queda ninguno → empate.
+    ///   • MUERTE SÚBITA: pasados <see cref="MatchRules.SuddenDeathMinutes"/>
+    ///     el agua sube un poco al acabar cada turno.
     /// </summary>
     [RequireComponent(typeof(NetworkObject))]
     public class NetworkTurnManager : NetworkBehaviour
     {
-        // =========================================================
-        // Singleton para acceso fácil desde otros scripts
-        // =========================================================
         public static NetworkTurnManager Instance { get; private set; }
 
         // =========================================================
         // Config (visible en Inspector)
         // =========================================================
         [Header("Turnos")]
-        [Tooltip("Segundos que dura cada turno (como en Worms).")]
+        [Tooltip("Segundos de cada turno si no hay regla de partida (normalmente manda MatchRules.TurnSeconds).")]
         [SerializeField] private float turnDuration = 30f;
 
         [Tooltip("Pequeño retardo entre un turno que acaba y el siguiente que empieza.")]
         [SerializeField] private float transitionDelay = 1.5f;
 
         [Header("Viento")]
-        [Tooltip("Si está OFF, nunca hay viento (Wind siempre 0).")]
         [SerializeField] private bool windEnabled = true;
-
-        [Tooltip("Probabilidad (0-1) de que un turno salga SIN viento (calma).")]
         [Range(0f, 1f)] [SerializeField] private float calmChance = 0.15f;
-
-        [Tooltip("Aceleración horizontal (u/s²) que sufre un proyectil con windFactor=1 cuando el viento está al MÁXIMO (Wind = ±1). " +
-                 "Referencia: la gravedad es 9.81. Con 3.5 un misil a media potencia se desvía unas 2-4 unidades.")]
+        [Tooltip("Aceleración horizontal (u/s²) con viento al MÁXIMO (Wind = ±1) para un proyectil con windFactor=1.")]
         [SerializeField] private float maxWindAcceleration = 3.5f;
 
-        /// <summary>Aceleración del viento al máximo (u/s²). La leen los proyectiles.</summary>
         public float MaxWindAcceleration => maxWindAcceleration;
 
         /// <summary>Segundos totales de cada turno (para la barra del HUD).</summary>
-        public float TurnDuration => turnDuration;
+        public float TurnDuration => TurnSecondsNet.Value > 0 ? TurnSecondsNet.Value : turnDuration;
 
         // =========================================================
         // Estado sincronizado
         // =========================================================
-        /// <summary>
-        ///  ID del cliente que tiene el turno ahora mismo.
-        ///  ulong.MaxValue significa "todavía no hay turno" (pre-partida o transición).
-        /// </summary>
-        public readonly NetworkVariable<ulong> CurrentTurnClientId = new(
-            value: ulong.MaxValue,
-            readPerm: NetworkVariableReadPermission.Everyone,
-            writePerm: NetworkVariableWritePermission.Server);
+        /// <summary>Jugador (cliente) dueño de la rata que tiene el turno. MaxValue = nadie.</summary>
+        public readonly NetworkVariable<ulong> CurrentTurnClientId = new(ulong.MaxValue);
+
+        /// <summary>NetworkObjectId de la RATA que tiene el turno. MaxValue = ninguna.</summary>
+        public readonly NetworkVariable<ulong> CurrentRatId = new(ulong.MaxValue);
+
+        /// <summary>Equipo que tiene el turno (-1 = ninguno).</summary>
+        public readonly NetworkVariable<int> CurrentTeam = new(-1);
+
+        public readonly NetworkVariable<float> TurnTimeRemaining = new(0f);
+        public readonly NetworkVariable<bool> InTransition = new(false);
+
+        /// <summary>Dueño del equipo ganador (compatibilidad). MaxValue = empate o sin ganador.</summary>
+        public readonly NetworkVariable<ulong> WinnerClientId = new(ulong.MaxValue);
+
+        /// <summary>Equipo ganador (-1 = empate o sin ganador aún).</summary>
+        public readonly NetworkVariable<int> WinnerTeam = new(-1);
+
+        public readonly NetworkVariable<bool> GameEnded = new(false);
+
+        /// <summary>Viento del turno: -1 (izquierda) … +1 (derecha). 0 = calma.</summary>
+        public readonly NetworkVariable<float> Wind = new(0f);
+
+        /// <summary>Segundos jugados de partida (para el reloj y la muerte súbita).</summary>
+        public readonly NetworkVariable<float> MatchTime = new(0f);
+
+        /// <summary>Segundos de partida a los que empieza la muerte súbita (0 = nunca).</summary>
+        public readonly NetworkVariable<float> SuddenDeathAt = new(0f);
+
+        public readonly NetworkVariable<bool> SuddenDeath = new(false);
+
+        /// <summary>Cuánto ha subido el agua (u) por la muerte súbita. Lo lee WaterDeathZone.</summary>
+        public readonly NetworkVariable<float> WaterRise = new(0f);
+
+        public readonly NetworkVariable<int> TurnSecondsNet = new(0);
 
         /// <summary>
-        ///  Segundos restantes del turno actual.
+        ///  Nombre de cada equipo (índice = TeamIndex). Vacío = usar el nombre
+        ///  del jugador dueño (partidas online).
         /// </summary>
-        public readonly NetworkVariable<float> TurnTimeRemaining = new(
-            value: 0f,
-            readPerm: NetworkVariableReadPermission.Everyone,
-            writePerm: NetworkVariableWritePermission.Server);
+        public NetworkList<FixedString32Bytes> TeamNames;
 
-        /// <summary>
-        ///  true = estamos en la ventanita de transición entre turnos.
-        /// </summary>
-        public readonly NetworkVariable<bool> InTransition = new(
-            value: false,
-            readPerm: NetworkVariableReadPermission.Everyone,
-            writePerm: NetworkVariableWritePermission.Server);
-
-        /// <summary>
-        ///  ID del cliente GANADOR. ulong.MaxValue = sin ganador aún (partida activa
-        ///  o empate). Cuando cambia a otro valor, la pantalla de victoria se muestra.
-        /// </summary>
-        public readonly NetworkVariable<ulong> WinnerClientId = new(
-            value: ulong.MaxValue,
-            readPerm: NetworkVariableReadPermission.Everyone,
-            writePerm: NetworkVariableWritePermission.Server);
-
-        /// <summary>
-        ///  true = la partida ha terminado (ha habido un ganador o empate).
-        ///  La UI de victoria se muestra cuando este flag se activa.
-        /// </summary>
-        public readonly NetworkVariable<bool> GameEnded = new(
-            value: false,
-            readPerm: NetworkVariableReadPermission.Everyone,
-            writePerm: NetworkVariableWritePermission.Server);
-
-        /// <summary>
-        ///  Viento del turno actual, de -1 (máximo hacia la IZQUIERDA) a +1
-        ///  (máximo hacia la DERECHA). 0 = calma. Lo decide el servidor al
-        ///  empezar cada turno; todos lo ven igual. Los proyectiles lo
-        ///  convierten en fuerza con <see cref="WindAcceleration"/>.
-        /// </summary>
-        public readonly NetworkVariable<float> Wind = new(
-            value: 0f,
-            readPerm: NetworkVariableReadPermission.Everyone,
-            writePerm: NetworkVariableWritePermission.Server);
-
-        /// <summary>
-        ///  Aceleración del viento AHORA (u/s², positiva = hacia la derecha)
-        ///  para un proyectil con factor 1. Atajo estático para los
-        ///  proyectiles: 0 si no hay TurnManager.
-        /// </summary>
+        /// <summary>Aceleración del viento AHORA (u/s², + = derecha) para un proyectil con factor 1.</summary>
         public static float WindAcceleration =>
             Instance != null ? Instance.Wind.Value * Instance.maxWindAcceleration : 0f;
+
+        /// <summary>Aviso grande en pantalla (lo pinta TurnHUD). Lo recibe cada cliente.</summary>
+        public static event System.Action<string, Color> OnAnnouncement;
 
         // =========================================================
         // Estado interno del servidor
         // =========================================================
-        private readonly List<ulong> turnOrder = new();
-        private int currentTurnIndex = -1;
+        private class Team
+        {
+            public int index;
+            public ulong owner;
+            public readonly List<NetworkPlayerMovement> rats = new();
+            public int nextRat;
+            public bool eliminated;
+        }
+
+        private readonly List<Team> teams = new();
+        private int currentTeamPos = -1;     // posición en "teams" (no el TeamIndex)
         private float transitionTimer;
         private bool gameStarted;
+
+        private void Awake()
+        {
+            TeamNames = new NetworkList<FixedString32Bytes>();
+        }
 
         // =========================================================
         // CICLO DE VIDA
@@ -138,112 +129,125 @@ namespace Ratms.Networking
         {
             Instance = this;
 
-            // HUD de turno (cuenta atrás + viento). Si la escena no tiene uno,
-            // lo creamos aquí: así funciona en cualquier escenario sin tener
-            // que montarlo a mano en el Editor. Es solo visual (local).
             if (FindFirstObjectByType<TurnHUD>() == null)
                 gameObject.AddComponent<TurnHUD>();
-
-            // Genera los sonidos ya (si no, el primero de cada tipo da un tirón).
             Sfx.Warmup();
+
+            CurrentRatId.OnValueChanged += OnCurrentRatChanged;
 
             if (IsServer)
             {
-                // Al arrancar el servidor, suscribirse a conexiones/desconexiones
-                NetworkManager.Singleton.OnClientConnectedCallback += OnClientConnected;
                 NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
+                TurnSecondsNet.Value = MatchRules.EffectiveTurnSeconds;
+                SuddenDeathAt.Value = MatchRules.EffectiveSuddenDeathSeconds;
 
-                // Meter los clientes YA conectados (incluido el host) en la cola
-                foreach (var id in NetworkManager.Singleton.ConnectedClientsIds)
-                    if (!turnOrder.Contains(id))
-                        turnOrder.Add(id);
-
-                // IMPORTANTE: si entramos desde el lobby, los clientes ya estaban
-                // conectados ANTES de cargar esta escena — por tanto OnClientConnected
-                // no se disparará para ellos aquí. Hay que arrancar el juego manualmente
-                // esperando un poquito (1s) a que NGO termine de sincronizar la escena
-                // y los objetos de jugador estén creados (los spawnea GameSceneSpawnManager).
-                Debug.Log($"[NetworkTurnManager] OnNetworkSpawn → {turnOrder.Count} jugadores en la cola. Arranque programado.");
+                // Las ratas las crea GameSceneSpawnManager poco después de
+                // cargar la escena. Esperamos un poco y arrancamos.
                 Invoke(nameof(TryStartGameServer), 1.5f);
             }
         }
 
-        /// <summary>
-        ///  Llamado por Invoke tras un pequeño delay, para dar tiempo a que
-        ///  las ratas se hayan spawneado en todos los clientes antes de decir
-        ///  de quién es el turno.
-        /// </summary>
-        private void TryStartGameServer()
-        {
-            if (!IsServer) return;
-            Debug.Log($"[NetworkTurnManager] TryStartGameServer — gameStarted={gameStarted}, jugadores={turnOrder.Count}");
-            if (!gameStarted) StartGameIfReady();
-        }
-
         public override void OnNetworkDespawn()
         {
+            CurrentRatId.OnValueChanged -= OnCurrentRatChanged;
             if (IsServer && NetworkManager.Singleton != null)
-            {
-                NetworkManager.Singleton.OnClientConnectedCallback -= OnClientConnected;
                 NetworkManager.Singleton.OnClientDisconnectCallback -= OnClientDisconnected;
-            }
             if (Instance == this) Instance = null;
         }
 
-        private void OnClientConnected(ulong clientId)
-        {
-            if (!turnOrder.Contains(clientId))
-                turnOrder.Add(clientId);
-
-            // Si ya estaba esperando para arrancar y ahora hay mínimo 2, arrancamos
-            if (!gameStarted && turnOrder.Count >= 1)
-                StartGameIfReady();
-        }
-
-        private void OnClientDisconnected(ulong clientId)
-        {
-            // Con la partida en marcha, desconectarse cuenta como "eliminado":
-            // así si solo queda 1 jugador, gana (antes la partida se quedaba
-            // colgada con un único jugador y sin pantalla de victoria).
-            if (gameStarted)
-            {
-                RemovePlayerServer(clientId);
-                return;
-            }
-
-            // Antes de empezar (o ya terminada): solo lo quitamos de la cola.
-            int idx = turnOrder.IndexOf(clientId);
-            if (idx < 0) return;
-            turnOrder.RemoveAt(idx);
-            if (idx <= currentTurnIndex) currentTurnIndex--;
-        }
-
-        // =========================================================
-        // SERVIDOR: arranque y bucle
-        // =========================================================
-        private void StartGameIfReady()
+        private void TryStartGameServer()
         {
             if (!IsServer || gameStarted) return;
-            if (turnOrder.Count == 0) return;
-
+            SyncTeamsFromScene();
+            if (teams.Count == 0)
+            {
+                // Aún no hay ratas (carga lenta): reintentamos.
+                Invoke(nameof(TryStartGameServer), 0.5f);
+                return;
+            }
             gameStarted = true;
-            currentTurnIndex = -1;
+            currentTeamPos = -1;
+            Debug.Log($"[NetworkTurnManager] Empieza la partida: {teams.Count} equipos.");
             AdvanceTurnServer();
         }
 
-        /// <summary>
-        ///  Fuerza el inicio del juego. Llámalo desde un botón "Empezar partida"
-        ///  cuando el host quiera arrancar, o deja que arranque automáticamente.
-        /// </summary>
+        /// <summary>Fuerza el inicio del juego (menú contextual del Inspector).</summary>
         [ContextMenu("Start Game (Server)")]
-        public void StartGameServer()
+        public void StartGameServer() => TryStartGameServer();
+
+        private void OnClientDisconnected(ulong clientId)
         {
-            if (IsServer) StartGameIfReady();
+            // Desconectarse = sus equipos quedan eliminados.
+            foreach (var t in teams)
+                if (t.owner == clientId && !t.eliminated) EliminateTeam(t);
+            CheckVictoryServer();
+            if (!GameEnded.Value && CurrentTurnClientId.Value == clientId) AdvanceTurnServer();
         }
 
+        // =========================================================
+        // EQUIPOS (servidor)
+        // =========================================================
+        /// <summary>Añade a la lista los equipos/ratas que haya en escena y aún no conozcamos.</summary>
+        private void SyncTeamsFromScene()
+        {
+            var all = FindObjectsByType<NetworkPlayerMovement>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var m in all)
+            {
+                if (m == null || !m.IsSpawned || m.IsTestDummy) continue;
+                int ti = m.TeamIndex.Value;
+                if (ti < 0) continue;
+                var team = teams.Find(t => t.index == ti);
+                if (team == null)
+                {
+                    team = new Team { index = ti, owner = m.OwnerClientId };
+                    teams.Add(team);
+                    teams.Sort((a, b) => a.index.CompareTo(b.index));
+                    if (currentTeamPos >= 0) currentTeamPos = Mathf.Min(currentTeamPos, teams.Count - 1);
+                }
+                if (!team.rats.Contains(m))
+                {
+                    team.rats.Add(m);
+                    team.rats.Sort((a, b) => a.NetworkObjectId.CompareTo(b.NetworkObjectId));
+                }
+            }
+            // Nombres de equipo en red (por si alguno nuevo)
+            while (TeamNames.Count < (teams.Count > 0 ? teams[teams.Count - 1].index + 1 : 0))
+            {
+                int i = TeamNames.Count;
+                string n = MatchRules.Mode == MatchMode.Local ? MatchRules.LocalTeamNames[i % MatchRules.LocalTeamNames.Length] : "";
+                TeamNames.Add(new FixedString32Bytes(n));
+            }
+        }
+
+        private static bool IsAlive(NetworkPlayerMovement m)
+        {
+            if (m == null || !m.IsSpawned) return false;
+            var h = m.GetComponent<NetworkHealth>();
+            return h != null && !h.IsDead.Value;
+        }
+
+        private static bool TeamAlive(Team t) => !t.eliminated && t.rats.Exists(IsAlive);
+
+        private void EliminateTeam(Team t)
+        {
+            if (t.eliminated) return;
+            t.eliminated = true;
+            AnnounceClientRpc($"¡{TeamDisplayName(t.index)} ELIMINADOS!", new Color(1f, 0.35f, 0.25f));
+        }
+
+        // =========================================================
+        // SERVIDOR: bucle
+        // =========================================================
         private void Update()
         {
-            if (!IsServer || !gameStarted) return;
+            if (!IsServer || !gameStarted || GameEnded.Value) return;
+
+            MatchTime.Value += Time.deltaTime;
+            if (!SuddenDeath.Value && SuddenDeathAt.Value > 0f && MatchTime.Value >= SuddenDeathAt.Value)
+            {
+                SuddenDeath.Value = true;
+                AnnounceClientRpc("¡MUERTE SÚBITA!\nEl agua sube cada turno", new Color(1f, 0.25f, 0.2f));
+            }
 
             if (InTransition.Value)
             {
@@ -267,39 +271,93 @@ namespace Ratms.Networking
             }
         }
 
+        /// <summary>Acaba el turno actual: transición y, en muerte súbita, el agua sube.</summary>
         private void AdvanceTurnServer()
         {
-            if (!IsServer) return;
-            if (turnOrder.Count == 0)
-            {
-                CurrentTurnClientId.Value = ulong.MaxValue;
-                TurnTimeRemaining.Value = 0f;
-                return;
-            }
+            if (!IsServer || GameEnded.Value) return;
+
+            bool wasRealTurn = CurrentRatId.Value != ulong.MaxValue;
+            if (SuddenDeath.Value && wasRealTurn)
+                WaterRise.Value += MatchRules.SuddenDeathRisePerTurn;
 
             InTransition.Value = true;
             transitionTimer = transitionDelay;
-            CurrentTurnClientId.Value = ulong.MaxValue;  // nadie durante la transición
+            CurrentTurnClientId.Value = ulong.MaxValue;
+            CurrentRatId.Value = ulong.MaxValue;
+            CurrentTeam.Value = -1;
             TurnTimeRemaining.Value = 0f;
         }
 
         private void BeginNextTurnServer()
         {
-            if (!IsServer) return;
-            if (turnOrder.Count == 0) return;
+            if (!IsServer || GameEnded.Value) return;
+            SyncTeamsFromScene();
+            foreach (var t in teams) if (!t.eliminated && !TeamAlive(t)) EliminateTeam(t);
+            if (CheckVictoryServer()) return;
 
-            currentTurnIndex = (currentTurnIndex + 1) % turnOrder.Count;
-            CurrentTurnClientId.Value = turnOrder[currentTurnIndex];
-            TurnTimeRemaining.Value = turnDuration;
-            Wind.Value = RollWind();
+            // Siguiente equipo con ratas vivas
+            for (int k = 1; k <= teams.Count; k++)
+            {
+                int pos = (currentTeamPos + k + teams.Count) % teams.Count;
+                var team = teams[pos];
+                if (!TeamAlive(team)) continue;
+
+                // Siguiente rata viva de ese equipo (rotación automática)
+                for (int j = 0; j < team.rats.Count; j++)
+                {
+                    int ri = (team.nextRat + j) % team.rats.Count;
+                    var rat = team.rats[ri];
+                    if (!IsAlive(rat)) continue;
+
+                    currentTeamPos = pos;
+                    team.nextRat = (ri + 1) % team.rats.Count;
+                    CurrentTeam.Value = team.index;
+                    CurrentTurnClientId.Value = team.owner;
+                    CurrentRatId.Value = rat.NetworkObjectId;
+                    TurnTimeRemaining.Value = TurnDuration;
+                    Wind.Value = RollWind();
+                    return;
+                }
+            }
         }
 
         /// <summary>
-        ///  Viento nuevo para el turno: a veces calma, si no un valor entre
-        ///  -1 y 1 redondeado a décimas (para que el HUD muestre niveles
-        ///  claros). Elevamos al cuadrado la magnitud para que los vientos
-        ///  flojos sean más comunes que los huracanes.
+        ///  ¿Se acabó? Solo cuenta si la partida tiene (o tuvo) varios equipos;
+        ///  en práctica (1 equipo) solo acaba si muere tu rata (empate).
         /// </summary>
+        private bool CheckVictoryServer()
+        {
+            if (GameEnded.Value) return true;
+            int alive = 0;
+            Team last = null;
+            foreach (var t in teams) if (TeamAlive(t)) { alive++; last = t; }
+
+            bool multiTeam = teams.Count >= 2;
+            if (alive >= 2 || (!multiTeam && alive == 1)) return false;
+
+            CurrentTurnClientId.Value = ulong.MaxValue;
+            CurrentRatId.Value = ulong.MaxValue;
+            CurrentTeam.Value = -1;
+            TurnTimeRemaining.Value = 0f;
+            InTransition.Value = false;
+            gameStarted = false;
+
+            if (alive == 1)
+            {
+                WinnerTeam.Value = last.index;
+                WinnerClientId.Value = last.owner;
+                Debug.Log($"[NetworkTurnManager] ¡GANADOR! equipo {last.index} (cliente {last.owner})");
+            }
+            else
+            {
+                WinnerTeam.Value = -1;
+                WinnerClientId.Value = ulong.MaxValue;
+                Debug.Log("[NetworkTurnManager] Partida terminada en empate.");
+            }
+            GameEnded.Value = true;
+            return true;
+        }
+
         private float RollWind()
         {
             if (!windEnabled || Random.value < calmChance) return 0f;
@@ -310,7 +368,7 @@ namespace Ratms.Networking
         }
 
         // =========================================================
-        // RPCs llamados desde los jugadores
+        // RPCs y avisos
         // =========================================================
         /// <summary>
         ///  Lo llama el jugador que tiene el turno cuando termina su acción
@@ -320,68 +378,75 @@ namespace Ratms.Networking
         public void EndTurnServerRpc(ServerRpcParams rpcParams = default)
         {
             if (!IsServer) return;
-            ulong sender = rpcParams.Receive.SenderClientId;
-            if (CurrentTurnClientId.Value != sender) return; // no es su turno, ignorar
+            if (CurrentTurnClientId.Value != rpcParams.Receive.SenderClientId) return;
             AdvanceTurnServer();
         }
 
-        // =========================================================
-        // Muerte de jugadores
-        // =========================================================
+        [ClientRpc]
+        private void AnnounceClientRpc(string text, Color color) => OnAnnouncement?.Invoke(text, color);
+
         /// <summary>
-        ///  Saca a un cliente de la rotación porque su rata ha muerto.
-        ///  Llamarlo desde el servidor cuando <see cref="NetworkHealth.OnDiedServer"/> dispare.
+        ///  Lo llama la rata (servidor) al morir: si era la del turno, el turno
+        ///  pasa; si su equipo se ha quedado sin ratas, queda eliminado y se
+        ///  comprueba la victoria.
         /// </summary>
-        public void RemovePlayerServer(ulong clientId)
+        public void OnRatDiedServer(NetworkPlayerMovement rat)
         {
-            if (!IsServer) return;
-
-            int idx = turnOrder.IndexOf(clientId);
-            if (idx < 0) return;
-
-            turnOrder.RemoveAt(idx);
-            // "<=" y no "<": si cae el jugador del turno actual (o el anterior,
-            // durante la transición), el siguiente se desliza a su hueco. Al
-            // retroceder el índice, BeginNextTurnServer (+1) cae justo en él
-            // en vez de saltárselo.
-            if (idx <= currentTurnIndex) currentTurnIndex--;
-
-            // Condición de victoria: si queda 1 o 0, se acabó la partida.
-            //   · 1 jugador restante → GANADOR = ese cliente
-            //   · 0 jugadores        → EMPATE (WinnerClientId = MaxValue)
-            if (turnOrder.Count <= 1)
-            {
-                CurrentTurnClientId.Value = ulong.MaxValue;
-                TurnTimeRemaining.Value = 0f;
-                InTransition.Value = false;
-                gameStarted = false;
-
-                if (turnOrder.Count == 1)
-                {
-                    WinnerClientId.Value = turnOrder[0];
-                    Debug.Log($"[NetworkTurnManager] ¡GANADOR! clientId={turnOrder[0]}");
-                }
-                else
-                {
-                    WinnerClientId.Value = ulong.MaxValue;   // empate
-                    Debug.Log("[NetworkTurnManager] Partida terminada en empate.");
-                }
-                GameEnded.Value = true;
-                return;
-            }
-
-            // Si cayó el que tenía turno, avanzamos ya
-            if (CurrentTurnClientId.Value == clientId)
-                AdvanceTurnServer();
+            if (!IsServer || !gameStarted) return;
+            var team = teams.Find(t => t.rats.Contains(rat));
+            if (team != null && !team.eliminated && !TeamAlive(team)) EliminateTeam(team);
+            if (CheckVictoryServer()) return;
+            if (CurrentRatId.Value == rat.NetworkObjectId) AdvanceTurnServer();
         }
 
         // =========================================================
-        // Helpers para los clientes
+        // Cámara: sigue a la rata del turno (en todos los clientes)
         // =========================================================
-        /// <summary>
-        ///  Devuelve true si el clientId dado tiene el turno AHORA.
-        /// </summary>
+        /// <summary>Última rata que tuvo el turno (sigue valiendo durante la transición: "quién disparó").</summary>
+        public NetworkPlayerMovement LastTurnRat { get; private set; }
+
+        private void OnCurrentRatChanged(ulong _, ulong now)
+        {
+            var rat = FindRat(now);
+            if (rat == null) return;
+            LastTurnRat = rat;
+            var cam = CameraFollow.Instance;
+            if (cam != null) cam.SetTarget(rat.transform);
+        }
+
+        // =========================================================
+        // Helpers para todos
+        // =========================================================
+        /// <summary>¿El cliente tiene el turno ahora? (alguna de sus ratas)</summary>
         public bool IsTurnOf(ulong clientId) =>
             !InTransition.Value && CurrentTurnClientId.Value == clientId;
+
+        /// <summary>¿Es el turno de ESTA rata en concreto?</summary>
+        public bool IsActiveRat(ulong networkObjectId) =>
+            !InTransition.Value && CurrentRatId.Value != ulong.MaxValue && CurrentRatId.Value == networkObjectId;
+
+        /// <summary>Validación de servidor: el cliente que pide es el dueño Y la rata es la del turno.</summary>
+        public bool CanAct(ulong senderClientId, ulong ratNetworkObjectId) =>
+            IsTurnOf(senderClientId) && IsActiveRat(ratNetworkObjectId);
+
+        /// <summary>Rata que tiene el turno (o null).</summary>
+        public NetworkPlayerMovement CurrentRat => FindRat(CurrentRatId.Value);
+
+        private NetworkPlayerMovement FindRat(ulong id)
+        {
+            if (id == ulong.MaxValue || NetworkManager == null || NetworkManager.SpawnManager == null) return null;
+            return NetworkManager.SpawnManager.SpawnedObjects.TryGetValue(id, out var no) ? no.GetComponent<NetworkPlayerMovement>() : null;
+        }
+
+        /// <summary>Nombre visible de un equipo: el de la regla local o el del jugador dueño.</summary>
+        public string TeamDisplayName(int teamIndex)
+        {
+            if (teamIndex < 0) return "?";
+            if (TeamNames != null && teamIndex < TeamNames.Count && !TeamNames[teamIndex].IsEmpty)
+                return TeamNames[teamIndex].ToString();
+            foreach (var m in FindObjectsByType<NetworkPlayerMovement>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (m.IsSpawned && m.TeamIndex.Value == teamIndex) return PlayerNameRegistry.GetName(m.OwnerClientId);
+            return $"Equipo {teamIndex + 1}";
+        }
     }
 }

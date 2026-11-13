@@ -64,14 +64,17 @@ namespace Ratms.Networking
         /// <summary>Al recibir un golpe: parpadeo rojo y "aplastón" un instante.</summary>
         public void HitFlash() => flashUntil = Time.time + 0.22f;
 
-        public void Init(NetworkPlayerMovement m, ulong ownerId, bool isDummy)
+        /// <summary>Color del casco de un equipo (0-3).</summary>
+        public static Color32 ColorForTeam(int teamIndex) => TeamColors[Mathf.Abs(teamIndex) % TeamColors.Length];
+
+        public void Init(NetworkPlayerMovement m, int teamIndex, bool isDummy)
         {
             movement = m;
             col = m.GetComponent<Collider2D>();
             box = m.GetComponent<BoxCollider2D>();
             originalBody = m.GetComponent<SpriteRenderer>();
 
-            var team = isDummy ? DummyColor : TeamColors[(int)(ownerId % (ulong)TeamColors.Length)];
+            var team = isDummy ? DummyColor : ColorForTeam(teamIndex);
             Team = team;
             frames = GetFrames(team);
 

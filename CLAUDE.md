@@ -39,9 +39,11 @@ El usuario habla español: responde, comenta el código y escribe los commits en
 ## Flujo de partida
 1. `MainMenu` → `MultiplayerMenuController` + `RelayManager`: el host crea sala (código corto), los clientes se unen. Viven en un objeto persistente (DontDestroyOnLoad) con el `NetworkManager`.
 2. El host carga la escena de juego con `NetworkManager.SceneManager.LoadScene` (`gameSceneName = "Escenario_TerrainTest"` en la escena MainMenu).
-3. `GameSceneSpawnManager` spawnea una rata por cliente en `OnLoadEventCompleted` (no antes, o los clientes ven 0 ratas). El `PlayerPrefab` del NetworkManager va VACÍO.
-4. `NetworkTurnManager` (singleton): rotación round-robin por **clientId**, 30 s por turno, 1.5 s de transición. Al disparar, el turno espera a que el proyectil impacte (`ShortenEndTurnClientRpc`, fallback 3.5 s). Cada turno sortea el **viento** (`Wind` -1..1; `WindAcceleration` estático); misil factor 1, granada 0.25, dinamita 0. Crea el `TurnHUD` (cuenta atrás + viento) si la escena no lo tiene.
-5. Muerte (`NetworkHealth.OnDiedServer`) o desconexión → `RemovePlayerServer`. Queda ≤1 → `GameEnded` + `WinnerClientId` → `VictoryScreen`.
+3. `GameSceneSpawnManager` spawnea los **equipos** en `OnLoadEventCompleted` (no antes, o los clientes ven 0 ratas): online un equipo por cliente; en partida local (`MatchMode.Local`) todos los equipos son del host. Cada equipo tiene `MatchRules.EffectiveRatsPerTeam` ratas (por defecto 4). Equipo, nombre y vida se pasan por estáticos (`NetworkPlayerMovement.SpawnNextTeam/SpawnNextName`, `NetworkHealth.SpawnNextMaxHealth`) y la rata los escribe en sus NetworkVariables (`TeamIndex`, `RatName`, `MaxHealthNet`) en `OnNetworkSpawn` del servidor. La primera rata de cada cliente es su player object; el resto `SpawnWithOwnership`. El `PlayerPrefab` del NetworkManager va VACÍO.
+4. `NetworkTurnManager` (singleton): turnos POR EQUIPOS. Alterna equipos y, dentro de cada equipo, la rata rota sola (como Worms; elegir rata será un objeto que gaste turno). Estado en red: `CurrentRatId` (NetworkObjectId de la rata del turno), `CurrentTeam`, `CurrentTurnClientId` (dueño). **Control y armas**: `CanControl` = `tm.IsActiveRat(NetworkObjectId)` (el dueño tiene varias ratas); los ServerRpc de armas validan `tm.CanAct(sender, NetworkObjectId)`; `WeaponsMenuUI` solo atiende a la rata del turno. Turno de `MatchRules.TurnSeconds` (30), 1.5 s de transición. La cámara sigue a la rata del turno en todos los clientes. Al disparar, el turno espera a que el proyectil impacte (`ShortenEndTurnClientRpc`, fallback 3.5 s). Cada turno sortea el **viento** (`Wind` -1..1; `WindAcceleration` estático); misil factor 1, granada 0.25, dinamita 0. Crea el `TurnHUD` (cuenta atrás + viento) si la escena no lo tiene.
+5. Muerte (`NetworkHealth.OnDiedServer` → `tm.OnRatDiedServer`) o desconexión: un equipo sin ratas vivas queda eliminado (aviso grande). Queda 1 equipo → `GameEnded` + `WinnerTeam`/`WinnerClientId` → `VictoryScreen`. En práctica (1 equipo) solo acaba si muere tu rata.
+6. **Muerte súbita**: a los `MatchRules.SuddenDeathMinutes` (10) el agua sube `SuddenDeathRisePerTurn` (1.2 u) al acabar cada turno (`tm.WaterRise`, lo anima `WaterDeathZone.SurfaceY`).
+7. **Reglas** (`MatchRules`, PlayerPrefs `rule_*`): equipos locales, ratas por equipo, vida, segundos de turno, muerte súbita. Las lee el host. `Override*` para la prueba automática (no tocar los PlayerPrefs del jugador). El botón **Jugar** abre `PlayModeMenu` (IMGUI): Práctica o Partida local con equipos/ratas/muerte súbita. `TurnHUD` dibuja: quién juega (equipo + rata), reloj y cuenta atrás de muerte súbita, barras de vida por equipo y avisos (`NetworkTurnManager.OnAnnouncement`).
 
 Prefabs de red: `Assets/Prefabs/Prefabs multiplayer/` (`rat.network`, `missile.network`, `Grenade`), registrados en `Assets/DefaultNetworkPrefabs.asset`. Todo prefab nuevo con `NetworkObject` debe añadirse ahí.
 
@@ -59,18 +61,28 @@ Tipos de daño: `DamageType` (Generic, Explosion, Fire*, Water, Fall, Melee). *R
 - Al borrar un script o prefab, borrar también su `.meta` y comprobar que ningún `.prefab`/`.unity` referencia su GUID.
 
 ## Prueba automática (ver el juego sin jugar)
+Si Unity tiene el proyecto abierto, `tools\autotest.ps1` compila desde una COPIA en `%LOCALAPPDATA%\Temp\claude\ratms_build` (no hace falta cerrar Unity). Ojo: los `.meta` de scripts nuevos se generan en la copia; cópialos al repo antes de commitear.
 `powershell -ExecutionPolicy Bypass -File tools\autotest.ps1` (Unity cerrado; `-SkipBuild` reutiliza la build, `-Biome Sewer` fuerza bioma).
 Compila la build y el juego se juega solo (~90 s, host local sin internet): mide andar/saltar/cuestas con números, saca primeros planos con las líneas de los colliders dibujadas (`*_colliders.png`: terreno magenta, rata cian), prueba a salir de cráteres, comprueba el viento con misiles de prueba, dispara bazooka y granada, y prueba dinamita, bate y agua contra una **rata diana** (`NetworkPlayerMovement.SpawnNextAsTestDummy`: no cuenta para turnos ni victoria). Deja ~20 capturas + `informe.txt` (línea de tiempo, ✓/⚠, errores y warnings) en `AutoTest\Run_<fecha>\`. Mira las PNG con Read. Al añadir armas o mecánicas, amplía el guion en `Assets/Scripts/Testing/AutoPlayTest.cs` (hay ganchos `TestInputX`, `TestPressJump`, `TestPressFire`, `TestSetAim` en la rata).
 Resultado de referencia (13 nov 2026): `Resultado: OK`, 0 errores, 0 warnings.
-También prueba escopeta, teletransporte y cuerda. Otros papeles (`-autoTestRole`): `practice` (botón Jugar → 3 dianas → ESC → menú) y **multijugador real**: `powershell -ExecutionPolicy Bypass -File tools\autotest-multi.ps1` (host + cliente por 127.0.0.1: turnos, viento igual en ambos, dinamita vista en el cliente, el host gana si el cliente se va). Las pruebas usan `CurrentSurfaceY` (suelo real con cráteres) y buscan línea de tiro/destinos válidos; algunos resultados (salir de cráteres) dependen del mapa aleatorio.
+También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata por jugador (`MatchRules.OverrideRatsPerTeam = 1`). Otros papeles (`-autoTestRole`, o `tools\autotest.ps1 -Role local`): `local` (partida local 3 equipos × 2 ratas: rotación, solo se mueve la rata del turno, muerte súbita a los 35 s, eliminación y victoria), `practice` (3 dianas → ESC → menú) y **multijugador real** (2 ratas por jugador): `powershell -ExecutionPolicy Bypass -File tools\autotest-multi.ps1` (host + cliente por 127.0.0.1: turnos, viento igual en ambos, dinamita vista en el cliente, el host gana si el cliente se va). Las pruebas usan `CurrentSurfaceY` (suelo real con cráteres) y buscan línea de tiro/destinos válidos; algunos resultados (salir de cráteres) dependen del mapa aleatorio.
 
 ## Git
 - Rama de trabajo: `Main` (sigue a `origin/Main`, repo `darkkikilord/Ratms`).
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilar sin abrir Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.13 (+ commits sueltos de práctica, sonido, rata de trinchera, gore, efectos de calidad y andar siguiendo el suelo).
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.15 (equipos, partida local, muerte súbita). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
+
+## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)
+1. **0.15 — Partida de verdad** ✅ equipos de 4 ratas con rotación automática, barras de vida por equipo, reglas (`MatchRules`), muerte súbita a los 10 min, partida local en el mismo PC.
+2. Economía de armas: munición limitada, cajas de suministros (incluido el objeto "Cambiar rata", que gasta el turno), barriles explosivos.
+3. Jugar solo: IA de ratas enemigas con dificultades.
+4. Menús: preparación de partida (configurar reglas antes de empezar, también online), nombres/colores/sombreros, opciones completas (gore, risas, pantalla), menú de pausa, estadísticas y revancha, cómo se juega.
+5. Presentación: música, anuncios, cámara inteligente, más biomas de trinchera, animaciones.
+6. Online pulido: lobby con "listo", reglas del host, reconexión, revancha.
+7. Publicar: icono, pantalla de carga, itch.io.
 
 ## Estado y roadmap (nov 2026)
 Hecho: multijugador con Relay, bazooka, granada, dinamita, bate, trayectoria (se corta contra el terreno), viento, HUD con cuenta atrás, terreno destructible procedural, biomas, agua mortal, daño por caída, pantalla de victoria, nombres de jugador, un arma por turno.
@@ -79,7 +91,6 @@ Pendiente (detalle en `create_roadmap_issues.sh`; aún no se han creado las issu
 - **Probar en partida real (2 clientes)**: espera del turno hasta el impacto; victoria por desconexión; que la dinamita se vea como dinamita en el cliente (no host).
 - **Ajustar a mano (Inspector)**: fuerza del viento (`maxWindAcceleration` 3.5), empujón del bate (14), radio/mecha de la dinamita (4 u / 5 s), zoom inicial (6).
 - Escenario de producción (ahora solo `Escenario_TerrainTest`); islas flotantes con collider propio (`TerrainGenerator.cs`).
-- Equipos: varias ratas por jugador → el turno rotaría por rata, no por cliente.
 - Cajas de suministros, daño por fuego, munición limitada por arma.
 - Botón de gore (opt_gore) y de "risas" en el menú de Opciones.
 - La mano (weaponHolder) es la del rig antiguo: las armas no caen exactamente en la pata de la rata nueva.

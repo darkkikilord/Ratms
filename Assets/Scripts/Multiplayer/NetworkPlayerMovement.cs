@@ -1,3 +1,4 @@
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -360,6 +361,23 @@ namespace Ratms.Networking
         public bool IsTestDummy { get; private set; }
 
         // ==================================================================
+        // EQUIPO Y NOMBRE (los pone el servidor al crear la rata)
+        // ==================================================================
+        /// <summary>Equipo de la rata (0-3). -1 = sin equipo (dianas).</summary>
+        public readonly NetworkVariable<int> TeamIndex = new(-1);
+
+        /// <summary>Nombre de la rata ("Sarnoso", "Cabo Queso"...).</summary>
+        public readonly NetworkVariable<FixedString32Bytes> RatName = new(default);
+
+        /// <summary>Equipo y nombre para la PRÓXIMA rata que se spawnee (servidor). Ver GameSceneSpawnManager.</summary>
+        public static int SpawnNextTeam = -1;
+        public static string SpawnNextName;
+
+        /// <summary>¿Es esta la rata que tiene el turno ahora?</summary>
+        public bool IsActiveTurnRat =>
+            NetworkTurnManager.Instance != null && NetworkTurnManager.Instance.IsActiveRat(NetworkObjectId);
+
+        // ==================================================================
         // CICLO DE VIDA
         // ==================================================================
         private void Awake()
@@ -452,6 +470,15 @@ namespace Ratms.Networking
                 IsTestDummy = true;
                 SpawnNextAsTestDummy = false;
             }
+            if (IsServer && !IsTestDummy)
+            {
+                // Sin equipo asignado (escena abierta a pelo, etc.): uno por jugador.
+                TeamIndex.Value = SpawnNextTeam >= 0 ? SpawnNextTeam : (int)Mathf.Min(OwnerClientId, 3);
+                RatName.Value = new FixedString32Bytes(string.IsNullOrEmpty(SpawnNextName)
+                    ? MatchRules.RatNames[Random.Range(0, MatchRules.RatNames.Length)] : SpawnNextName);
+                SpawnNextTeam = -1;
+                SpawnNextName = null;
+            }
 
             // Re-resuelve las refs visuales por si el prefab las tiene mal cacheadas
             ResolveVisualReferences();
@@ -497,16 +524,18 @@ namespace Ratms.Networking
 
             // Etiqueta en la jerarquía para depurar
             gameObject.name = IsTestDummy ? "Rat_DIANA"
-                : IsOwner ? $"Rat_{OwnerClientId}_(yo)"
-                : $"Rat_{OwnerClientId}";
+                : IsOwner ? $"Rat_{OwnerClientId}_(yo)_E{TeamIndex.Value}_{RatName.Value}"
+                : $"Rat_{OwnerClientId}_E{TeamIndex.Value}_{RatName.Value}";
 
             // Rata dibujada por código (más bonita, casco del color del equipo).
             if (useProceduralRat && GetComponent<RatAppearance>() == null)
-                gameObject.AddComponent<RatAppearance>().Init(this, OwnerClientId, IsTestDummy);
+                gameObject.AddComponent<RatAppearance>().Init(this, TeamIndex.Value >= 0 ? TeamIndex.Value : (int)(OwnerClientId % 4), IsTestDummy);
 
-            // Si SOY yo, que la cámara me siga (y recuerde a quién volver
-            // tras seguir un proyectil o tras una pausa de impacto).
-            if (IsOwner && !IsTestDummy)
+            // Si SOY yo (y aún no hay turnos repartidos), que la cámara me
+            // siga. Luego el TurnManager la pone sobre la rata de cada turno.
+            var tmNow = NetworkTurnManager.Instance;
+            bool turnsRunning = tmNow != null && tmNow.CurrentRatId.Value != ulong.MaxValue;
+            if (IsOwner && !IsTestDummy && !turnsRunning && (CameraFollow.Instance == null || CameraFollow.Instance.target == null))
             {
                 var cam = CameraFollow.Instance != null
                     ? CameraFollow.Instance
@@ -531,7 +560,7 @@ namespace Ratms.Networking
         {
             if (!IsServer) return;
             var tm = NetworkTurnManager.Instance;
-            if (tm != null) tm.RemovePlayerServer(OwnerClientId);
+            if (tm != null) tm.OnRatDiedServer(this);
         }
 
         // ==================================================================
@@ -566,7 +595,8 @@ namespace Ratms.Networking
 
             var tm = NetworkTurnManager.Instance;
             if (tm == null) return true; // si no hay manager, jugamos libre
-            return tm.IsTurnOf(OwnerClientId);
+            // Con equipos, el dueño tiene VARIAS ratas: solo manda la del turno.
+            return tm.IsActiveRat(NetworkObjectId);
         }
 
         private void Update()

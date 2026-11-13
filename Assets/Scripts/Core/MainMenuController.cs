@@ -98,14 +98,20 @@ namespace Ratms.UI
                 return;
             }
 
-            // MODO PRÁCTICA: partida local tú solo contra ratas diana.
-            // (Antes cargaba la escena "Escenario 1", que ya no existe.)
+            // Panel para elegir: PRÁCTICA (contra dianas) o PARTIDA LOCAL.
             if (multiplayerMenu != null)
             {
                 multiplayerMenu.HideAllPanels();
                 if (mainPanel) mainPanel.SetActive(false);
                 if (optionsPanel) optionsPanel.SetActive(false);
-                PracticeSession.Begin(multiplayerMenu.GameSceneName);
+                if (playModeMenu == null)
+                {
+                    playModeMenu = gameObject.AddComponent<PlayModeMenu>();
+                    playModeMenu.OnPractice = StartPractice;
+                    playModeMenu.OnLocal = StartLocalMatch;
+                    playModeMenu.OnBack = () => { ClosePlayModeMenu(); ShowMain(); };
+                }
+                playModeMenu.enabled = true;
                 return;
             }
 
@@ -118,6 +124,33 @@ namespace Ratms.UI
             {
                 SceneLoader.LoadScene(firstLevelSceneName);
             }
+        }
+
+        private PlayModeMenu playModeMenu;
+
+        private void ClosePlayModeMenu()
+        {
+            if (playModeMenu != null) playModeMenu.enabled = false;
+        }
+
+        /// <summary>MODO PRÁCTICA: tú solo contra ratas diana (público para la prueba automática).</summary>
+        public void StartPractice()
+        {
+            ClosePlayModeMenu();
+            if (multiplayerMenu == null) return;
+            multiplayerMenu.HideAllPanels();
+            if (mainPanel) mainPanel.SetActive(false);
+            PracticeSession.Begin(multiplayerMenu.GameSceneName);
+        }
+
+        /// <summary>PARTIDA LOCAL en el mismo PC con las reglas de MatchRules.</summary>
+        public void StartLocalMatch()
+        {
+            ClosePlayModeMenu();
+            if (multiplayerMenu == null) return;
+            multiplayerMenu.HideAllPanels();
+            if (mainPanel) mainPanel.SetActive(false);
+            if (!LocalMatchSession.Begin(multiplayerMenu.GameSceneName)) ShowMain();
         }
 
         /// <summary>

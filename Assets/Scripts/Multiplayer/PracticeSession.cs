@@ -33,6 +33,7 @@ namespace Ratms.Networking
         public static void Begin(string gameScene)
         {
             if (Active) return;
+            MatchRules.Mode = MatchMode.Practice;
             var go = new GameObject("[Práctica]");
             DontDestroyOnLoad(go);
             go.AddComponent<PracticeSession>().scene = gameScene;

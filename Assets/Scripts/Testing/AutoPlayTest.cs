@@ -143,6 +143,14 @@ namespace Ratms.Testing
         {
             // Partida de DOS jugadores reales (dos copias del juego en el mismo PC).
             string role = GetArg("-autoTestRole");
+            if (role == "local") { yield return RunLocalMatch(); yield break; }
+
+            // El resto de pruebas miden UNA rata por jugador (como antes de los equipos).
+            MatchRules.Mode = MatchMode.Online;
+            MatchRules.OverrideRatsPerTeam = 1;
+            // Online de verdad con EQUIPOS: 2 ratas por jugador (lo decide el host).
+            if (role == "host" || role == "client") MatchRules.OverrideRatsPerTeam = 2;
+
             if (role == "host") { yield return RunHostMulti(); yield break; }
             if (role == "client") { yield return RunClientMulti(); yield break; }
             if (role == "practice") { yield return RunPractice(); yield break; }
@@ -310,9 +318,16 @@ namespace Ratms.Testing
                 float sep = Vector2.Distance(mine.transform.position, other.transform.position);
                 Log($"Separación entre ratas al aparecer: {sep:0.0} u {(sep >= 10f ? "✓" : "⚠ muy juntas")}");
             }
+            {
+                var all = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Where(m => !m.IsTestDummy).ToList();
+                int mineN = all.Count(m => m.IsOwner), theirsN = all.Count(m => !m.IsOwner);
+                Log($"Ratas: {mineN} mías + {theirsN} del cliente {(mineN == 2 && theirsN == 2 ? "✓" : "⚠")} · equipos {string.Join(", ", all.Select(m => m.TeamIndex.Value).Distinct())}");
+                if (mineN != 2 || theirsN != 2) Problem($"Multijugador: se esperaban 2 ratas por jugador ({mineN} + {theirsN})");
+            }
             yield return Capture("M01_host_partida");
 
             int myTurns = 0;
+            var hostRatsUsed = new List<string>();
             while (!finished)
             {
                 yield return WaitFor(() => IsMyTurn(nm) || GameOver(), 90f, "mi turno (host)", fatal: false);
@@ -321,6 +336,10 @@ namespace Ratms.Testing
                 other = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).FirstOrDefault(m => !m.IsOwner);
                 if (mine == null) break;
                 var weapons = mine.GetComponentInChildren<WeaponsMenuUI>();
+                hostRatsUsed.Add(mine.RatName.Value.ToString());
+                int controllable = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Count(m => m.CanControlNow);
+                Log($"Host: turno {myTurns + 1} con '{mine.RatName.Value}' · ratas que puedo mover ahora: {controllable} {(controllable == 1 ? "✓" : "⚠")}");
+                if (controllable != 1) Problem("Multijugador: el host puede mover más de una rata a la vez");
 
                 if (myTurns == 0 && other != null)
                 {
@@ -353,6 +372,12 @@ namespace Ratms.Testing
                 yield return WaitFor(() => !IsMyTurn(nm) || GameOver(), 45f, "que acabe mi turno (host)", fatal: false);
             }
 
+            if (hostRatsUsed.Count >= 2)
+            {
+                bool rotated = hostRatsUsed[0] != hostRatsUsed[1];
+                Log($"Rotación de ratas del host: {string.Join(" → ", hostRatsUsed)} {(rotated ? "✓" : "⚠ repite rata")}");
+                if (!rotated) Problem("Multijugador: la rata del host no rota entre turnos");
+            }
             yield return WaitFor(GameOver, 20f, "fin de la partida", fatal: false);
             var tm = NetworkTurnManager.Instance;
             bool won = tm != null && tm.GameEnded.Value && tm.WinnerClientId.Value == nm.LocalClientId;
@@ -402,6 +427,7 @@ namespace Ratms.Testing
                 if (GameOver() || finished) break;
                 var mine = FindLocalRat();
                 if (mine == null) { Log("Cliente: mi rata ha muerto"); break; }
+                Log($"Cliente: mi turno con '{mine.RatName.Value}' (equipo {mine.TeamIndex.Value}) · puedo moverla: {(mine.CanControlNow ? "✓" : "⚠")}");
 
                 if (myTurns == 0)
                 {
@@ -440,13 +466,132 @@ namespace Ratms.Testing
         ///  Botón "Jugar" → modo Práctica: ¿arranca la partida local con 3
         ///  dianas? Y luego ESC×2: ¿vuelve al menú?
         /// </summary>
+        /// <summary>
+        ///  PARTIDA LOCAL (mismo PC): 3 equipos × 2 ratas. Comprueba que los
+        ///  turnos alternan equipos y rotan ratas, que solo se mueve la rata
+        ///  del turno, la muerte súbita (agua subiendo), la eliminación de
+        ///  equipos y la victoria.
+        /// </summary>
+        private IEnumerator RunLocalMatch()
+        {
+            Log("Papel: PARTIDA LOCAL (3 equipos × 2 ratas, mismo PC)");
+            MatchRules.OverrideLocalTeams = 3;
+            MatchRules.OverrideRatsPerTeam = 2;
+            MatchRules.OverrideTurnSeconds = 10;
+            MatchRules.OverrideSuddenDeathSeconds = 35f;
+            yield return new WaitForSeconds(2.5f);
+
+            var mm = FindFirstObjectByType<Ratms.UI.MainMenuController>();
+            if (mm == null) { Finish("No encuentro MainMenuController"); yield break; }
+            mm.OnPlay();                       // abre el panel de "¿A qué jugamos?"
+            yield return new WaitForSeconds(0.6f);
+            yield return Capture("L00_menu_jugar");
+            mm.StartLocalMatch();
+            Log("Pulsado '¡A la trinchera!'");
+
+            NetworkTurnManager tm = null;
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == gameScene && (tm = NetworkTurnManager.Instance) != null,
+                                 30f, "entrar en la partida local");
+            if (finished) yield break;
+            yield return WaitFor(() => tm.CurrentRatId.Value != ulong.MaxValue, 20f, "el primer turno");
+            if (finished) yield break;
+
+            // --- Equipos y ratas ---
+            var rats = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Where(m => !m.IsTestDummy).ToList();
+            var byTeam = rats.GroupBy(r => r.TeamIndex.Value).OrderBy(g => g.Key).ToList();
+            string desc = string.Join(" | ", byTeam.Select(g => $"{tm.TeamDisplayName(g.Key)}: " +
+                                                       string.Join(", ", g.Select(r => $"{r.RatName.Value} ({r.GetComponent<NetworkHealth>().MaxHealth}hp)"))));
+            bool teamsOk = byTeam.Count == 3 && byTeam.All(g => g.Count() == 2);
+            Log($"Equipos: {byTeam.Count} · ratas: {rats.Count} → {desc}  {(teamsOk ? "✓" : "⚠")}");
+            if (!teamsOk) Problem($"Partida local: se esperaban 3 equipos de 2 ratas y hay {byTeam.Count} equipos / {rats.Count} ratas");
+            bool allMine = rats.All(r => r.IsOwner);
+            Log($"Todas las ratas son de este PC: {(allMine ? "✓" : "⚠")}");
+            yield return new WaitForSeconds(1f);
+            yield return Capture("L01_equipos");
+
+            // --- Rotación de turnos: 6 turnos seguidos ---
+            var seq = new List<string>();
+            var seenTeams = new List<int>();
+            var ratsOfTeam0 = new List<ulong>();
+            bool onlyActiveControls = true;
+            for (int turn = 0; turn < 6 && !finished; turn++)
+            {
+                yield return WaitFor(() => !tm.InTransition.Value && tm.CurrentRatId.Value != ulong.MaxValue, 10f, "turno nuevo", fatal: false);
+                var cur = tm.CurrentRat;
+                if (cur == null) break;
+                yield return null;
+                int controllable = rats.Count(r => r != null && r.CanControlNow);
+                if (controllable != 1 || !cur.CanControlNow) onlyActiveControls = false;
+                seq.Add($"{tm.TeamDisplayName(tm.CurrentTeam.Value)}/{cur.RatName.Value}");
+                seenTeams.Add(tm.CurrentTeam.Value);
+                if (tm.CurrentTeam.Value == byTeam[0].Key) ratsOfTeam0.Add(cur.NetworkObjectId);
+                if (turn == 0) yield return Capture("L02_turno_equipo");
+                tm.EndTurnServerRpc();   // pasamos turno (somos el host y el dueño)
+                yield return WaitFor(() => tm.InTransition.Value, 3f, "fin de turno", fatal: false);
+            }
+            bool alternates = seenTeams.Count == 6 && seenTeams.Take(3).Distinct().Count() == 3 &&
+                              Enumerable.Range(0, 3).All(i => seenTeams[i] == seenTeams[i + 3]);
+            bool rotates = ratsOfTeam0.Count == 2 && ratsOfTeam0[0] != ratsOfTeam0[1];
+            Log($"Turnos: {string.Join(" → ", seq)}");
+            Log($"Alternan equipos: {(alternates ? "✓" : "⚠")} · rota la rata dentro del equipo: {(rotates ? "✓" : "⚠")} · " +
+                $"solo se controla la rata del turno: {(onlyActiveControls ? "✓" : "⚠")}");
+            if (!alternates) Problem("Partida local: los turnos no alternan bien entre equipos");
+            if (!rotates) Problem("Partida local: la rata del equipo no rota de un turno a otro");
+            if (!onlyActiveControls) Problem("Partida local: se puede controlar más de una rata a la vez");
+
+            // --- Muerte súbita ---
+            yield return WaitFor(() => tm.SuddenDeath.Value, 60f, "la muerte súbita", fatal: false);
+            Log($"Muerte súbita a los {tm.MatchTime.Value:0} s (regla 35 s): {(tm.SuddenDeath.Value ? "✓" : "⚠ no llegó")} · aviso: \"{TurnHUD.LastAnnouncement?.Replace("\n", " ")}\"");
+            if (!tm.SuddenDeath.Value) Problem("Partida local: no llegó la muerte súbita");
+            yield return new WaitForSeconds(0.5f);
+            yield return Capture("L03_muerte_subita");
+            float rise0 = tm.WaterRise.Value;
+            for (int k = 0; k < 3 && !finished; k++)
+            {
+                yield return WaitFor(() => !tm.InTransition.Value && tm.CurrentRatId.Value != ulong.MaxValue, 10f, "turno", fatal: false);
+                tm.EndTurnServerRpc();
+                yield return WaitFor(() => tm.InTransition.Value, 3f, "fin de turno", fatal: false);
+            }
+            var water = FindFirstObjectByType<WaterDeathZone>();
+            yield return new WaitForSeconds(2.5f);   // que el agua suba visualmente
+            Log($"Agua tras 3 turnos de muerte súbita: subida {rise0:0.0} → {tm.WaterRise.Value:0.0} u" +
+                $"{(water != null ? $" · superficie en y={water.SurfaceY:0.0}" : "")}  {(tm.WaterRise.Value > rise0 + 0.1f ? "✓" : "⚠")}");
+            if (tm.WaterRise.Value <= rise0 + 0.1f) Problem("Partida local: el agua no sube en muerte súbita");
+            yield return Capture("L04_agua_subiendo");
+
+            // --- Eliminación y victoria ---
+            int winnerExpected = byTeam[0].Key;
+            foreach (var g in byTeam.Skip(1))
+            {
+                foreach (var r in g)
+                    if (r != null && r.isActiveAndEnabled)
+                        r.GetComponent<NetworkHealth>().ApplyDamageServer(9999, r.transform.position);
+                yield return new WaitForSeconds(1.2f);
+                if (g.Key == byTeam[1].Key)
+                {
+                    Log($"Equipo {tm.TeamDisplayName(g.Key)} sin ratas → aviso: \"{TurnHUD.LastAnnouncement}\" · partida terminada: {tm.GameEnded.Value}");
+                    yield return Capture("L05_equipo_eliminado");
+                }
+            }
+            yield return WaitFor(() => tm.GameEnded.Value, 5f, "fin de partida", fatal: false);
+            bool winOk = tm.GameEnded.Value && tm.WinnerTeam.Value == winnerExpected;
+            Log($"Fin de partida: ganador = {tm.TeamDisplayName(tm.WinnerTeam.Value)} (esperado {tm.TeamDisplayName(winnerExpected)}) {(winOk ? "✓" : "⚠")}");
+            if (!winOk) Problem("Partida local: no gana el equipo superviviente");
+            yield return new WaitForSeconds(1.5f);
+            yield return Capture("L06_victoria");
+
+            TurnHUD.ExitToMenu();
+            yield return WaitFor(() => SceneManager.GetActiveScene().name == "MainMenu", 10f, "volver al menú", fatal: false);
+            Finish(null);
+        }
+
         private IEnumerator RunPractice()
         {
             Log("Papel: PRÁCTICA (botón Jugar)");
             yield return new WaitForSeconds(2.5f);
             var mm = FindFirstObjectByType<Ratms.UI.MainMenuController>();
             if (mm == null) { Finish("No encuentro MainMenuController"); yield break; }
-            mm.OnPlay();
+            mm.StartPractice();
             Log("Pulsado 'Jugar'");
             yield return WaitFor(() => SceneManager.GetActiveScene().name == gameScene && FindLocalRat() != null, 30f, "entrar en la práctica");
             if (finished) yield break;
@@ -1521,6 +1666,10 @@ namespace Ratms.Testing
         // =========================================================
         private static NetworkPlayerMovement FindLocalRat()
         {
+            // Con equipos tengo varias ratas: la que vale es la del turno (si es mía).
+            var tm = NetworkTurnManager.Instance;
+            var cur = tm != null ? tm.CurrentRat : null;
+            if (cur != null && cur.IsOwner && !cur.IsTestDummy) return cur;
             foreach (var m in FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None))
                 if (m.IsSpawned && m.IsOwner && !m.IsTestDummy) return m;
             return null;

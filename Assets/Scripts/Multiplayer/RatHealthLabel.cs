@@ -120,9 +120,7 @@ namespace Ratms.Networking
 
             // Si el nombre del jugador cambia (por ejemplo llegó por red DESPUÉS
             // de crear el label), refrescamos el texto. Muy poco coste.
-            var netObj = GetComponent<NetworkObject>();
-            ulong ownerId = netObj != null ? netObj.OwnerClientId : 0;
-            string currentName = PlayerNameRegistry.GetName(ownerId);
+            string currentName = DisplayName();
             if (currentName != cachedName)
             {
                 cachedName = currentName;
@@ -171,13 +169,23 @@ namespace Ratms.Networking
         /// </summary>
         private string BuildLabelText(int hp)
         {
-            var netObj = GetComponent<NetworkObject>();
-            ulong ownerId = netObj != null ? netObj.OwnerClientId : 0;
+            // Nombre de la RATA en el color de su equipo (más pequeño) y la vida debajo.
             var move = GetComponent<NetworkPlayerMovement>();
-            string name = move != null && move.IsTestDummy ? "Diana" : PlayerNameRegistry.GetName(ownerId);
-            // Nombre en tamaño menor (65%) usando la etiqueta <size> de TMP
-            // + un salto de línea antes del HP para separarlos visualmente.
-            return $"<size=65%>{name}</size>\n{hp}";
+            string name = DisplayName();
+            string hex = "FFFFFF";
+            if (move != null && !move.IsTestDummy && move.TeamIndex.Value >= 0)
+                hex = ColorUtility.ToHtmlStringRGB(RatAppearance.ColorForTeam(move.TeamIndex.Value));
+            return $"<size=65%><color=#{hex}>{name}</color></size>\n{hp}";
+        }
+
+        /// <summary>Nombre que se muestra: el de la rata; si no tiene, el del jugador.</summary>
+        private string DisplayName()
+        {
+            var move = GetComponent<NetworkPlayerMovement>();
+            if (move != null && move.IsTestDummy) return "Diana";
+            if (move != null && !move.RatName.Value.IsEmpty) return move.RatName.Value.ToString();
+            var netObj = GetComponent<NetworkObject>();
+            return PlayerNameRegistry.GetName(netObj != null ? netObj.OwnerClientId : 0);
         }
 
         private static Color GetColorForHealth(int hp, int maxHp)

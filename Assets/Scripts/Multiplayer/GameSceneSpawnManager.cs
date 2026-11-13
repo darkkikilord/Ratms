@@ -120,8 +120,10 @@ namespace Ratms.Networking
         [Tooltip("Si está activo, escribe logs claros en la Consola para depurar quién se spawnea y cuándo.")]
         [SerializeField] private bool debugLogs = true;
 
-        // Mantenemos referencia a las ratas spawneadas por si queremos limpiarlas al salir.
-        private readonly Dictionary<ulong, NetworkObject> spawnedRats = new();
+        // Ratas spawneadas (todas, de todos los equipos) y clientes ya servidos.
+        private readonly List<NetworkObject> spawnedRats = new();
+        private readonly HashSet<ulong> spawnedClients = new();
+        private int nextTeamIndex;
 
         // Para evitar suscribirnos dos veces si OnNetworkSpawn se llama más de una vez
         private bool subscribed;
@@ -194,27 +196,20 @@ namespace Ratms.Networking
             if (fallCheckTimer < fallCheckInterval) return;
             fallCheckTimer = 0f;
 
-            foreach (var kv in spawnedRats)
+            for (int spIndex = 0; spIndex < spawnedRats.Count; spIndex++)
             {
-                var no = kv.Value;
+                var no = spawnedRats[spIndex];
                 if (no == null || !no.IsSpawned) continue;
                 if (no.transform.position.y > fallKillY) continue;
 
                 // Rata en el limbo → le buscamos otra vez un sitio bueno encima del terreno
                 // y la teleportamos allí. Paramos su velocidad para que no rebote en cuanto aterrice.
-                int spIndex = 0;
-                int i = 0;
-                foreach (var k in spawnedRats.Keys)
-                {
-                    if (k == kv.Key) { spIndex = i; break; }
-                    i++;
-                }
                 Vector3 rescue = ResolveSpawnPosition(spIndex);
                 no.transform.position = rescue;
                 var rb = no.GetComponent<Rigidbody2D>();
                 if (rb != null) rb.linearVelocity = Vector2.zero;
                 if (debugLogs)
-                    Debug.Log($"[GameSceneSpawnManager] 💀→♻️ Rata clientId={kv.Key} se cayó al vacío (y<{fallKillY}). La reubico en {rescue}.");
+                    Debug.Log($"[GameSceneSpawnManager] 💀→♻️ Rata {no.name} se cayó al vacío (y<{fallKillY}). La reubico en {rescue}.");
             }
         }
 
@@ -248,13 +243,13 @@ namespace Ratms.Networking
             yield return new WaitForSeconds(initialSpawnDelay);
 
             if (!IsServer) yield break;
-            var all = NetworkManager.Singleton.ConnectedClientsIds;
-            foreach (var clientId in all)
-            {
-                if (spawnedRats.ContainsKey(clientId)) continue;
-                int index = spawnedRats.Count;
-                SpawnRatForClient(clientId, index);
-            }
+            SpawnAllConnected();
+        }
+
+        private void SpawnAllConnected()
+        {
+            var all = new List<ulong>(NetworkManager.Singleton.ConnectedClientsIds);
+            foreach (var clientId in all) SpawnTeamsForClient(clientId);
         }
 
         // ================================================================
@@ -269,13 +264,7 @@ namespace Ratms.Networking
             if (debugLogs)
                 Debug.Log($"[GameSceneSpawnManager] Fallback: no llegó OnLoadEventCompleted en 1s, spawneo a los {NetworkManager.Singleton.ConnectedClientsIds.Count} clientes conectados.");
 
-            var all = NetworkManager.Singleton.ConnectedClientsIds;
-            foreach (var clientId in all)
-            {
-                if (spawnedRats.ContainsKey(clientId)) continue;
-                int index = spawnedRats.Count;
-                SpawnRatForClient(clientId, index);
-            }
+            SpawnAllConnected();
         }
 
         // ================================================================
@@ -284,20 +273,60 @@ namespace Ratms.Networking
         private void OnClientConnectedLate(ulong clientId)
         {
             if (!IsServer) return;
-            if (spawnedRats.ContainsKey(clientId)) return;
+            if (spawnedClients.Contains(clientId)) return;
+            if (MatchRules.Mode != MatchMode.Online) return;   // local/práctica: no entra nadie más
 
             if (debugLogs)
-                Debug.Log($"[GameSceneSpawnManager] OnClientConnectedLate → clientId={clientId}, le spawneamos su rata.");
+                Debug.Log($"[GameSceneSpawnManager] OnClientConnectedLate → clientId={clientId}, le spawneamos su equipo.");
+            SpawnTeamsForClient(clientId);
+        }
 
-            int index = spawnedRats.Count;
-            SpawnRatForClient(clientId, index);
+        /// <summary>
+        ///  Crea el/los EQUIPO(S) de un cliente: online uno por jugador; en
+        ///  partida LOCAL el host se lleva todos los equipos (se pasan el
+        ///  teclado). Cada equipo tiene <see cref="MatchRules.EffectiveRatsPerTeam"/> ratas.
+        /// </summary>
+        private void SpawnTeamsForClient(ulong clientId)
+        {
+            if (!spawnedClients.Add(clientId)) return;
+            int teamsHere = MatchRules.Mode == MatchMode.Local ? MatchRules.EffectiveLocalTeams : 1;
+            if (MatchRules.Mode == MatchMode.Local && clientId != NetworkManager.ServerClientId) return;
+
+            int ratsPerTeam = MatchRules.EffectiveRatsPerTeam;
+            bool playerObjectGiven = false;
+            for (int t = 0; t < teamsHere && nextTeamIndex < MatchRules.MaxTeams; t++)
+            {
+                int team = nextTeamIndex++;
+                for (int r = 0; r < ratsPerTeam; r++)
+                {
+                    string ratName = NextRatName();
+                    SpawnRat(clientId, team, ratName, asPlayerObject: !playerObjectGiven);
+                    playerObjectGiven = true;
+                }
+            }
         }
 
         // ================================================================
         //   SPAWN
         // ================================================================
-        private void SpawnRatForClient(ulong clientId, int index)
+        // Nombres de rata SIN repetir en toda la partida. Generador propio: el
+        // de Unity (UnityEngine.Random) lo re-siembra el generador de terreno
+        // y salían nombres repetidos.
+        private readonly List<string> namePool = new();
+        private readonly System.Random nameRng = new();
+
+        private string NextRatName()
         {
+            if (namePool.Count == 0) namePool.AddRange(MatchRules.RatNames);
+            int i = nameRng.Next(namePool.Count);
+            string n = namePool[i];
+            namePool.RemoveAt(i);
+            return n;
+        }
+
+        private void SpawnRat(ulong clientId, int team, string ratName, bool asPlayerObject)
+        {
+            int index = spawnedRats.Count;
             if (ratNetworkPrefab == null)
             {
                 Debug.LogError("[GameSceneSpawnManager] ratNetworkPrefab no asignado en el inspector.");
@@ -322,14 +351,20 @@ namespace Ratms.Networking
                 return;
             }
 
-            // SpawnAsPlayerObject: marca esta rata como el "player object" de ese cliente,
-            // así NGO asigna la propiedad correctamente.
-            no.SpawnAsPlayerObject(clientId, destroyWithScene: true);
+            // Equipo, nombre y vida: los lee la rata en su OnNetworkSpawn (servidor).
+            NetworkPlayerMovement.SpawnNextTeam = team;
+            NetworkPlayerMovement.SpawnNextName = ratName;
+            NetworkHealth.SpawnNextMaxHealth = MatchRules.StartHealth;
 
-            spawnedRats[clientId] = no;
+            // La primera rata de cada cliente es su "player object"; las demás
+            // son suyas igualmente (ownership) pero sin ese papel.
+            if (asPlayerObject) no.SpawnAsPlayerObject(clientId, destroyWithScene: true);
+            else no.SpawnWithOwnership(clientId, destroyWithScene: true);
+
+            spawnedRats.Add(no);
 
             if (debugLogs)
-                Debug.Log($"[GameSceneSpawnManager] ✅ Spawned Rat para clientId={clientId} en {pos} (index {index}). NetId={no.NetworkObjectId}");
+                Debug.Log($"[GameSceneSpawnManager] ✅ Rata '{ratName}' equipo {team} (cliente {clientId}) en {pos} (index {index}). NetId={no.NetworkObjectId}");
 
             // Color de equipo (opcional, si el NetworkPlayerMovement lo soporta).
             ApplyTeamColor(go, index);
@@ -367,7 +402,11 @@ namespace Ratms.Networking
                         // Lejos de las demás ratas (salvo la propia, si es un rescate).
                         var avoid = new List<Vector3>(usedSpawns);
                         if (index < avoid.Count) avoid.RemoveAt(index);
-                        Vector3? validPos = generator.GetRandomValidSpawnWorld(avoid, minDistanceBetweenSpawns);
+                        // Con muchas ratas no caben todas a 12 u: separamos menos.
+                        int teamsTotal = MatchRules.Mode == MatchMode.Local ? MatchRules.EffectiveLocalTeams : NetworkManager.Singleton.ConnectedClientsIds.Count;
+                        int expected = Mathf.Max(spawnedRats.Count + 1, teamsTotal * MatchRules.EffectiveRatsPerTeam);
+                        float minDist = expected > 4 ? Mathf.Min(minDistanceBetweenSpawns, 6f) : minDistanceBetweenSpawns;
+                        Vector3? validPos = generator.GetRandomValidSpawnWorld(avoid, minDist);
                         if (validPos.HasValue)
                         {
                             while (usedSpawns.Count <= index) usedSpawns.Add(validPos.Value);

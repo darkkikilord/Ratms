@@ -47,7 +47,13 @@ namespace Ratms.Networking
             readPerm: NetworkVariableReadPermission.Everyone,
             writePerm: NetworkVariableWritePermission.Server);
 
-        public int MaxHealth => maxHealth;
+        /// <summary>Vida máxima de ESTA rata (regla de partida; la sabe todo el mundo).</summary>
+        public readonly NetworkVariable<int> MaxHealthNet = new(0);
+
+        public int MaxHealth => MaxHealthNet.Value > 0 ? MaxHealthNet.Value : maxHealth;
+
+        /// <summary>Vida inicial para la PRÓXIMA rata que se spawnee (servidor). 0 = la del prefab.</summary>
+        public static int SpawnNextMaxHealth;
 
         private Collider2D bodyCollider;
 
@@ -84,7 +90,9 @@ namespace Ratms.Networking
         {
             if (IsServer)
             {
-                CurrentHealth.Value = maxHealth;
+                MaxHealthNet.Value = SpawnNextMaxHealth > 0 ? SpawnNextMaxHealth : maxHealth;
+                SpawnNextMaxHealth = 0;
+                CurrentHealth.Value = MaxHealthNet.Value;
                 IsDead.Value = false;
             }
 
@@ -103,8 +111,8 @@ namespace Ratms.Networking
         private float nextDrip;
         private void Update()
         {
-            if (!IsSpawned || IsDead.Value || maxHealth <= 0) return;
-            float hp = CurrentHealth.Value / (float)maxHealth;
+            if (!IsSpawned || IsDead.Value || MaxHealth <= 0) return;
+            float hp = CurrentHealth.Value / (float)MaxHealth;
             if (hp >= 0.35f || Time.time < nextDrip) return;
             nextDrip = Time.time + Mathf.Lerp(0.15f, 0.7f, hp / 0.35f) * Random.Range(0.7f, 1.3f);
             Fx.Drip(BodyCenter + Vector2.down * 0.15f);
@@ -276,10 +284,12 @@ namespace Ratms.Networking
         private static NetworkPlayerMovement CurrentTurnRat()
         {
             var tm = NetworkTurnManager.Instance;
-            if (tm == null || tm.CurrentTurnClientId.Value == ulong.MaxValue) return null;
-            foreach (var m in FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None))
-                if (m.OwnerClientId == tm.CurrentTurnClientId.Value && !m.IsTestDummy && m.isActiveAndEnabled) return m;
-            return null;
+            if (tm == null) return null;
+            var m = tm.CurrentRat;
+            if (m != null) return m;
+            // Durante la transición (el disparo ya acabó el turno) buscamos la
+            // última rata que lo tuvo: la que disparó.
+            return tm.LastTurnRat;
         }
 
         // Último tipo de daño recibido (en cada cliente): para saber si la

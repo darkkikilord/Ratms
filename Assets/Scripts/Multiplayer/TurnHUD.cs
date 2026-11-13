@@ -61,6 +61,7 @@ namespace Ratms.Networking
             var nm = NetworkManager.Singleton;
             if (nm != null && nm.IsListening) nm.Shutdown();
             PlayerNameRegistry.Clear();
+            MatchRules.Mode = MatchMode.Online;
             UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
         }
         private Texture2D panelTex, barBackTex, barFillTex;
@@ -89,13 +90,20 @@ namespace Ratms.Networking
             bool myTurn = false;
             float remaining = Mathf.Max(0f, tm.TurnTimeRemaining.Value);
 
+            Color teamCol = normalColor;
             if (tm.InTransition.Value) who = "— Cambiando de turno —";
-            else if (tm.CurrentTurnClientId.Value == ulong.MaxValue) who = "Esperando para empezar...";
+            else if (tm.CurrentRatId.Value == ulong.MaxValue) who = "Esperando para empezar...";
             else
             {
-                ulong turnOf = tm.CurrentTurnClientId.Value;
-                myTurn = turnOf == nm.LocalClientId;
-                who = myTurn ? "¡TU TURNO!" : $"Turno de {PlayerNameRegistry.GetName(turnOf)}";
+                var rat = tm.CurrentRat;
+                int team = tm.CurrentTeam.Value;
+                teamCol = TeamTextColor(team);
+                string ratName = rat != null ? rat.RatName.Value.ToString() : "?";
+                myTurn = rat != null && rat.IsOwner;
+                // En partida local todas las ratas son "tuyas": decimos de qué equipo es el turno.
+                who = myTurn && !IsHotseat(tm)
+                    ? $"¡TU TURNO!  ·  {ratName}"
+                    : $"Turno de {tm.TeamDisplayName(team)}  ·  {ratName}";
             }
             // Sonidos: "ding" al empezar TU turno y tic-tac en los últimos segundos.
             if (Event.current.type == EventType.Repaint)
@@ -108,7 +116,7 @@ namespace Ratms.Networking
                 lastTickSecond = sec;
             }
 
-            whoStyle.normal.textColor = myTurn ? myTurnColor : normalColor;
+            whoStyle.normal.textColor = tm.CurrentTeam.Value >= 0 ? teamCol : normalColor;
             GUI.Label(new Rect(panel.x, panel.y + 6f, panel.width, 26f), who, whoStyle);
 
             // --- Fila 2: cuenta atrás grande ---------------------------
@@ -127,6 +135,7 @@ namespace Ratms.Networking
                     pulse = 1f + 0.35f * Mathf.Clamp01((frac - 0.6f) / 0.4f);
                 }
                 timeStyle.normal.textColor = warning ? warningColor : (myTurn ? myTurnColor : normalColor);
+                if (!warning && IsHotseat(tm)) timeStyle.normal.textColor = teamCol;
                 timeStyle.fontSize = Mathf.RoundToInt(46f * pulse);
                 GUI.Label(new Rect(panel.x, panel.y + 30f, panel.width, 56f), seconds.ToString(), timeStyle);
 
@@ -158,6 +167,15 @@ namespace Ratms.Networking
                 windStyle.normal.textColor = prevCol;
             }
 
+            // --- Reloj de partida / muerte súbita (arriba a la izquierda) ---
+            DrawMatchClock(tm);
+
+            // --- Barras de vida de los equipos (abajo en el centro) ------
+            DrawTeamBars(tm, virtualWidth, Screen.height / scale);
+
+            // --- Aviso grande (eliminado, muerte súbita...) ---------------
+            DrawAnnouncement(virtualWidth, Screen.height / scale);
+
             // --- Debajo del panel: tu arma (solo en tu turno) ----------
             if (myTurn)
             {
@@ -170,19 +188,159 @@ namespace Ratms.Networking
             GUI.matrix = previous;
         }
 
-        private WeaponsMenuUI cachedLocalMenu;
-
-        /// <summary>Menú de armas de MI rata (la que controlo).</summary>
-        private WeaponsMenuUI LocalWeaponsMenu()
+        /// <summary>Menú de armas de la rata del turno (si es mía).</summary>
+        private static WeaponsMenuUI LocalWeaponsMenu()
         {
-            if (cachedLocalMenu != null && cachedLocalMenu.IsOwner && cachedLocalMenu.isActiveAndEnabled) return cachedLocalMenu;
-            cachedLocalMenu = null;
-            foreach (var m in FindObjectsByType<WeaponsMenuUI>(FindObjectsSortMode.None))
+            var tm = NetworkTurnManager.Instance;
+            var rat = tm != null ? tm.CurrentRat : null;
+            return rat != null && rat.IsOwner ? rat.GetComponentInChildren<WeaponsMenuUI>() : null;
+        }
+
+        // ==============================================================
+        // EQUIPOS
+        // ==============================================================
+        public static Color TeamColor(int team) => team < 0 ? Color.white : (Color)RatAppearance.ColorForTeam(team);
+
+        /// <summary>Color del equipo aclarado para TEXTO (se lee mejor sobre el panel oscuro).</summary>
+        public static Color TeamTextColor(int team) => Color.Lerp(TeamColor(team), Color.white, 0.35f);
+
+        /// <summary>¿Partida local? (los equipos tienen nombre propio en vez del del jugador).</summary>
+        private static bool IsHotseat(NetworkTurnManager tm) => tm.TeamNames.Count > 1 && !tm.TeamNames[0].IsEmpty;
+
+        private struct TeamInfo { public int hp, max, alive, total; }
+        private readonly System.Collections.Generic.SortedDictionary<int, TeamInfo> teamInfo = new();
+        private float teamInfoAt = -1f;
+
+        private void RefreshTeamInfo()
+        {
+            if (Time.unscaledTime - teamInfoAt < 0.25f) return;
+            teamInfoAt = Time.unscaledTime;
+            teamInfo.Clear();
+            foreach (var m in FindObjectsByType<NetworkPlayerMovement>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
-                var move = m.GetComponentInParent<NetworkPlayerMovement>();
-                if (m.IsOwner && (move == null || !move.IsTestDummy)) { cachedLocalMenu = m; break; }
+                if (!m.IsSpawned || m.IsTestDummy || m.TeamIndex.Value < 0) continue;
+                var h = m.GetComponent<NetworkHealth>();
+                if (h == null) continue;
+                teamInfo.TryGetValue(m.TeamIndex.Value, out var ti);
+                ti.max += h.MaxHealth;
+                ti.total++;
+                if (!h.IsDead.Value) { ti.hp += Mathf.Max(0, h.CurrentHealth.Value); ti.alive++; }
+                teamInfo[m.TeamIndex.Value] = ti;
             }
-            return cachedLocalMenu;
+        }
+
+        /// <summary>Una barra por equipo: nombre, vida total que queda y ratas vivas.</summary>
+        private void DrawTeamBars(NetworkTurnManager tm, float vw, float vh)
+        {
+            RefreshTeamInfo();
+            if (teamInfo.Count < 2) return;   // práctica: no hace falta
+            const float rowH = 22f, barW = 260f, nameW = 150f;
+            float totalW = nameW + barW + 90f;
+            float y = vh - 12f - teamInfo.Count * (rowH + 4f);
+            float x = (vw - totalW) * 0.5f;
+            GUI.DrawTexture(new Rect(x - 10f, y - 8f, totalW + 20f, teamInfo.Count * (rowH + 4f) + 12f), panelTex);
+
+            var prevAlign = windStyle.alignment;
+            var prevCol = windStyle.normal.textColor;
+            int prevSize = windStyle.fontSize;
+            windStyle.fontSize = 15;
+            foreach (var kv in teamInfo)
+            {
+                Color c = TeamColor(kv.Key);
+                bool dead = kv.Value.alive == 0;
+                bool turn = tm.CurrentTeam.Value == kv.Key;
+                windStyle.alignment = TextAnchor.MiddleRight;
+                windStyle.normal.textColor = dead ? new Color(0.6f, 0.6f, 0.6f, 0.7f) : TeamTextColor(kv.Key);
+                GUI.Label(new Rect(x, y, nameW - 8f, rowH), (turn ? "> " : "") + tm.TeamDisplayName(kv.Key), windStyle);
+
+                var bar = new Rect(x + nameW, y + 4f, barW, rowH - 8f);
+                GUI.DrawTexture(bar, barBackTex);
+                float frac = kv.Value.max > 0 ? Mathf.Clamp01(kv.Value.hp / (float)kv.Value.max) : 0f;
+                var pc = GUI.color;
+                GUI.color = c;
+                GUI.DrawTexture(new Rect(bar.x, bar.y, bar.width * frac, bar.height), barFillTex);
+                GUI.color = pc;
+
+                windStyle.alignment = TextAnchor.MiddleLeft;
+                windStyle.normal.textColor = dead ? new Color(0.6f, 0.6f, 0.6f, 0.7f) : Color.white;
+                GUI.Label(new Rect(x + nameW + barW + 8f, y, 90f, rowH), dead ? "KO" : $"{kv.Value.hp}  ({kv.Value.alive})", windStyle);
+                y += rowH + 4f;
+            }
+            windStyle.alignment = prevAlign;
+            windStyle.normal.textColor = prevCol;
+            windStyle.fontSize = prevSize;
+        }
+
+        /// <summary>Reloj de partida y cuenta atrás hasta la muerte súbita.</summary>
+        private void DrawMatchClock(NetworkTurnManager tm)
+        {
+            var prevAlign = windStyle.alignment;
+            var prevCol = windStyle.normal.textColor;
+            windStyle.alignment = TextAnchor.MiddleLeft;
+            string text;
+            if (tm.SuddenDeath.Value)
+            {
+                text = "¡MUERTE SÚBITA!  El agua sube";
+                windStyle.normal.textColor = Color.Lerp(warningColor, Color.white, 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f));
+            }
+            else
+            {
+                float t = tm.MatchTime.Value;
+                text = "Partida " + Clock(t);
+                if (tm.SuddenDeathAt.Value > 0f)
+                {
+                    float left = Mathf.Max(0f, tm.SuddenDeathAt.Value - t);
+                    text += "   ·   Muerte súbita en " + Clock(left);
+                    windStyle.normal.textColor = left < 60f ? warningColor : new Color(1f, 1f, 1f, 0.75f);
+                }
+                else windStyle.normal.textColor = new Color(1f, 1f, 1f, 0.75f);
+            }
+            GUI.Label(new Rect(12f, 8f, 520f, 24f), text, windStyle);
+            windStyle.alignment = prevAlign;
+            windStyle.normal.textColor = prevCol;
+        }
+
+        private static string Clock(float seconds)
+        {
+            int s = Mathf.FloorToInt(seconds);
+            return (s / 60) + ":" + (s % 60).ToString("00");
+        }
+
+        // ==============================================================
+        // AVISOS GRANDES
+        // ==============================================================
+        private string announceText;
+        private Color announceColor;
+        private float announceUntil;
+        private GUIStyle announceStyle;
+
+        private void OnEnable() => NetworkTurnManager.OnAnnouncement += Announce;
+        private void OnDisable() => NetworkTurnManager.OnAnnouncement -= Announce;
+
+        /// <summary>Último aviso mostrado (lo lee la prueba automática).</summary>
+        public static string LastAnnouncement { get; private set; }
+
+        private void Announce(string text, Color color)
+        {
+            announceText = text;
+            LastAnnouncement = text;
+            announceColor = color;
+            announceUntil = Time.unscaledTime + 3f;
+            Sfx.Play(Sfx.Id.TurnStart, 0.8f, 0f);
+        }
+
+        private void DrawAnnouncement(float vw, float vh)
+        {
+            if (string.IsNullOrEmpty(announceText) || Time.unscaledTime > announceUntil) return;
+            if (announceStyle == null)
+                announceStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 44, fontStyle = FontStyle.Bold };
+            float left = announceUntil - Time.unscaledTime;
+            float a = Mathf.Clamp01(left / 0.5f);
+            var r = new Rect(0f, vh * 0.3f, vw, 120f);
+            announceStyle.normal.textColor = new Color(0f, 0f, 0f, 0.8f * a);
+            GUI.Label(new Rect(r.x + 3f, r.y + 3f, r.width, r.height), announceText, announceStyle);
+            announceStyle.normal.textColor = new Color(announceColor.r, announceColor.g, announceColor.b, a);
+            GUI.Label(r, announceText, announceStyle);
         }
 
         /// <summary>

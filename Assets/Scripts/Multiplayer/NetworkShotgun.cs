@@ -63,7 +63,7 @@ namespace Ratms.Networking
         private void FireServerRpc(Vector2 dir, ServerRpcParams rpc = default)
         {
             var tm = NetworkTurnManager.Instance;
-            if (tm != null && !tm.IsTurnOf(rpc.Receive.SenderClientId)) return;
+            if (tm != null && !tm.CanAct(rpc.Receive.SenderClientId, NetworkObjectId)) return;
 
             Vector2 origin = Origin();
             Vector2 end = origin + dir * range;
@@ -150,7 +150,7 @@ namespace Ratms.Networking
             if (gun != null && gun.gameObject.activeSelf != show) gun.gameObject.SetActive(show);
 
             bool sight = show && IsOwner && !movement.FiredThisTurn &&
-                         (NetworkTurnManager.Instance == null || NetworkTurnManager.Instance.IsTurnOf(OwnerClientId));
+                         (NetworkTurnManager.Instance == null || NetworkTurnManager.Instance.IsActiveRat(NetworkObjectId));
             if (sight && sightDots[0] == null)
                 for (int i = 0; i < sightDots.Length; i++) sightDots[i] = MakeDot(i);
             for (int i = 0; i < sightDots.Length; i++)

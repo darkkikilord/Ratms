@@ -267,6 +267,7 @@ namespace Ratms.Networking
             HideAllPanels();
 
             // NGO carga la escena SINCRONIZADA en todos los clientes.
+            MatchRules.Mode = MatchMode.Online;
             NetworkManager.Singleton.SceneManager.LoadScene(gameSceneName, LoadSceneMode.Single);
         }
 

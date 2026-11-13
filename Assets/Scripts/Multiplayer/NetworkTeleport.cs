@@ -88,7 +88,7 @@ namespace Ratms.Networking
         private void TeleportServerRpc(Vector2 body, ServerRpcParams rpc = default)
         {
             var tm = NetworkTurnManager.Instance;
-            if (tm != null && !tm.IsTurnOf(rpc.Receive.SenderClientId)) return;
+            if (tm != null && !tm.CanAct(rpc.Receive.SenderClientId, NetworkObjectId)) return;
             if (!IsValidTarget(body, out _)) return;
             Vector2 from = ownHealth != null ? ownHealth.BodyCenter : (Vector2)transform.position;
             TeleportClientRpc(from, body);
@@ -117,7 +117,7 @@ namespace Ratms.Networking
         private void LateUpdate()
         {
             bool show = IsOwner && IsEquipped && movement != null && !movement.FiredThisTurn &&
-                        (NetworkTurnManager.Instance == null || NetworkTurnManager.Instance.IsTurnOf(OwnerClientId));
+                        (NetworkTurnManager.Instance == null || NetworkTurnManager.Instance.IsActiveRat(NetworkObjectId));
             if (marker == null)
             {
                 if (!show) return;

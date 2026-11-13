@@ -131,8 +131,11 @@ namespace Ratms.Networking
                     winnerNameText.text = "Nadie sobrevive.";
                 else
                 {
-                    string winnerName = PlayerNameRegistry.GetName(winnerId);
-                    winnerNameText.text = $"¡{winnerName} gana!";
+                    int team = cachedTurnManager.WinnerTeam.Value;
+                    string winnerName = team >= 0 ? cachedTurnManager.TeamDisplayName(team) : PlayerNameRegistry.GetName(winnerId);
+                    bool localTeams = MatchRules.Mode == MatchMode.Local;
+                    winnerNameText.text = localTeams ? $"¡Ganan los {winnerName}!" : $"¡{winnerName} gana!";
+                    winnerNameText.color = team >= 0 ? TurnHUD.TeamTextColor(team) : winnerNameText.color;
                 }
             }
 
@@ -143,6 +146,10 @@ namespace Ratms.Networking
                 btnBackToMenu.interactable = isHost;
             if (btnBackToMenuLabel != null)
                 btnBackToMenuLabel.text = isHost ? "Volver al lobby" : "Esperando al host...";
+
+            // Partida local / práctica: no hay lobby al que volver; el botón lleva al menú.
+            if (MatchRules.Mode != MatchMode.Online && btnBackToMenuLabel != null)
+                btnBackToMenuLabel.text = "Volver al menú";
         }
 
         /// <summary>
@@ -158,6 +165,8 @@ namespace Ratms.Networking
                 Debug.LogWarning("[VictoryScreen] Solo el host puede volver al lobby.");
                 return;
             }
+
+            if (MatchRules.Mode != MatchMode.Online) { OnLeaveRoomClicked(); return; }
 
             // Usamos NGO SceneManager para que TODOS los clientes carguen la
             // escena a la vez, manteniendo la conexión y el estado de sala.
@@ -175,6 +184,7 @@ namespace Ratms.Networking
                 nm.Shutdown();
 
             PlayerNameRegistry.Clear();
+            MatchRules.Mode = MatchMode.Online;
             SceneManager.LoadScene(mainMenuSceneName, LoadSceneMode.Single);
         }
     }

@@ -440,16 +440,29 @@ namespace Ratms.World
             return tex;
         }
 
+        // MUERTE SÚBITA: cuánto ha subido el agua (sube suave hasta lo que
+        // diga el NetworkTurnManager, que lo sincroniza a todos).
+        private float currentRise;
+
+        /// <summary>Altura letal ACTUAL del agua (incluye la subida de la muerte súbita).</summary>
+        public float SurfaceY => waterY + currentRise;
+
         private void Update()
         {
+            var tm = Ratms.Networking.NetworkTurnManager.Instance;
+            float targetRise = tm != null ? tm.WaterRise.Value : 0f;
+            currentRise = Mathf.MoveTowards(currentRise, targetRise, 0.6f * Time.deltaTime);
+
             if (!drawWaterVisual) return;
+            if (waterDeepVisual != null)
+                waterDeepVisual.transform.position = new Vector3(transform.position.x, visualBaseY + currentRise, 0f);
 
             float t = Time.time * waveFrequency * 2f * Mathf.PI;
             float wobbleMain = Mathf.Sin(t) * waveAmplitude;
 
             // El cuerpo sube/baja suave
             if (waterVisual != null)
-                waterVisual.transform.position = new Vector3(transform.position.x, visualBaseY + wobbleMain, 0f);
+                waterVisual.transform.position = new Vector3(transform.position.x, visualBaseY + currentRise + wobbleMain, 0f);
 
             // La superficie con olas ADEMÁS se scroll horizontalmente lento
             // para dar sensación de corriente. El bamboleo vertical va desfasado
@@ -460,7 +473,7 @@ namespace Ratms.World
                 float wobbleSurface = Mathf.Sin(t + Mathf.PI * 0.5f) * waveAmplitude * 0.8f;
                 foamVisual.transform.position = new Vector3(
                     transform.position.x + scrollX * 0.15f - 5f,
-                    visualBaseY + wobbleSurface,
+                    visualBaseY + currentRise + wobbleSurface,
                     0f);
             }
 
@@ -491,7 +504,7 @@ namespace Ratms.World
                 // por debajo, así que antes la rata moría con el cuerpo todavía
                 // por encima del agua. Ahora muere cuando se hunde de verdad.
                 Vector2 body = hp.BodyCenter;
-                if (body.y >= waterY) continue;
+                if (body.y >= SurfaceY) continue;
 
                 // 9999 fuerza la muerte aunque la vida máxima sea menor.
                 // Tipo Water → el popup saldrá en azul con texto "AGUA!".

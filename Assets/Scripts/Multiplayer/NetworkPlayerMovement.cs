@@ -200,6 +200,9 @@ namespace Ratms.Networking
         [Tooltip("Altura máxima (u) de escalón que se sube sola. La rata mide ~0.25 u.")]
         [SerializeField] private float stepHeight = 0.2f;
 
+        [Tooltip("Cuestas más empinadas que esto ya no se suben andando (normal.y mínima del suelo: 0.6 ≈ 53°).")]
+        [SerializeField] private float maxWalkSlopeNormalY = 0.6f;
+
         [Tooltip("Velocidad vertical del saltito de escalón (u/s). Ojo: al no pulsar saltar se aplica la gravedad de 'salto corto' " +
                  "(lowJumpMultiplier), así que 2.7 sube ~0.23 u.")]
         [SerializeField] private float stepUpVelocity = 2.7f;
@@ -1031,7 +1034,22 @@ namespace Ratms.Networking
             float targetVx = inputX * maxSpeed;
             float accel = Mathf.Abs(targetVx) > 0.01f ? moveAcceleration : moveDeceleration;
             float newVx = Mathf.MoveTowards(rb.linearVelocity.x, targetVx, accel * Time.fixedDeltaTime);
-            rb.linearVelocity = new Vector2(newVx, rb.linearVelocity.y);
+            Vector2 walkVel = new Vector2(newVx, rb.linearVelocity.y);
+
+            // ANDAR SIGUIENDO EL SUELO: en una cuesta, empujar en horizontal
+            // mete la rata CONTRA la pendiente y la fricción se come el
+            // avance (en cuestas de 35-45° se quedaba clavada). Si hay suelo
+            // bajo los pies y no es demasiado empinado, la velocidad va
+            // PARALELA a la superficie: sube y baja cuestas sin atascarse ni
+            // ir dando saltitos al bajar.
+            if (Mathf.Abs(inputX) > 0.01f && walkVel.y < 1f && TryGetGroundNormal(Mathf.Sign(inputX), out Vector2 groundN) && groundN.y >= maxWalkSlopeNormalY)
+            {
+                Vector2 tangent = new Vector2(groundN.y, -groundN.x);   // a lo largo del suelo, hacia +x
+                float along = Mathf.Abs(newVx) * Mathf.Sign(inputX);
+                walkVel = tangent * along / Mathf.Max(0.5f, tangent.x);  // misma velocidad horizontal que en llano
+                walkVel = Vector2.ClampMagnitude(walkVel, maxSpeed * 1.35f);
+            }
+            rb.linearVelocity = walkVel;
 
             if (stepAssist && Mathf.Abs(inputX) > 0.01f) TryStepUp(Mathf.Sign(inputX));
 
@@ -1124,7 +1142,7 @@ namespace Ratms.Networking
         private void TryStepUp(float dir)
         {
             if (Time.time < nextStepTime) return;
-            if (rb.linearVelocity.y > 0.5f) return;            // ya está subiendo/saltando
+            if (rb.linearVelocity.y > stepUpVelocity * 0.8f) return;   // ya está saltando (subir una cuesta andando no cuenta)
             if (!HasFootContact()) return;                      // solo apoyada en el suelo
 
             var col = GetComponent<Collider2D>();
@@ -1156,6 +1174,27 @@ namespace Ratms.Networking
                 if (Mathf.Abs(stepHits[i].normal.x) > 0.6f) return true;   // pared/escalón, no rampa
             }
             return false;
+        }
+
+        /// <summary>
+        ///  Normal del suelo que toca ahora mismo, eligiendo la del contacto que
+        ///  más se OPONE al avance (la cuesta de delante, no la de detrás: en
+        ///  una "V" la media salía casi horizontal y la rata se clavaba).
+        /// </summary>
+        private bool TryGetGroundNormal(float dir, out Vector2 normal)
+        {
+            normal = Vector2.zero;
+            float best = float.MaxValue;
+            int n = rb.GetContacts(footContacts);
+            for (int i = 0; i < n; i++)
+            {
+                var c = footContacts[i];
+                if (c.collider == null || c.collider.isTrigger) continue;
+                if (c.normal.y < footNormalMinY) continue;
+                float against = c.normal.x * dir;   // más negativo = cuesta arriba delante
+                if (against < best) { best = against; normal = c.normal; }
+            }
+            return best < float.MaxValue;
         }
 
         /// <summary>¿Está tocando físicamente algo que hace de suelo (normal hacia arriba)?</summary>

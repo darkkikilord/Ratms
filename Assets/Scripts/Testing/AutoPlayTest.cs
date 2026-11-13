@@ -1139,9 +1139,11 @@ namespace Ratms.Testing
             float minY = start.y, maxY = start.y;
 
             rat.TestInputX = dir;
+            string diag = null;
             while (t < seconds && !finished)
             {
                 t += Time.deltaTime;
+                if (diag == null && t > 0.3f) diag = WalkDiag(rat, rb);
                 float vx = Mathf.Abs(rb.linearVelocity.x);
                 if (vx > maxVx) maxVx = vx;
                 minY = Mathf.Min(minY, rb.position.y);
@@ -1169,6 +1171,20 @@ namespace Ratms.Testing
                 $"altura {start.y:0.00}→{atRelease.y:0.00} (rango {maxY - minY:0.00}) · frenada {stopT:0.00}s / {Mathf.Abs(end.x - atRelease.x):0.000} u" +
                 (stuck ? "  ⚠ posible atasco (media < 50% de la máx)" : "") +
                 (Mathf.Abs(dist) < 0.05f ? "  ⚠ NO se ha movido" : ""));
+            if ((stuck || Mathf.Abs(dist) < 0.05f) && diag != null) Log("   ↳ diagnóstico atasco: " + diag);
+        }
+
+        private static string WalkDiag(NetworkPlayerMovement rat, Rigidbody2D rb)
+        {
+            var sb = new StringBuilder();
+            sb.Append($"control={rat.CanControlNow} grav={rb.gravityScale:0.##} v=({rb.linearVelocity.x:0.00},{rb.linearVelocity.y:0.00}) contactos:");
+            var cs = new ContactPoint2D[8];
+            int n = rb.GetContacts(cs);
+            for (int i = 0; i < n; i++)
+                sb.Append($" [{cs[i].collider?.GetType().Name} n=({cs[i].normal.x:0.00},{cs[i].normal.y:0.00}) p=({cs[i].point.x:0.00},{cs[i].point.y:0.00})]");
+            var col = rat.GetComponent<Collider2D>();
+            if (col != null) sb.Append($" bounds min=({col.bounds.min.x:0.00},{col.bounds.min.y:0.00}) max=({col.bounds.max.x:0.00},{col.bounds.max.y:0.00})");
+            return sb.ToString();
         }
 
         private IEnumerator Jump(NetworkPlayerMovement rat, Rigidbody2D rb, float holdSeconds, float inputX, string label)

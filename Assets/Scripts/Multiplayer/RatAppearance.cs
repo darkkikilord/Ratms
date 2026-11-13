@@ -60,6 +60,50 @@ namespace Ratms.Networking
         private NetworkHealth health;
         private int wound;
 
+        // SALPICADURAS: sangre de OTRAS ratas (reventadas o heridas al lado).
+        // 0..3, se queda toda la partida (en la trinchera no hay lavanderia).
+        private int splat;
+        private float dripUntil, nextSplatDrip;
+
+        /// <summary>Cuánta sangre ajena lleva encima (0-3).</summary>
+        public int Splat => splat;
+
+        /// <summary>
+        ///  Mancha a esta rata con sangre ajena (<paramref name="levels"/>
+        ///  niveles más, hasta 3) y la deja goteando unos segundos.
+        ///  Solo visual y local: cada cliente lo calcula igual a partir del
+        ///  mismo golpe/muerte, así que no gasta red.
+        /// </summary>
+        public void Splatter(int levels)
+        {
+            if (!Fx.GoreOn || levels <= 0 || frames == null) return;
+            int s = Mathf.Clamp(splat + levels, 0, 3);
+            dripUntil = Time.time + 2.5f + levels;
+            if (s == splat) return;
+            splat = s;
+            frames = GetFrames(Look.Pack(), Team, wound, splat);
+        }
+
+        /// <summary>
+        ///  Salpica a todas las ratas vivas a menos de <paramref name="radius"/>
+        ///  de <paramref name="at"/> (menos <paramref name="except"/>): las
+        ///  más cercanas se llevan más sangre y les vuelan gotas encima.
+        /// </summary>
+        public static void SplatterAround(Vector2 at, float radius, GameObject except, int maxLevels = 2)
+        {
+            if (!Fx.GoreOn) return;
+            foreach (var ra in FindObjectsByType<RatAppearance>(FindObjectsSortMode.None))
+            {
+                if (ra == null || ra.gameObject == except || ra.sr == null || !ra.isActiveAndEnabled) continue;
+                Vector2 c = ra.sr.bounds.center;
+                float d = Vector2.Distance(at, c);
+                if (d > radius) continue;
+                int lv = d < radius * 0.45f ? maxLevels : Mathf.Max(1, maxLevels - 1);
+                ra.Splatter(lv);
+                Fx.BloodToward(at, c, lv * 7);
+            }
+        }
+
         /// <summary>Al recibir un golpe: parpadeo rojo, mueca y "aplastón" un instante.</summary>
         public void HitFlash() => flashUntil = Time.time + 0.32f;
 
@@ -140,7 +184,13 @@ namespace Ratms.Networking
             {
                 float hp = health.CurrentHealth.Value / (float)health.MaxHealth;
                 int w = hp > 0.66f ? 0 : hp > 0.33f ? 1 : 2;
-                if (w != wound) { wound = w; frames = GetFrames(Look.Pack(), Team, wound); }
+                if (w != wound) { wound = w; frames = GetFrames(Look.Pack(), Team, wound, splat); }
+            }
+            // Recién salpicada: le chorrea la sangre ajena un rato.
+            if (Time.time < dripUntil && Time.time > nextSplatDrip)
+            {
+                nextSplatDrip = Time.time + Random.Range(0.12f, 0.35f);
+                Fx.Drip((Vector2)sr.bounds.center + new Vector2(Random.Range(-0.2f, 0.2f), -0.2f));
             }
             sr.sprite = frames[(int)f];
             sr.flipX = !movement.FacingRight;
@@ -260,13 +310,13 @@ namespace Ratms.Networking
         // ============================================================
         //  DIBUJO
         // ============================================================
-        private static Sprite[] GetFrames(uint lookCode, Color32 team, int wound = 0)
+        private static Sprite[] GetFrames(uint lookCode, Color32 team, int wound = 0, int splat = 0)
         {
-            var key = (lookCode, (team.r << 16) | (team.g << 8) | team.b, wound);
+            var key = (lookCode, (team.r << 16) | (team.g << 8) | team.b, wound + splat * 4);
             if (cache.TryGetValue(key, out var cached)) return cached;
             var look = RatLook.Unpack(lookCode);
             var result = new Sprite[(int)Frame.Count];
-            for (int i = 0; i < result.Length; i++) result[i] = Draw((Frame)i, look, team, wound);
+            for (int i = 0; i < result.Length; i++) result[i] = Draw((Frame)i, look, team, wound, splat);
             cache[key] = result;
             return result;
         }
@@ -277,7 +327,7 @@ namespace Ratms.Networking
                            Brow = 16, Claw = 17, Wood = 18, Brass = 19, Leather = 20, Rubber = 21, Glass = 22, Gold = 23,
                            Wrinkle = 24, Cigar = 25, Patch = 26, BandD = 27;
 
-        private static Sprite Draw(Frame frame, RatLook look, Color32 team, int wound = 0)
+        private static Sprite Draw(Frame frame, RatLook look, Color32 team, int wound = 0, int splat = 0)
         {
             var mat = new byte[S * S];
             var shade = new sbyte[S * S];     // -1 sombra, 0 medio, +1 luz
@@ -586,6 +636,30 @@ namespace Ratms.Networking
                         for (int dy = 1; dy <= 1 + wr.Next(3); dy++) Set(mat, shade, x, y - dy, Blood, -1, onlyIf: Fur);
                         if (wr.Next(3) == 0) Set(mat, shade, x + 1, y, Blood, 0, onlyIf: Fur);
                     }
+                    k++;
+                }
+            }
+
+            // --- SALPICADURAS de sangre ajena: manchas por TODO (casco,
+            //     bufanda, cara...), más grandes y con churretes al subir de nivel.
+            if (splat > 0)
+            {
+                var sp = new System.Random(look.variant * 29 + 3);
+                int blobs = splat == 1 ? 7 : splat == 2 ? 15 : 26;
+                for (int k = 0, tries = 0; k < blobs && tries < 600; tries++)
+                {
+                    int x = sp.Next(S), y = sp.Next(2, S);
+                    byte m0 = mat[y * S + x];
+                    if (m0 == Empty || m0 == Eye || m0 == Pupil || m0 == Blood) continue;
+                    sbyte sh = (sbyte)(sp.Next(3) == 0 ? -1 : 0);
+                    Set(mat, shade, x, y, Blood, sh);
+                    // gotón de 2-4 px
+                    int extra = sp.Next(1 + splat);
+                    for (int e = 0; e < extra; e++)
+                        Set(mat, shade, x + sp.Next(-1, 2), y + sp.Next(-1, 2), Blood, sh, onlyIfSolid: true);
+                    // churrete que cae
+                    if (splat >= 2 && sp.Next(2) == 0)
+                        for (int dy = 1; dy <= 1 + sp.Next(splat + 1); dy++) Set(mat, shade, x, y - dy, Blood, -1, onlyIfSolid: true);
                     k++;
                 }
             }

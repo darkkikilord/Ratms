@@ -1386,6 +1386,16 @@ namespace Ratms.Testing
             yield return new WaitForSeconds(1.8f);
             yield return Capture("G05_trozos_en_suelo");
 
+            // Salpicaduras: la rata de la prueba queda pringada de sangre ajena
+            RatAppearance.SplatterAround(at, 12f, null, 3);
+            var ratBody = rat.GetComponent<NetworkHealth>();
+            Vector2 rb = ratBody != null ? ratBody.BodyCenter : (Vector2)rat.transform.position;
+            cam.transform.position = new Vector3(rb.x, rb.y + 0.3f, prevPos.z);
+            cam.orthographicSize = 1.6f;
+            yield return new WaitForSeconds(0.6f);
+            yield return Capture("G05b_rata_pringada");
+            cam.transform.position = new Vector3(at.x, at.y + 0.8f, prevPos.z);
+
             cam.orthographicSize = 4f;
             Fx.Explosion(at + Vector2.right * 2.5f, 2.5f);
             Sfx.Play(Sfx.Id.Explosion);

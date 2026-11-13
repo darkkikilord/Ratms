@@ -49,7 +49,7 @@ namespace Ratms.Networking
             public float wind;          // cuánto le afecta el viento
         }
 
-        private const int MaxParticles = 1400;
+        private const int MaxParticles = 2200;
         private const int SortingOrder = 200;
         private const int GibOrder = 60;
 
@@ -94,7 +94,7 @@ namespace Ratms.Networking
             Vector2 baseDir = ((dir.sqrMagnitude > 0.0001f ? dir.normalized : Vector2.up) + Vector2.up * 0.5f).normalized;
 
             // Regueros finos y rápidos
-            int n = Mathf.Clamp(Mathf.RoundToInt(amount * 0.5f), 6, 45);
+            int n = Mathf.Clamp(Mathf.RoundToInt(amount * 0.8f), 8, 70);
             for (int i = 0; i < n; i++)
             {
                 Vector2 v = (baseDir + Random.insideUnitCircle * 0.75f) * Random.Range(2f, 6.5f);
@@ -116,14 +116,31 @@ namespace Ratms.Networking
                 m.spin = Random.Range(-90f, 90f);
             }
             // Chorro arterial: un pequeño surtidor que dura un momento
-            if (amount >= 20f && GoreOn)
+            if (amount >= 12f && GoreOn)
             {
-                float dur = Mathf.Lerp(0.2f, 0.5f, Mathf.InverseLerp(20f, 60f, amount));
+                float dur = Mathf.Lerp(0.3f, 0.9f, Mathf.InverseLerp(12f, 60f, amount));
                 fx.Repeat(dur, 0.025f, () =>
                 {
                     Vector2 v = (baseDir + Vector2.up * 0.3f + Random.insideUnitCircle * 0.35f).normalized * Random.Range(4f, 6f);
                     fx.BloodDrop(at, v, Random.Range(1.5f, 2.5f) / 32f);
                 });
+            }
+        }
+
+        /// <summary>
+        ///  Unas gotas que vuelan de <paramref name="from"/> hacia
+        ///  <paramref name="to"/> (sangre que salpica a una rata cercana).
+        /// </summary>
+        public static void BloodToward(Vector2 from, Vector2 to, int count)
+        {
+            if (!GoreOn) return;
+            var fx = I;
+            float t = Mathf.Clamp((to - from).magnitude / 6f, 0.15f, 0.5f);   // tiempo de vuelo
+            for (int i = 0; i < count; i++)
+            {
+                Vector2 target = to + Random.insideUnitCircle * 0.3f;
+                Vector2 v = (target - from) / t + Vector2.up * (11f * t * 0.5f);   // compensa la gravedad
+                fx.BloodDrop(from + Random.insideUnitCircle * 0.1f, v * Random.Range(0.85f, 1.1f), Random.Range(1.5f, 3f) / 32f);
             }
         }
 
@@ -163,17 +180,36 @@ namespace Ratms.Networking
 
             // Estallido radial + salpicón hacia arriba
             Blood(at, Vector2.up, 70f);
-            for (int i = 0; i < 34; i++)
+            for (int i = 0; i < 70; i++)
             {
                 Vector2 d = Random.insideUnitCircle.normalized;
-                fx.BloodDrop(at + d * 0.1f, (d + Vector2.up * 0.35f) * Random.Range(4f, 9f), Random.Range(1.5f, 3f) / 32f);
+                fx.BloodDrop(at + d * 0.1f, (d + Vector2.up * 0.35f) * Random.Range(4f, 10f), Random.Range(1.5f, 3.4f) / 32f,
+                             stainPx: Random.value < 0.3f ? 2 : 1);
+            }
+            if (gore)
+            {
+                // Lo que queda sigue escupiendo sangre un rato (surtidor que se apaga)
+                float t0 = Time.time;
+                fx.Repeat(1.4f, 0.03f, () =>
+                {
+                    float k = 1f - Mathf.Clamp01((Time.time - t0) / 1.4f);
+                    Vector2 v = (Vector2.up + Random.insideUnitCircle * 0.45f).normalized * Random.Range(3f, 7.5f) * (0.4f + 0.6f * k);
+                    fx.BloodDrop(at, v, Random.Range(1.5f, 2.8f) / 32f);
+                });
+                // Lluvia roja: lo que subió, baja
+                fx.Later(0.35f, () =>
+                {
+                    for (int i = 0; i < 26; i++)
+                        fx.BloodDrop(at + new Vector2(Random.Range(-1.6f, 1.6f), Random.Range(2.2f, 3.4f)),
+                                     new Vector2(Random.Range(-0.6f, 0.6f), Random.Range(-1f, 0f)), Random.Range(1.3f, 2.6f) / 32f);
+                });
             }
 
             // TROZOS
             if (gore)
             {
-                Gib(at, Meat(0), 3); Gib(at, Meat(1), 3);
-                Gib(at, Gut(0), 1, bloodTrail: true); Gib(at, Gut(1), 1, bloodTrail: true);
+                Gib(at, Meat(0), 4); Gib(at, Meat(1), 4);
+                Gib(at, Gut(0), 2, bloodTrail: true); Gib(at, Gut(1), 1, bloodTrail: true);
                 Gib(at, Bone(), 3, stain: false, bloodTrail: false);
                 Gib(at, Eye(), 1, stain: false);
                 Gib(at, Tooth(), 3, stain: false, bloodTrail: false, small: true);
@@ -190,7 +226,7 @@ namespace Ratms.Networking
             }
 
             // Charco debajo (cuando ya ha caído la primera sangre)
-            if (gore) fx.Later(0.12f, () => Puddle(at, 0.45f));
+            if (gore) { fx.Later(0.12f, () => Puddle(at, 0.7f)); fx.Later(1.2f, () => Puddle(at, 0.5f)); }
         }
 
         private static void Gib(Vector2 at, Sprite sprite, int copies, bool stain = true, bool bloodTrail = true, bool small = false)

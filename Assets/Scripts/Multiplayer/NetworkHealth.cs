@@ -252,6 +252,8 @@ namespace Ratms.Networking
             Fx.Blood(BodyCenter, away.sqrMagnitude > 0.0004f ? away : Vector2.up, amount);
             var look = GetComponent<RatAppearance>();
             if (look != null) look.HitFlash();
+            // Golpe fuerte: salpica a las ratas que estén pegadas.
+            if (amount >= 20) RatAppearance.SplatterAround(BodyCenter, amount >= 40 ? 1.8f : 1.3f, gameObject, 1);
             if (!lethal)
             {
                 Sfx.Play(Sfx.Id.Ouch, 0.7f, 0.15f);
@@ -317,6 +319,8 @@ namespace Ratms.Networking
                 Vector2 b = BodyCenter;
                 var look = GetComponent<RatAppearance>();
                 Fx.Gibs(b, look != null ? look.Team : (Color32?)null);
+                // Las vecinas acaban PRINGADAS de la que ha reventado.
+                RatAppearance.SplatterAround(b, 3f, gameObject, 2);
                 if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.25f, 0.35f);
                 Sfx.Play(Sfx.Id.Splat);
                 Fx.Gravestone(b);

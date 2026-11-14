@@ -16,6 +16,35 @@ namespace Ratms.UI
         private static readonly System.Random rng = new();
         private static readonly uint[] previewCache = new uint[TeamProfile.Slots];
 
+
+        private static string PartLabel(RatLook l, int part) => part switch
+        {
+            0 => RatLook.BodyName(l.body),
+            1 => RatLook.FurName(l.fur),
+            2 => RatLook.HatName(l.hat),
+            3 => l.tail switch { RatLook.TailType.Larga => "cola larga", RatLook.TailType.Munon => "muñón de cola", RatLook.TailType.SinCola => "sin cola", _ => "cola normal" },
+            4 => l.eye switch { RatLook.EyeType.Parche => "parche", RatLook.EyeType.Loco => "ojo loco", RatLook.EyeType.Monoculo => "monóculo", _ => "ojos normales" },
+            _ => l.mouth switch { RatLook.MouthType.Cigarro => "cigarro", RatLook.MouthType.Puro => "puro", RatLook.MouthType.Mellada => "mellada", _ => "boca normal" },
+        };
+
+        private static GUIStyle partStyle;
+
+        private static int Wrap(int v, int dir, int n) => ((v + dir) % n + n) % n;
+
+        private static RatLook Cycle(RatLook l, int part, int dir)
+        {
+            switch (part)
+            {
+                case 0: l.body = (RatLook.BodyType)Wrap((int)l.body, dir, 5); break;
+                case 1: l.fur = (RatLook.FurType)Wrap((int)l.fur, dir, 6); break;
+                case 2: l.hat = (RatLook.HatType)Wrap((int)l.hat, dir, 6); break;
+                case 3: l.tail = (RatLook.TailType)Wrap((int)l.tail, dir, 4); break;
+                case 4: l.eye = (RatLook.EyeType)Wrap((int)l.eye, dir, 4); break;
+                default: l.mouth = (RatLook.MouthType)Wrap((int)l.mouth, dir, 4); break;
+            }
+            return l;
+        }
+
         private void OnGUI()
         {
             TrenchGUI.Begin();
@@ -23,7 +52,7 @@ namespace Ratms.UI
             TrenchGUI.Panel(r);
             TrenchGUI.Title(new Rect(r.x, r.y + 16f, r.width, 50f), "MI EQUIPO");
             TrenchGUI.Small(new Rect(r.x + 40f, r.y + 66f, r.width - 80f, 40f),
-                "Ponle nombre a tu equipo y a tus ratas. «Otra» sortea una rata nueva y la deja fija; «Al azar», distinta cada partida.");
+                "Ponle nombre a tu equipo y a tus ratas. Cambia cada pieza con sus botones. «Otra» sortea una rata entera; «Al azar», distinta cada partida.");
 
             float x = r.x + 40f, y = r.y + 120f, w = r.width - 80f;
             TrenchGUI.Label(new Rect(x, y, 220f, 44f), "Equipo");
@@ -56,8 +85,30 @@ namespace Ratms.UI
                 string current = TeamProfile.RatName(i);
                 string edited = TrenchGUI.Field(new Rect(fx, row.y + 30f, 340f, 42f), current, 16, "Nombre al azar");
                 if (edited != current) TeamProfile.SetRatName(i, edited);
-                TrenchGUI.Small(new Rect(fx, row.y + 78f, 520f, 40f),
-                    TeamProfile.Look(i) == 0 ? "Aspecto: al azar en cada partida" : RatLook.Unpack(look).Describe());
+                // 0.22: pieza a pieza. Clic = siguiente opción (clic derecho = anterior).
+                // Si estaba "al azar", se fija la rata que se ve y se cambia esa pieza.
+                {
+                    var l = RatLook.Unpack(look);
+                    float bw = (row.xMax - fx) / 6f;
+                    for (int p = 0; p < 6; p++)
+                    {
+                        var br = new Rect(fx + p * bw, row.y + 80f, bw - 6f, 34f);
+                        bool hit = TrenchGUI.Button(br, "");
+                        if (partStyle == null)
+                            partStyle = new GUIStyle(GUI.skin.label)
+                            {
+                                alignment = TextAnchor.MiddleCenter, fontSize = 15, wordWrap = false,
+                                clipping = TextClipping.Overflow, font = TrenchGUI.Typewriter,
+                                normal = { textColor = new Color(1f, 0.93f, 0.78f) },
+                            };
+                        GUI.Label(br, Loc.T(PartLabel(l, p)), partStyle);
+                        if (hit)
+                        {
+                            int dir = Event.current.button == 1 ? -1 : 1;
+                            TeamProfile.SetLook(i, Cycle(l, p, dir).Pack());
+                        }
+                    }
+                }
 
                 if (TrenchGUI.Button(new Rect(row.xMax - 330f, row.y + 30f, 160f, 48f), "Otra"))
                     TeamProfile.SetLook(i, RatLook.Random(rng).Pack());

@@ -248,6 +248,41 @@ namespace Ratms.Networking
             SetActive(multiplayerPanel, true);
             SetActive(lobbyPanel, false);
             SetStatus("");
+            PrefillJoinCodeFromClipboard();
+        }
+
+        // ---- 0.22: código de sala fácil de pasar ----------------------------
+        private float codeCopiedUntil = -1f;
+        private string autoCopiedCode;
+
+        /// <summary>Si en el portapapeles hay algo con pinta de código de sala, lo deja puesto.</summary>
+        private void PrefillJoinCodeFromClipboard()
+        {
+            if (joinCodeInput == null || !string.IsNullOrWhiteSpace(joinCodeInput.text)) return;
+            string clip = (GUIUtility.systemCopyBuffer ?? "").Trim();
+            int colon = clip.LastIndexOf(':');            // "Código: ABC123" también vale
+            if (colon >= 0) clip = clip.Substring(colon + 1).Trim();
+            if (clip.Length < 6 || clip.Length > 8) return;
+            foreach (char c in clip) if (!char.IsLetterOrDigit(c)) return;
+            joinCodeInput.text = clip.ToUpper();
+        }
+
+        private void CopyRoomCode()
+        {
+            if (relayManager == null || string.IsNullOrEmpty(relayManager.LastJoinCode)) return;
+            GUIUtility.systemCopyBuffer = relayManager.LastJoinCode;
+            codeCopiedUntil = Time.unscaledTime + 2.5f;
+            Sfx.Play(Sfx.Id.Tick);
+        }
+
+        /// <summary>El texto del código se vuelve botón: clic = copiar.</summary>
+        private void EnsureCodeButton()
+        {
+            if (lobbyCodeText == null || lobbyCodeText.GetComponent<Button>() != null) return;
+            lobbyCodeText.raycastTarget = true;
+            var b = lobbyCodeText.gameObject.AddComponent<Button>();
+            b.transition = Selectable.Transition.None;
+            b.onClick.AddListener(CopyRoomCode);
         }
 
         public void ShowMain()
@@ -425,7 +460,18 @@ namespace Ratms.Networking
             if (lobbyCodeText != null)
             {
                 if (nm.IsHost && relayManager != null && !string.IsNullOrEmpty(relayManager.LastJoinCode))
-                    lobbyCodeText.text = Ratms.UI.Loc.F("Código: {0}", relayManager.LastJoinCode);
+                {
+                    EnsureCodeButton();
+                    // Recién creada: se copia sola para pegarla en Discord/WhatsApp.
+                    if (autoCopiedCode != relayManager.LastJoinCode)
+                    {
+                        autoCopiedCode = relayManager.LastJoinCode;
+                        CopyRoomCode();
+                    }
+                    bool copied = Time.unscaledTime < codeCopiedUntil;
+                    lobbyCodeText.text = Ratms.UI.Loc.F("Código: {0}", relayManager.LastJoinCode)
+                        + "  <size=70%>" + (copied ? Ratms.UI.Loc.T("(¡copiado!)") : Ratms.UI.Loc.T("(clic para copiar)")) + "</size>";
+                }
                 else if (nm.IsClient)
                     lobbyCodeText.text = "Conectado a la sala";
                 else

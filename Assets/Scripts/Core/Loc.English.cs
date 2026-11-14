@@ -439,6 +439,13 @@ namespace Ratms.UI
             ("¡Adiós, mundo cruel!", "Goodbye, cruel world!"),
 
             // ---------------- Pantalla de carga (0.22) ----------------
+            ("(¡copiado!)", "(copied!)"),
+            ("cola normal", "normal tail"),
+            ("ojos normales", "normal eyes"),
+            ("boca normal", "normal mouth"),
+            ("Ponle nombre a tu equipo y a tus ratas. Cambia cada pieza con sus botones. «Otra» sortea una rata entera; «Al azar», distinta cada partida.",
+             "Name your team and your rats. Change each part with its buttons. «Another» rolls a whole new rat; «Random», a different one every match."),
+            ("(clic para copiar)", "(click to copy)"),
             ("Cavando trincheras", "Digging trenches"),
             ("Consejo: TAB abre el arsenal; cada arma tiene su tecla.", "Tip: TAB opens the arsenal; every weapon has its own key."),
             ("Consejo: con V ves el mapa entero y con el botón derecho mueves la cámara.", "Tip: V shows the whole map and right-drag moves the camera."),

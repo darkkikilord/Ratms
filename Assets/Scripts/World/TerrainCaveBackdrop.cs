@@ -90,7 +90,7 @@ namespace Ratms.World
                 return;
             }
 
-            int[] heightLine = terrainGen.GetHeightLine();
+            int[] heightLine = terrainGen.GetBackdropLine();
             int w = terrainGen.TextureWidth;
             int h = terrainGen.TextureHeight;
 

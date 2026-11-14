@@ -315,7 +315,7 @@ namespace Ratms.Networking
             }
 
             isBusy = true;
-            SetStatus($"Uniéndose a {code}...");
+            SetStatus(Ratms.UI.Loc.F("Uniéndose a {0}...", code));
 
             bool ok = await relayManager.JoinAsync(code);
 
@@ -336,7 +336,7 @@ namespace Ratms.Networking
             if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsHost) return;
             if (NetworkManager.Singleton.ConnectedClients.Count < minPlayersToStart)
             {
-                SetStatus($"Necesitas al menos {minPlayersToStart} jugadores.");
+                SetStatus(Ratms.UI.Loc.F("Necesitas al menos {0} jugadores.", minPlayersToStart));
                 return;
             }
             if (!LobbySync.AllReady)
@@ -425,7 +425,7 @@ namespace Ratms.Networking
             if (lobbyCodeText != null)
             {
                 if (nm.IsHost && relayManager != null && !string.IsNullOrEmpty(relayManager.LastJoinCode))
-                    lobbyCodeText.text = $"Código: {relayManager.LastJoinCode}";
+                    lobbyCodeText.text = Ratms.UI.Loc.F("Código: {0}", relayManager.LastJoinCode);
                 else if (nm.IsClient)
                     lobbyCodeText.text = "Conectado a la sala";
                 else
@@ -435,7 +435,7 @@ namespace Ratms.Networking
             // Jugadores conectados
             int count = nm.ConnectedClientsIds != null ? nm.ConnectedClientsIds.Count : 0;
             if (lobbyPlayerCountText != null)
-                lobbyPlayerCountText.text = $"{count} jugadores en la sala";
+                lobbyPlayerCountText.text = Ratms.UI.Loc.F("{0} jugadores en la sala", count);
 
             // Botón Empezar: solo el host lo ve y solo si hay suficientes jugadores.
             if (btnStartGame != null)
@@ -492,13 +492,25 @@ namespace Ratms.Networking
             if (biomeDropdown == null) return;
 
             biomeDropdown.ClearOptions();
-            var options = new System.Collections.Generic.List<string> { "Pradera", "Alcantarilla" };
+            var options = new System.Collections.Generic.List<string> { Ratms.UI.Loc.T("Pradera"), Ratms.UI.Loc.T("Alcantarilla") };
             biomeDropdown.AddOptions(options);
             biomeDropdown.value = 0;
+            // Si cambian el idioma con el menú abierto, rehacemos los nombres.
+            Ratms.UI.Loc.Changed -= RelabelBiomes;
+            Ratms.UI.Loc.Changed += RelabelBiomes;
 
             biomeDropdown.onValueChanged.AddListener(OnBiomeDropdownChanged);
             // Aplicamos el valor inicial (Meadow) para que el static ya tenga algo
             OnBiomeDropdownChanged(0);
+        }
+
+        private void RelabelBiomes()
+        {
+            if (biomeDropdown == null) { Ratms.UI.Loc.Changed -= RelabelBiomes; return; }
+            string[] es = { "Pradera", "Alcantarilla" };
+            for (int i = 0; i < biomeDropdown.options.Count && i < es.Length; i++)
+                biomeDropdown.options[i].text = Ratms.UI.Loc.T(es[i]);
+            biomeDropdown.RefreshShownValue();
         }
 
         private void OnBiomeDropdownChanged(int index)

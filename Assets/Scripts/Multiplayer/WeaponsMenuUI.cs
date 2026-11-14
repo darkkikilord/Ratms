@@ -102,7 +102,10 @@ namespace Ratms.Networking
         };
 
         /// <summary>Nombre corto del arma para el HUD.</summary>
-        public static string ShortName(WeaponId id) => id switch
+        public static string ShortName(WeaponId id) => Ratms.UI.Loc.T(ShortNameEs(id));
+
+        /// <summary>Nombre corto en español (la clave de traducción).</summary>
+        public static string ShortNameEs(WeaponId id) => id switch
         {
             WeaponId.Bazooka  => "Bazooka",
             WeaponId.Grenade  => "Granada",
@@ -285,7 +288,7 @@ namespace Ratms.Networking
             float H = 52f + weapons.Length * (rowH + 4f) + 34f;
             float x = panelOffset.x, y = vh - H - panelOffset.y;
             GUI.DrawTexture(new Rect(x, y, W, H), panelTex);
-            GUI.Label(new Rect(x, y + 8f, W, 34f), "ARSENAL", titleStyle);
+            GUI.Label(new Rect(x, y + 8f, W, 34f), Ratms.UI.Loc.T("ARSENAL"), titleStyle);
 
             float ry = y + 50f;
             foreach (var w in weapons)
@@ -312,7 +315,7 @@ namespace Ratms.Networking
                 }
 
                 string number = KeyLabel(w);
-                string name = w.id == WeaponId.None ? "Guardar arma" : ShortName(w.id);
+                string name = w.id == WeaponId.None ? Ratms.UI.Loc.T("Guardar arma") : ShortName(w.id);
                 if (GUI.Button(new Rect(r.x + 64f, r.y, r.width - 64f - 60f, rowH), $"{number}  {name}", sel ? rowSel : rowStyle) && !empty)
                     SelectedIndexNet.Value = (int)w.id;
 
@@ -320,7 +323,7 @@ namespace Ratms.Networking
                 GUI.Label(new Rect(r.xMax - 60f, r.y, 54f, rowH), w.id == WeaponId.None ? "" : ammo < 0 ? "∞" : $"x{ammo}", ammoStyle);
                 ry += rowH + 4f;
             }
-            GUI.Label(new Rect(x, y + H - 30f, W, 24f), "Apuntar W/S  ·  Usar ESPACIO  ·  TAB cierra", hintStyle);
+            GUI.Label(new Rect(x, y + H - 30f, W, 24f), Ratms.UI.Loc.T("Apuntar W/S  ·  Usar ESPACIO  ·  TAB cierra"), hintStyle);
             GUI.matrix = prevMatrix;
         }
 

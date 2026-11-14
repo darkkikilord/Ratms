@@ -107,8 +107,7 @@ namespace Ratms.Networking
 
         private void ShowVictoryScreen()
         {
-            if (rootPanel == null) return;
-            rootPanel.SetActive(true);
+            if (rootPanel != null) rootPanel.SetActive(true);
             Sfx.Play(Sfx.Id.Victory, 1f, 0f);
 
             ulong winnerId = cachedTurnManager.WinnerClientId.Value;
@@ -119,22 +118,22 @@ namespace Ratms.Networking
             {
                 string[] pool = isDraw ? drawPhrases : winnerPhrases;
                 if (pool != null && pool.Length > 0)
-                    funnyPhraseText.text = pool[Random.Range(0, pool.Length)];
+                    funnyPhraseText.text = Ratms.UI.Loc.T(pool[Random.Range(0, pool.Length)]);
                 else
-                    funnyPhraseText.text = isDraw ? "Empate" : "¡Victoria!";
+                    funnyPhraseText.text = Ratms.UI.Loc.T(isDraw ? "Empate" : "¡Victoria!");
             }
 
             // Nombre del ganador (o "empate")
             if (winnerNameText != null)
             {
                 if (isDraw)
-                    winnerNameText.text = "Nadie sobrevive.";
+                    winnerNameText.text = Ratms.UI.Loc.T("Nadie sobrevive.");
                 else
                 {
                     int team = cachedTurnManager.WinnerTeam.Value;
                     string winnerName = team >= 0 ? cachedTurnManager.TeamDisplayName(team) : PlayerNameRegistry.GetName(winnerId);
                     bool localTeams = MatchRules.Mode == MatchMode.Local;
-                    winnerNameText.text = localTeams ? $"¡Ganan los {winnerName}!" : $"¡{winnerName} gana!";
+                    winnerNameText.text = localTeams ? Ratms.UI.Loc.F("¡Ganan los {0}!", winnerName) : Ratms.UI.Loc.F("¡{0} gana!", winnerName);
                     winnerNameText.color = team >= 0 ? TurnHUD.TeamTextColor(team) : winnerNameText.color;
                 }
             }
@@ -145,12 +144,51 @@ namespace Ratms.Networking
             if (btnBackToMenu != null)
                 btnBackToMenu.interactable = isHost;
             if (btnBackToMenuLabel != null)
-                btnBackToMenuLabel.text = isHost ? "Volver al lobby" : "Esperando al host...";
+                btnBackToMenuLabel.text = Ratms.UI.Loc.T(isHost ? "Volver al lobby" : "Esperando al host...");
 
             // Partida local / práctica: no hay lobby al que volver; el botón lleva al menú.
             if (MatchRules.Mode != MatchMode.Online && btnBackToMenuLabel != null)
-                btnBackToMenuLabel.text = "Volver al menú";
+                btnBackToMenuLabel.text = Ratms.UI.Loc.T("Volver al menú");
+
+            ShowOverlay(isDraw, isHost);
         }
+
+        /// <summary>
+        ///  0.19: en vez del panel de la escena (texto suelto sobre el mapa) se
+        ///  muestra el CARTEL con estadísticas y revancha (<see cref="VictoryOverlay"/>).
+        ///  Los textos son los mismos que acabamos de calcular arriba.
+        /// </summary>
+        private void ShowOverlay(bool isDraw, bool isHost)
+        {
+            var ov = GetComponent<VictoryOverlay>();
+            if (ov == null) ov = gameObject.AddComponent<VictoryOverlay>();
+            ov.phrase = funnyPhraseText != null ? funnyPhraseText.text : Ratms.UI.Loc.T(isDraw ? "Empate" : "¡Victoria!");
+            ov.winnerLine = winnerNameText != null ? winnerNameText.text : "";
+            ov.winnerColor = winnerNameText != null && !isDraw ? winnerNameText.color : TrenchGUIPaper;
+            ov.winnerTeam = isDraw ? -1 : cachedTurnManager.WinnerTeam.Value;
+            string scene = SceneManager.GetActiveScene().name;
+            if (MatchRules.Mode == MatchMode.Online)
+            {
+                // Online: la revancha es volver todos juntos a la sala (solo el host puede).
+                ov.rematchEnabled = isHost;
+                ov.rematchLabel = isHost ? "Revancha (volver a la sala)" : "Esperando al host...";
+                ov.OnRematch = OnBackToLobbyClicked;
+                ov.leaveLabel = "Salir de la sala";
+            }
+            else
+            {
+                var mode = MatchRules.Mode;
+                ov.rematchEnabled = true;
+                ov.rematchLabel = "¡REVANCHA!";
+                ov.OnRematch = () => { ov.enabled = false; RematchRunner.Begin(mode, scene); };
+                ov.leaveLabel = "Volver al menú";
+            }
+            ov.OnLeave = OnLeaveRoomClicked;
+            if (rootPanel != null) rootPanel.SetActive(false);
+            ov.enabled = true;
+        }
+
+        private static readonly Color TrenchGUIPaper = new Color(0.94f, 0.90f, 0.80f);
 
         /// <summary>
         ///  El HOST vuelve al lobby SIN desconectarse — carga la escena del MainMenu

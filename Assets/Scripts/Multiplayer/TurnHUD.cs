@@ -41,9 +41,8 @@ namespace Ratms.Networking
         private int lastTickSecond = -1;
 
         // ==============================================================
-        // SALIR AL MENÚ: ESC dos veces (la primera solo avisa)
+        // SALIR AL MENÚ: ESC abre la pausa (y desde ella, "Salir al menú")
         // ==============================================================
-        private float escConfirmUntil = -1f;
 
         private Ratms.UI.PauseMenu pause;
 
@@ -114,8 +113,8 @@ namespace Ratms.Networking
             float remaining = Mathf.Max(0f, tm.TurnTimeRemaining.Value);
 
             Color teamCol = normalColor;
-            if (tm.InTransition.Value) who = "— Cambiando de turno —";
-            else if (tm.CurrentRatId.Value == ulong.MaxValue) who = "Esperando para empezar...";
+            if (tm.InTransition.Value) who = Ratms.UI.Loc.T("— Cambiando de turno —");
+            else if (tm.CurrentRatId.Value == ulong.MaxValue) who = Ratms.UI.Loc.T("Esperando para empezar...");
             else
             {
                 var rat = tm.CurrentRat;
@@ -125,8 +124,8 @@ namespace Ratms.Networking
                 myTurn = rat != null && rat.IsOwner;
                 // En partida local todas las ratas son "tuyas": decimos de qué equipo es el turno.
                 who = myTurn && !IsHotseat(tm)
-                    ? $"¡TU TURNO!  ·  {ratName}"
-                    : $"Turno de {tm.TeamDisplayName(team)}  ·  {ratName}";
+                    ? Ratms.UI.Loc.F("¡TU TURNO!  ·  {0}", ratName)
+                    : Ratms.UI.Loc.F("Turno de {0}  ·  {1}", tm.TeamDisplayName(team), ratName);
             }
             // Sonidos: "ding" al empezar TU turno y tic-tac en los últimos segundos.
             if (Event.current.type == EventType.Repaint)
@@ -179,7 +178,7 @@ namespace Ratms.Networking
             // --- Aviso de salida (ESC) ----------------------------------
             {
                 bool confirming = false;
-                string hint = "ESC: pausa";
+                string hint = Ratms.UI.Loc.T("ESC: pausa");
                 var r = new Rect(virtualWidth - 360f, 8f, 350f, 24f);
                 var prevAlign = windStyle.alignment;
                 var prevCol = windStyle.normal.textColor;
@@ -208,14 +207,14 @@ namespace Ratms.Networking
                 string ammoText = ammo >= 0 ? $" x{ammo}" : "";
                 bool armless = menu != null && !menu.HandsOk && menu.SelectedWeapon == WeaponsMenuUI.WeaponId.None;
                 GUI.Label(new Rect(panel.x, panel.y + panelSize.y + 2f, panel.width, 24f),
-                          armless ? "Arma: ¡MORDISCO! (ESPACIO)   · sin brazos" : $"Arma: {weapon}{ammoText}   (1-8 o TAB)", windStyle);
+                          armless ? Ratms.UI.Loc.T("Arma: ¡MORDISCO! (ESPACIO)   · sin brazos") : Ratms.UI.Loc.F("Arma: {0}{1}   (1-8 o TAB)", weapon, ammoText), windStyle);
                 // Lesiones de la rata del turno
                 string injuries = turnHealth != null ? turnHealth.InjuryText : "";
                 if (!string.IsNullOrEmpty(injuries))
                 {
                     var prevCol = windStyle.normal.textColor;
                     windStyle.normal.textColor = new Color(1f, 0.45f, 0.35f);
-                    GUI.Label(new Rect(panel.x, panel.y + panelSize.y + 24f, panel.width, 24f), $"Heridas: {injuries}", windStyle);
+                    GUI.Label(new Rect(panel.x, panel.y + panelSize.y + 24f, panel.width, 24f), Ratms.UI.Loc.F("Heridas: {0}", injuries), windStyle);
                     windStyle.normal.textColor = prevCol;
                 }
             }
@@ -315,17 +314,17 @@ namespace Ratms.Networking
             string text;
             if (tm.SuddenDeath.Value)
             {
-                text = "¡MUERTE SÚBITA!  El agua sube";
+                text = Ratms.UI.Loc.T("¡MUERTE SÚBITA!  El agua sube");
                 windStyle.normal.textColor = Color.Lerp(warningColor, Color.white, 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f));
             }
             else
             {
                 float t = tm.MatchTime.Value;
-                text = "Partida " + Clock(t);
+                text = Ratms.UI.Loc.T("Partida") + " " + Clock(t);
                 if (tm.SuddenDeathAt.Value > 0f)
                 {
                     float left = Mathf.Max(0f, tm.SuddenDeathAt.Value - t);
-                    text += "   ·   Muerte súbita en " + Clock(left);
+                    text += "   ·   " + Ratms.UI.Loc.F("Muerte súbita en {0}", Clock(left));
                     windStyle.normal.textColor = left < 60f ? warningColor : new Color(1f, 1f, 1f, 0.75f);
                 }
                 else windStyle.normal.textColor = new Color(1f, 1f, 1f, 0.75f);
@@ -357,6 +356,9 @@ namespace Ratms.Networking
 
         private void Announce(string text, Color color)
         {
+            // Llega en español (o empaquetado con datos): se traduce AQUÍ, en
+            // cada PC, para que cada jugador lo lea en su idioma.
+            text = Ratms.UI.Loc.Show(text);
             announceText = text;
             LastAnnouncement = text;
             announceColor = color;
@@ -409,13 +411,14 @@ namespace Ratms.Networking
         public static string WindText(float wind)
         {
             float mag = Mathf.Abs(wind);
-            if (mag < 0.05f) return "Viento: calma";
+            if (mag < 0.05f) return Ratms.UI.Loc.T("Viento: calma");
+            string wordWind = Ratms.UI.Loc.T("Viento");
             int arrows = Mathf.Clamp(Mathf.CeilToInt(mag * 5f), 1, 5);
             // ASCII a propósito: la fuente por defecto de IMGUI no garantiza
             // los caracteres de flecha Unicode en todas las plataformas.
             return wind < 0f
-                ? $"{new string('<', arrows)}  Viento  {new string(' ', arrows)}"
-                : $"{new string(' ', arrows)}  Viento  {new string('>', arrows)}";
+                ? $"{new string('<', arrows)}  {wordWind}  {new string(' ', arrows)}"
+                : $"{new string(' ', arrows)}  {wordWind}  {new string('>', arrows)}";
         }
 
         private void EnsureStyles(float scale)

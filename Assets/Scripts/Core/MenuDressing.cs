@@ -17,7 +17,7 @@ namespace Ratms.UI
     /// </summary>
     public class MenuDressing : MonoBehaviour
     {
-        public const string Version = "v0.17";
+        public const string Version = "v0.19";
 
         private RectTransform canvasRect, layer;
         private readonly List<Marcher> marchers = new();
@@ -77,16 +77,24 @@ namespace Ratms.UI
             for (int i = 0; i < 6; i++) marchers.Add(NewMarcher(i * 0.18f));
 
             // Lema y versión
-            var tag = NewText("Lema", canvas.transform, "~ GUERRA DE TRINCHERAS ROEDORA ~", 34, new Color(1f, 0.86f, 0.55f));
+            var tag = MainMenuLook.NewText("Lema", canvas.transform, "~ GUERRA DE TRINCHERAS ROEDORA ~", 34, new Color(1f, 0.86f, 0.55f), MainMenuLook.TypewriterTMP);
             tag.rectTransform.anchorMin = tag.rectTransform.anchorMax = new Vector2(0.45f, 0.655f);
             tag.rectTransform.sizeDelta = new Vector2(1200f, 60f);
+            tag.characterSpacing = 4f;
+            tag.gameObject.AddComponent<LocText>();
+            tagline = tag;
+            mainPanel = canvas.transform.Find("SafeArea/MainPanel")?.gameObject;
             var ver = NewText("Version", canvas.transform, $"Ratms {Version}", 22, new Color(1f, 1f, 1f, 0.55f));
             ver.rectTransform.anchorMin = ver.rectTransform.anchorMax = new Vector2(1f, 0f);
             ver.rectTransform.pivot = new Vector2(1f, 0f);
             ver.rectTransform.anchoredPosition = new Vector2(-16f, 10f);
             ver.alignment = TextAlignmentOptions.BottomRight;
 
-            RestyleButtons(canvas.transform);
+            // 0.19: poste de tablones, selector de idioma y paneles en caja de munición.
+            MainMenuLook.BuildSignpost(canvas.transform);
+            MainMenuLook.BuildLanguageSelector(canvas.transform);
+            MainMenuLook.RestyleMultiplayerPanels(canvas.transform);
+            RestyleButtons(canvas.transform);   // los que queden (panel de opciones antiguo...)
             nextShell = Time.time + 1f;
         }
 
@@ -111,11 +119,18 @@ namespace Ratms.UI
             return m;
         }
 
+        // El lema va en la raíz del canvas (por encima de todo): lo escondemos
+        // cuando no está el menú principal (si no, se veía sobre el panel
+        // multijugador).
+        private TMP_Text tagline;
+        private GameObject mainPanel;
+
         private float Width() => canvasRect != null ? canvasRect.rect.width : 1920f;
         private float Height() => canvasRect != null ? canvasRect.rect.height : 1080f;
 
         private void Update()
         {
+            if (tagline != null && mainPanel != null) tagline.enabled = mainPanel.activeInHierarchy;
             float w = Width(), h = Height();
             // Desfile
             for (int i = 0; i < marchers.Count; i++)
@@ -174,11 +189,14 @@ namespace Ratms.UI
             Destroy(smoke.gameObject);
         }
 
-        /// <summary>Botones de madera de caja de munición con letras de plantilla.</summary>
+        /// <summary>Botones de madera de caja de munición con letras de plantilla
+        /// (los que no ha vestido ya <see cref="MainMenuLook"/>).</summary>
         private static void RestyleButtons(Transform root)
         {
             foreach (var b in root.GetComponentsInChildren<Button>(true))
             {
+                if (b.GetComponent<Image>() is Image already && already.sprite != null && already.sprite.texture != null &&
+                    already.sprite.texture.filterMode == FilterMode.Point) continue;   // ya es un tablón pixel-art
                 if (b.GetComponent<Image>() is Image img)
                 {
                     img.color = new Color(0.30f, 0.23f, 0.14f, 0.95f);
@@ -194,7 +212,7 @@ namespace Ratms.UI
                     t.color = new Color(0.96f, 0.86f, 0.62f);
                     t.fontStyle = FontStyles.Bold | FontStyles.UpperCase;
                     t.characterSpacing = 2f;
-                    t.enableWordWrapping = false;
+                    t.textWrappingMode = TextWrappingModes.NoWrap;
                     t.enableAutoSizing = true;
                     t.fontSizeMax = t.fontSize;
                     t.fontSizeMin = 10f;

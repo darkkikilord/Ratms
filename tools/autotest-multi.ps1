@@ -14,6 +14,7 @@
 #>
 param(
     [switch]$SkipBuild,
+    [string]$Biome = "",
     [string]$UnityExe = "B:\Juegos\6000.0.50f1\Editor\Unity.exe",
     [int]$TimeoutSeconds = 300
 )
@@ -42,10 +43,11 @@ $clientDir = Join-Path $autoDir "Multi_${stamp}_cliente"
 New-Item -ItemType Directory -Force $hostDir, $clientDir | Out-Null
 
 function Start-Game($role, $dir, $x) {
-    Start-Process -FilePath $buildExe -PassThru -ArgumentList @(
-        "-ratmsAutoTest", "-autoTestRole", $role, "-autoTestOut", "`"$dir`"",
+    $a = @("-ratmsAutoTest", "-autoTestRole", $role, "-autoTestOut", "`"$dir`"",
         "-screen-fullscreen", "0", "-screen-width", "960", "-screen-height", "540",
         "-logFile", "`"$(Join-Path $dir 'player.log')`"")
+    if ($Biome -and $role -eq "host") { $a += @("-autoTestBiome", $Biome) }   # el cliente lo recibe por red
+    Start-Process -FilePath $buildExe -PassThru -ArgumentList $a
 }
 
 Write-Host ">>> Lanzando HOST y CLIENTE..."

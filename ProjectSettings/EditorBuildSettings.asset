@@ -14,9 +14,6 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/Scenes/Escenario 1 obsoleto.unity
     guid: 8d8228669bee4bf498906903e4f2e349
-  - enabled: 0
-    path: Assets/Scenes/Test_Network.unity
-    guid: 757b4170805f9934e9980e9395a688ae
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
   m_UseUCBPForAssetBundles: 0

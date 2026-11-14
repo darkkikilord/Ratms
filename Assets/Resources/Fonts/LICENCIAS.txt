@@ -1,0 +1,13 @@
+Fuentes de los menús de Ratms (descargadas de Google Fonts, github.com/google/fonts):
+
+- Black Ops One (BlackOpsOne-Regular.ttf)
+  Copyright 2022 The Black Ops One Project Authors (https://github.com/SorkinType/Black-Ops)
+  Licencia: SIL Open Font License 1.1 — https://openfontlicense.org
+  Se puede usar, incrustar y distribuir con el juego (también comercialmente).
+
+- Special Elite (SpecialElite-Regular.ttf)
+  Copyright (c) 2010 Brian J. Bonislawsky DBA Astigmatic (AOETI)
+  Licencia: Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
+  Se puede usar, incrustar y distribuir con el juego (también comercialmente).
+
+Se cargan por código desde Resources (Ratms.UI.TrenchGUI.Fonts).

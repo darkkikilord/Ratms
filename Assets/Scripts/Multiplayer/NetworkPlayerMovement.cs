@@ -513,6 +513,7 @@ namespace Ratms.Networking
 
         public override void OnNetworkSpawn()
         {
+            Ratms.World.DestructibleTerrain.ShapeChanged += OnTerrainShapeChanged;
             if (IsServer && SpawnNextAsTestDummy)
             {
                 IsTestDummy = true;
@@ -599,6 +600,7 @@ namespace Ratms.Networking
 
         public override void OnNetworkDespawn()
         {
+            Ratms.World.DestructibleTerrain.ShapeChanged -= OnTerrainShapeChanged;
             facingRight.OnValueChanged -= OnFacingChanged;
             syncedSpeed.OnValueChanged -= OnSpeedChanged;
             aimAngle.OnValueChanged -= OnAimChanged;
@@ -626,6 +628,23 @@ namespace Ratms.Networking
         /// </summary>
         /// <summary>¿Puede controlar la rata AHORA? (dueño + su turno). Lo leen las armas.</summary>
         public bool CanControlNow => CanControl();
+
+        /// <summary>
+        ///  El terreno ha cambiado de forma (explosión): si estábamos aparcadas
+        ///  (gravedad 0, cuerpo dormido) nos soltamos y despertamos. Si sigue
+        ///  habiendo suelo, en el siguiente paso de física vuelve a aparcarse;
+        ///  si no, cae como debe (antes se quedaba flotando en el aire).
+        /// </summary>
+        private void OnTerrainShapeChanged()
+        {
+            if (!IsOwner || rb == null) return;
+            if (parked)
+            {
+                parked = false;
+                rb.gravityScale = defaultGravityScale >= 0f ? defaultGravityScale : 1f;
+            }
+            rb.WakeUp();
+        }
 
         /// <summary>Lo llama NetworkTeleport tras mover la rata: sin "caída" falsa y sin aparcar.</summary>
         public void OnTeleported()
@@ -664,6 +683,17 @@ namespace Ratms.Networking
             if (canControlNow && !couldControlLastFrame) { firedThisTurn = false; shotsThisTurn = 0; }
             couldControlLastFrame = canControlNow;
 
+            // DAÑO POR CAÍDA: lo vigila el DUEÑO para TODAS sus ratas, tengan el
+            // turno o no. Antes se medía más abajo (solo la rata del turno), así
+            // que una rata lanzada por una explosión en el turno de otro (o la
+            // tuya cuando tu turno ya había acabado) caía sin hacerse daño.
+            bool groundedForFall = false;
+            if (IsOwner)
+            {
+                groundedForFall = IsGrounded();
+                TrackFallDamage(groundedForFall);
+            }
+
             if (!canControlNow)
             {
                 // Si pierdo el turno mientras me movía, dejo de empujar y cancelo
@@ -697,7 +727,7 @@ namespace Ratms.Networking
             //
             //   · El jumpCooldown sigue ahí para que dos pulsaciones muy
             //     seguidas (incluso por chattering del teclado) no doblen.
-            bool grounded = IsGrounded();
+            bool grounded = groundedForFall;   // ya calculado arriba (aquí siempre somos dueño)
             if (grounded) lastGroundedTime = Time.time;
 
             if (debugGroundCheck && grounded != wasGrounded)
@@ -705,11 +735,6 @@ namespace Ratms.Networking
                 Debug.Log($"[NetworkPlayerMovement] grounded={grounded} vy={rb.linearVelocity.y:F2}");
                 wasGrounded = grounded;
             }
-
-            // ==============================================
-            //  DAÑO POR CAÍDA — solo el OWNER trackea y solicita
-            // ==============================================
-            if (IsOwner) TrackFallDamage(grounded);
 
             // Salto: SOLO Flecha Arriba. W queda libre para apuntar arriba.
             bool jumpKeyDown = Input.GetKeyDown(KeyCode.UpArrow) || ConsumeTestJump();
@@ -759,6 +784,10 @@ namespace Ratms.Networking
                 Sfx.Play(Sfx.Id.Swish, 0.6f);
                 var lookFlip = GetComponent<RatAppearance>();
                 if (lookFlip != null) lookFlip.Backflip();
+                // El giro es solo DIBUJO (la posición ya viaja por el
+                // NetworkTransform): hay que avisar a los demás PCs o solo lo
+                // ve quien lo hace.
+                BackflipServerRpc();
             }
 
             if (canCoyoteJump && jumpBuffered && cooldownOk && jumpMul > 0f)
@@ -1108,6 +1137,19 @@ namespace Ratms.Networking
             }
 
             wasGroundedLastFrame = grounded;
+        }
+
+        /// <summary>El dueño ha hecho una voltereta: que la vean todos.</summary>
+        [ServerRpc]
+        private void BackflipServerRpc() => BackflipClientRpc();
+
+        [ClientRpc]
+        private void BackflipClientRpc()
+        {
+            if (IsOwner) return;   // el dueño ya la ha dibujado al instante
+            var look = GetComponent<RatAppearance>();
+            if (look != null) look.Backflip();
+            Sfx.Play(Sfx.Id.Swish, 0.5f);
         }
 
         [ServerRpc]

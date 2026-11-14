@@ -37,7 +37,7 @@ namespace Ratms.Networking
             {
                 var c = GUI.color;
                 GUI.color = TurnHUD.TeamTextColor(i);
-                TrenchGUI.Label(new Rect(x, y, cw - 160f, 34f), $"{i + 1}. {e.name}{(e.id == nm.LocalClientId ? "  (tú)" : "")}");
+                TrenchGUI.Label(new Rect(x, y, cw - 160f, 34f), $"{i + 1}. {e.name}{(e.id == nm.LocalClientId ? "  " + Loc.T("(tú)") : "")}");
                 GUI.color = e.ready || e.id == NetworkManager.ServerClientId ? new Color(0.6f, 1f, 0.55f) : new Color(1f, 0.7f, 0.5f);
                 TrenchGUI.Label(new Rect(x + cw - 150f, y, 150f, 34f), e.id == NetworkManager.ServerClientId ? "ANFITRIÓN" : e.ready ? "¡LISTO!" : "esperando…");
                 GUI.color = c;
@@ -54,7 +54,7 @@ namespace Ratms.Networking
                 y += 76f;
                 TrenchGUI.Label(new Rect(x, y, cw, 30f), "Reglas del anfitrión:");
                 y += 34f;
-                TrenchGUI.Small(new Rect(x, y, cw, 90f), string.IsNullOrEmpty(LobbySync.RulesSummary) ? "…" : LobbySync.RulesSummary);
+                TrenchGUI.Small(new Rect(x, y, cw, 90f), string.IsNullOrEmpty(LobbySync.RulesSummary) ? "…" : Loc.Show(LobbySync.RulesSummary));
             }
             else
             {

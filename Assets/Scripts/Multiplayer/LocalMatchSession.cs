@@ -23,6 +23,7 @@ namespace Ratms.Networking
             MatchRules.Mode = MatchMode.Local;
             var utp = nm.GetComponent<UnityTransport>();
             if (utp != null) utp.SetConnectionData("127.0.0.1", 7777, "127.0.0.1");
+            NetcodeHygiene.BeforeSessionStart();
             if (!nm.StartHost())
             {
                 Debug.LogError("[Partida local] No se pudo arrancar el host local.");

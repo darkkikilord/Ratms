@@ -131,7 +131,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  GlobalObjectIdHash: 1105573318
+  GlobalObjectIdHash: 4158709513
   InScenePlacedSourceGlobalObjectIdHash: 0
   DeferredDespawnTick: 0
   Ownership: 1
@@ -193,14 +193,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
-  maxDamage: 70
-  explosionRadius: 3.5
+  maxDamage: 45
+  explosionRadius: 3
   damageMask:
     serializedVersion: 2
     m_Bits: 4294967295
   fuseSeconds: 3
   maxBounces: 3
   stopDrag: 8
+  knockbackForce: 9.4
+  shakeAmplitude: 0.35
+  shakeDuration: 0.5
+  impactPauseSeconds: 1
   explosionVfxPrefab: {fileID: 0}
   explosionSfx: {fileID: 0}
   explosionSfxVolume: 0.8
@@ -208,6 +212,8 @@ MonoBehaviour:
   bounceSfxVolume: 0.35
   showCountdown: 1
   countdownColor: {r: 1, g: 0.9, b: 0.2, a: 1}
+  windFactor: 0.25
+  clusterBomblets: 5
 --- !u!58 &1448901005213577878
 CircleCollider2D:
   m_ObjectHideFlags: 0

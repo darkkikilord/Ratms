@@ -55,6 +55,18 @@ namespace Ratms.World
         /// <param name="minLoopPoints">Bucles con menos puntos (motas sueltas de 1-3 px) se descartan.</param>
         public static List<Vector2[]> Build(Color32[] pixels, int w, int h, float ppu,
                                             float simplifyPx, int minLoopPoints)
+            => Build(pixels, w, h, ppu, simplifyPx, minLoopPoints, null);
+
+        // De qué imagen es la rejilla guardada (si cambia, se rehace entera).
+        private static Color32[] gridOf;
+        private static int gridW, gridH;
+
+        /// <param name="changed">Zona (en píxeles) que ha cambiado desde la última
+        /// llamada con la MISMA imagen. null = recalcular toda la rejilla.
+        /// (0.19) La rejilla sólido/aire se guarda entre explosiones y solo se
+        /// actualiza el trozo del cráter: antes se rehacían 2 millones de píxeles.</param>
+        public static List<Vector2[]> Build(Color32[] pixels, int w, int h, float ppu,
+                                            float simplifyPx, int minLoopPoints, RectInt? changed)
         {
             var result = new List<Vector2[]>();
             if (pixels == null || w <= 0 || h <= 0) return result;
@@ -66,26 +78,37 @@ namespace Ratms.World
             // De paso clasificamos cada fila: toda aire / toda sólida / mixta.
             int W = w + 2, H = h + 2;
             int n = W * H;
+            bool full = changed == null || gridOf != pixels || gridW != w || gridH != h || solid == null || solid.Length < n;
             if (solid == null || solid.Length < n) solid = new byte[n];
             if (rowKind == null || rowKind.Length < H) rowKind = new byte[H];
-            System.Array.Clear(solid, 0, W);                          // fila de borde inferior
-            System.Array.Clear(solid, (H - 1) * W, W);                // fila de borde superior
-            rowKind[0] = rowKind[H - 1] = RowEmpty;
-            for (int y = 0; y < h; y++)
+            int y0 = 0, y1 = h - 1, x0 = 0, x1 = w - 1;
+            if (full)
+            {
+                System.Array.Clear(solid, 0, W);                      // fila de borde inferior
+                System.Array.Clear(solid, (H - 1) * W, W);            // fila de borde superior
+                rowKind[0] = rowKind[H - 1] = RowEmpty;
+            }
+            else
+            {
+                var c = changed.Value;
+                x0 = Mathf.Clamp(c.xMin, 0, w - 1); x1 = Mathf.Clamp(c.xMax, 0, w - 1);
+                y0 = Mathf.Clamp(c.yMin, 0, h - 1); y1 = Mathf.Clamp(c.yMax, 0, h - 1);
+            }
+            for (int y = y0; y <= y1; y++)
             {
                 int dst = (y + 1) * W, src = y * w;
                 solid[dst] = 0;
                 solid[dst + W - 1] = 0;
-                int count = 0;
-                for (int x = 0; x < w; x++)
+                for (int x = x0; x <= x1; x++)
                 {
                     var c = pixels[src + x];
-                    byte s = (c.a > 0 && c.a != DestructibleTerrain.DecorAlpha) ? (byte)1 : (byte)0;
-                    solid[dst + 1 + x] = s;
-                    count += s;
+                    solid[dst + 1 + x] = (c.a > 0 && c.a != DestructibleTerrain.DecorAlpha) ? (byte)1 : (byte)0;
                 }
+                int count = 0;
+                for (int x = 1; x <= w; x++) count += solid[dst + x];
                 rowKind[y + 1] = count == 0 ? RowEmpty : count == w ? RowFull : RowMixed;
             }
+            gridOf = pixels; gridW = w; gridH = h;
 
             // ---- 2) Trozos de borde dirigidos ----
             // Las esquinas de cada celda son CENTROS de píxel. Las celdas van de
@@ -115,6 +138,20 @@ namespace Ratms.World
                 for (int ip = 0; ip < W - 1; ip++)
                 {
                     if (onlyEnds && ip > 0 && ip < W - 2) { ip = W - 3; continue; }
+
+                    // SALTO RÁPIDO: si 9 esquinas seguidas de las dos filas son
+                    // iguales (todo tierra o todo aire), las 8 celdas no tienen
+                    // borde. Se comparan de 8 en 8 bytes de una vez.
+                    if (ip + 9 < W)
+                    {
+                        ulong lo = System.BitConverter.ToUInt64(solid, rowLow + ip);
+                        if (lo == System.BitConverter.ToUInt64(solid, rowHigh + ip) && (lo == 0UL || lo == AllOnes) &&
+                            solid[rowLow + ip + 8] == solid[rowLow + ip] && solid[rowHigh + ip + 8] == solid[rowLow + ip])
+                        {
+                            ip += 7;
+                            continue;
+                        }
+                    }
 
                     int bl = solid[rowLow + ip], br = solid[rowLow + ip + 1];
                     int tl = solid[rowHigh + ip], tr = solid[rowHigh + ip + 1];
@@ -178,6 +215,7 @@ namespace Ratms.World
         }
 
         private const byte RowEmpty = 0, RowFull = 2, RowMixed = 1;
+        private const ulong AllOnes = 0x0101010101010101UL;
         private static byte[] rowKind;
 
         private static void Link(int from, int to)

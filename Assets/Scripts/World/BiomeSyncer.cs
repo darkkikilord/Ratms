@@ -78,8 +78,12 @@ namespace Ratms.World
 
             // Regenerar terreno, agua y fondo con los colores del nuevo bioma.
             // Buscamos cada componente en la escena y le pedimos regenerar.
+            // OJO: con la MISMA semilla. Antes se llamaba a Generate(), que
+            // sortea semilla nueva: si en un PC este objeto arrancaba DESPUÉS
+            // del NetworkDestructibleTerrain, ese PC se quedaba con otro mapa
+            // (en la alcantarilla, el cliente veía a las ratas bajo tierra).
             var terrainGen = Object.FindFirstObjectByType<TerrainGenerator>();
-            if (terrainGen != null) terrainGen.Generate();
+            if (terrainGen != null) terrainGen.RegenerateSameSeed();
 
             var water = Object.FindFirstObjectByType<WaterDeathZone>();
             if (water != null) water.RebuildVisuals();

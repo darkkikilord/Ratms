@@ -22,6 +22,7 @@ param(
     [switch]$SkipBuild,
     [string]$Biome = "",
     [string]$Role = "",
+    [string]$Lang = "",
     [string]$UnityExe = "B:\Juegos\6000.0.50f1\Editor\Unity.exe",
     [int]$TimeoutSeconds = 320
 )
@@ -79,6 +80,7 @@ $gameArgs = @(
     "-logFile", "`"$(Join-Path $runDir 'player.log')`""
 )
 if ($Biome) { $gameArgs += @("-autoTestBiome", $Biome) }
+if ($Lang) { $gameArgs += @("-autoTestLang", $Lang) }   # en = capturas en inglés
 if ($Role)  { $gameArgs += @("-autoTestRole", $Role) }   # local, practice (host/client: usa autotest-multi.ps1)
 
 Write-Host ">>> Ejecutando prueba automática..."

@@ -70,11 +70,15 @@ namespace Ratms.UI
         }
 
         /// <summary>Resumen de una línea (lo ven los clientes en el lobby).</summary>
-        public static string Summary() =>
-            $"{MatchRules.RatsPerTeam} ratas · {MatchRules.StartHealth} vida · turnos de {MatchRules.TurnSeconds} s · " +
-            $"muerte súbita {(MatchRules.SuddenDeathMinutes > 0 ? MatchRules.SuddenDeathMinutes + " min" : "nunca")} · " +
-            $"{MatchRules.Barrels} barriles · cajas {(MatchRules.CrateChance <= 0f ? "nunca" : MatchRules.CrateChance < 0.3f ? "pocas" : MatchRules.CrateChance < 0.5f ? "normal" : "muchas")} · " +
-            $"mutilaciones {(MatchRules.Mutilations ? "sí" : "no")}";
+        /// <remarks>Viaja por red EMPAQUETADO (<see cref="Loc.Pack"/>): cada cliente
+        /// lo lee en su idioma con <see cref="Loc.Show"/>.</remarks>
+        public static string Summary() => Loc.Pack(
+            "{0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
+            MatchRules.RatsPerTeam, MatchRules.StartHealth, MatchRules.TurnSeconds,
+            MatchRules.SuddenDeathMinutes > 0 ? MatchRules.SuddenDeathMinutes + " min" : "nunca",
+            MatchRules.Barrels,
+            MatchRules.CrateChance <= 0f ? "nunca" : MatchRules.CrateChance < 0.3f ? "pocas" : MatchRules.CrateChance < 0.5f ? "normal" : "muchas",
+            MatchRules.Mutilations ? "sí" : "no");
 
         private static int Idx(int[] arr, int v, int def) { int i = Array.IndexOf(arr, v); return i < 0 ? def : i; }
         private static int Idx(float[] arr, float v, int def)

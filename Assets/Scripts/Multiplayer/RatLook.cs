@@ -107,6 +107,48 @@ namespace Ratms.Networking
             return 0;
         }
 
+        /// <summary>
+        ///  Descripción para el jugador (editor "Mi equipo"), en su idioma:
+        ///  "gorda, parda, cola larga, casco Brodie...".
+        /// </summary>
+        public string Describe()
+        {
+            var parts = new System.Collections.Generic.List<string>
+            {
+                Ratms.UI.Loc.T(BodyName(body)), Ratms.UI.Loc.T(FurName(fur)),
+            };
+            if (tail == TailType.SinCola) parts.Add(Ratms.UI.Loc.T("sin cola"));
+            else if (tail == TailType.Munon) parts.Add(Ratms.UI.Loc.T("muñón de cola"));
+            else if (tail == TailType.Larga) parts.Add(Ratms.UI.Loc.T("cola larga"));
+            if (oneArm) parts.Add(Ratms.UI.Loc.T("manca"));
+            if (pegLeg) parts.Add(Ratms.UI.Loc.T("pata de palo"));
+            if (eye == EyeType.Parche) parts.Add(Ratms.UI.Loc.T("parche"));
+            else if (eye == EyeType.Loco) parts.Add(Ratms.UI.Loc.T("ojo loco"));
+            else if (eye == EyeType.Monoculo) parts.Add(Ratms.UI.Loc.T("monóculo"));
+            parts.Add(Ratms.UI.Loc.T(HatName(hat)));
+            if (mouth == MouthType.Cigarro) parts.Add(Ratms.UI.Loc.T("cigarro"));
+            else if (mouth == MouthType.Puro) parts.Add(Ratms.UI.Loc.T("puro"));
+            else if (mouth == MouthType.Mellada) parts.Add(Ratms.UI.Loc.T("mellada"));
+            if (goldTooth) parts.Add(Ratms.UI.Loc.T("diente de oro"));
+            return string.Join(", ", parts);
+        }
+
+        public static string BodyName(BodyType b) => b switch
+        {
+            BodyType.Gorda => "gorda", BodyType.Flaca => "flaca", BodyType.Jorobada => "jorobada",
+            BodyType.Musculosa => "musculosa", _ => "topo",
+        };
+        public static string FurName(FurType f) => f switch
+        {
+            FurType.Parda => "parda", FurType.Gris => "gris", FurType.Negra => "negra",
+            FurType.Pelirroja => "pelirroja", FurType.Albina => "albina", _ => "sarnosa",
+        };
+        public static string HatName(HatType h) => h switch
+        {
+            HatType.Brodie => "casco Brodie", HatType.Adrian => "casco Adrian", HatType.Pickelhaube => "pickelhaube",
+            HatType.Gorra => "gorra", HatType.Panuelo => "pañuelo", _ => "máscara de gas",
+        };
+
         /// <summary>Descripción corta (para el informe de pruebas y, más adelante, el editor).</summary>
         public override string ToString()
         {

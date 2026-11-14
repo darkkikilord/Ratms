@@ -43,10 +43,6 @@ namespace Ratms.Networking
         [SerializeField] private float selfDestructSeconds = 8f;
         [SerializeField] private float ownerIgnoreTime = 0.5f;
 
-        [Tooltip("DEV / TESTING: si está ON, el misil PUEDE dañar también al lanzador. " +
-                 "Útil para probar el popup en solitario sin tener que entrar dos clientes. " +
-                 "Para multijugador real: déjalo OFF (estilo Worms — tu propio misil no te daña).")]
-        [SerializeField] private bool allowSelfDamage = false;
 
         [Header("Impacto — empujón y cámara")]
         [Tooltip("Fuerza máxima del empujón a una rata pegada al centro de la explosión. Cae con la distancia con falloff sqrt (más 'kick' a media distancia).")]
@@ -97,7 +93,6 @@ namespace Ratms.Networking
         {
             pendingVariant = (byte)(napalm ? 2 : 1);
             shortenTurnOnImpact = false;
-            allowSelfDamage = true;
             ownerIgnoreTime = 0f;
             windFactor = 0.3f;
             if (napalm) { maxDamage = 12; explosionRadius = 1.1f; knockbackForce = 10f; minKnockback = 4f; }
@@ -229,22 +224,17 @@ namespace Ratms.Networking
             // misil cayó lejos de las ratas y por eso no aparece popup.
             Debug.Log($"[NetworkMissile] Explosión en {at} — {hits.Length} colliders en radio {explosionRadius}");
 
-            // NetworkHealth del dueño del misil: lo EXCLUIMOS del daño en área
-            // para evitar que un disparo hacia atrás te explote en la cara.
-            // (Worms-style: nunca te daña TU propio misil.)
-            // EXCEPCIÓN: si está activado allowSelfDamage (modo testing en
-            // solitario), no excluimos a nadie. Útil para probar el popup
-            // sin tener que abrir dos clientes.
-            NetworkHealth ownerHealth = null;
-            if (!allowSelfDamage && ownerNetObj != null)
-                ownerHealth = ownerNetObj.GetComponent<NetworkHealth>();
+            // AUTO-DAÑO (como en Worms): si te disparas a los pies, te comes
+            // la explosión. Antes el lanzador quedaba excluido y los amigos
+            // veían que un bazucazo a bocajarro no te hacía nada. Lo único que
+            // se ignora es el CHOQUE con el lanzador en el primer medio
+            // segundo (ownerIgnoreTime), para que el misil no reviente al salir.
 
             foreach (var col in hits)
             {
                 if (col == null) continue;
                 var nh = col.GetComponentInParent<NetworkHealth>();
                 if (nh == null || alreadyDamaged.Contains(nh)) continue;
-                if (ownerHealth != null && nh == ownerHealth) continue; // no auto-daño
                 alreadyDamaged.Add(nh);
 
                 // Distancia al CUERPO (no al pivote del prefab, que está bajo el suelo).

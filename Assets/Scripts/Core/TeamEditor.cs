@@ -27,7 +27,7 @@ namespace Ratms.UI
 
             float x = r.x + 40f, y = r.y + 120f, w = r.width - 80f;
             TrenchGUI.Label(new Rect(x, y, 220f, 44f), "Equipo");
-            TeamProfile.TeamName = GUI.TextField(new Rect(x + 230f, y, w - 230f, 44f), TeamProfile.TeamName, 20, TrenchGUI.FieldStyle);
+            TeamProfile.TeamName = TrenchGUI.Field(new Rect(x + 230f, y, w - 230f, 44f), TeamProfile.TeamName, 20, "Escribe el nombre de tu equipo…");
             y += 64f;
 
             for (int i = 0; i < TeamProfile.Slots; i++)
@@ -52,12 +52,12 @@ namespace Ratms.UI
                 if (TeamProfile.Look(i) == 0) TrenchGUI.Label(new Rect(row.x + 44f, row.y + 36f, 60f, 44f), "¿?");
 
                 float fx = row.x + 136f;
-                TrenchGUI.Small(new Rect(fx, row.y + 2f, 300f, 26f), $"Rata {i + 1}");
+                TrenchGUI.Small(new Rect(fx, row.y + 2f, 300f, 26f), Loc.F("Rata {0}", i + 1));
                 string current = TeamProfile.RatName(i);
-                string edited = GUI.TextField(new Rect(fx, row.y + 30f, 340f, 42f), current, 16, TrenchGUI.FieldStyle);
+                string edited = TrenchGUI.Field(new Rect(fx, row.y + 30f, 340f, 42f), current, 16, "Nombre al azar");
                 if (edited != current) TeamProfile.SetRatName(i, edited);
                 TrenchGUI.Small(new Rect(fx, row.y + 78f, 520f, 40f),
-                    TeamProfile.Look(i) == 0 ? "Aspecto: al azar en cada partida" : RatLook.Unpack(look).ToString());
+                    TeamProfile.Look(i) == 0 ? "Aspecto: al azar en cada partida" : RatLook.Unpack(look).Describe());
 
                 if (TrenchGUI.Button(new Rect(row.xMax - 330f, row.y + 30f, 160f, 48f), "Otra"))
                     TeamProfile.SetLook(i, RatLook.Random(rng).Pack());

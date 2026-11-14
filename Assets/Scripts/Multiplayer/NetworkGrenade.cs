@@ -28,8 +28,8 @@ namespace Ratms.Networking
     public class NetworkGrenade : NetworkBehaviour
     {
         [Header("Daño")]
-        [SerializeField] private int maxDamage = 70;
-        [SerializeField] private float explosionRadius = 3.5f;
+        [SerializeField] private int maxDamage = 45;
+        [SerializeField] private float explosionRadius = 3.0f;
         [Tooltip("Layers que recibirán daño por la explosión. A diferencia del misil, la granada PUEDE dañar al lanzador.")]
         [SerializeField] private LayerMask damageMask = ~0;
 

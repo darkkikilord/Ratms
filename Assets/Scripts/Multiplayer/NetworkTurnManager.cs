@@ -131,6 +131,9 @@ namespace Ratms.Networking
         partial void ItemsOnGameStart();
         partial void ItemsOnTurnBegin();
         partial void ItemsUpdate();
+        partial void StatsOnSpawn();
+        partial void StatsOnDespawn();
+        partial void StatsOnGameStart();
 
         // =========================================================
         // CICLO DE VIDA
@@ -156,12 +159,14 @@ namespace Ratms.Networking
                 Invoke(nameof(TryStartGameServer), 1.5f);
             }
             ItemsOnSpawn();
+            StatsOnSpawn();
         }
 
         public override void OnNetworkDespawn()
         {
             CurrentRatId.OnValueChanged -= OnCurrentRatChanged;
             ItemsOnDespawn();
+            StatsOnDespawn();
             if (IsServer && NetworkManager.Singleton != null)
                 NetworkManager.Singleton.OnClientDisconnectCallback -= OnClientDisconnected;
             if (Instance == this) Instance = null;
@@ -181,6 +186,7 @@ namespace Ratms.Networking
             currentTeamPos = -1;
             Debug.Log($"[NetworkTurnManager] Empieza la partida: {teams.Count} equipos.");
             ItemsOnGameStart();
+            StatsOnGameStart();
             AdvanceTurnServer();
         }
 
@@ -246,7 +252,7 @@ namespace Ratms.Networking
         {
             if (t.eliminated) return;
             t.eliminated = true;
-            AnnounceClientRpc($"¡{TeamDisplayName(t.index)} ELIMINADOS!", new Color(1f, 0.35f, 0.25f));
+            AnnounceClientRpc(Ratms.UI.Loc.Pack("¡{0} ELIMINADOS!", TeamDisplayName(t.index, translate: false)), new Color(1f, 0.35f, 0.25f));
         }
 
         // =========================================================
@@ -378,6 +384,7 @@ namespace Ratms.Networking
                 WinnerClientId.Value = ulong.MaxValue;
                 Debug.Log("[NetworkTurnManager] Partida terminada en empate.");
             }
+            StatsSendServer();   // cifras para la pantalla de victoria (antes de anunciar el final)
             GameEnded.Value = true;
             return true;
         }
@@ -426,6 +433,7 @@ namespace Ratms.Networking
 
             // --- Avisos cómicos ---
             var shooter = CurrentRat != null ? CurrentRat : LastTurnRat;
+            StatsOnKill(shooter, rat);
             if (shooter != null && PlayerPrefs.GetInt("opt_laughs", 1) == 1)
             {
                 if (shooter == rat)
@@ -483,14 +491,19 @@ namespace Ratms.Networking
         }
 
         /// <summary>Nombre visible de un equipo: el de la regla local o el del jugador dueño.</summary>
-        public string TeamDisplayName(int teamIndex)
+        /// <param name="translate">false = en español tal cual (para mandarlo por red
+        /// y que cada PC lo traduzca); true = en el idioma de este PC ("Rojos" → "Reds").</param>
+        public string TeamDisplayName(int teamIndex, bool translate = true)
         {
             if (teamIndex < 0) return "?";
             if (TeamNames != null && teamIndex < TeamNames.Count && !TeamNames[teamIndex].IsEmpty)
-                return TeamNames[teamIndex].ToString();
+            {
+                string n = TeamNames[teamIndex].ToString();
+                return translate ? Ratms.UI.Loc.T(n) : n;
+            }
             foreach (var m in FindObjectsByType<NetworkPlayerMovement>(FindObjectsInactive.Include, FindObjectsSortMode.None))
                 if (m.IsSpawned && m.TeamIndex.Value == teamIndex) return PlayerNameRegistry.GetName(m.OwnerClientId);
-            return $"Equipo {teamIndex + 1}";
+            return translate ? Ratms.UI.Loc.F("Equipo {0}", teamIndex + 1) : $"Equipo {teamIndex + 1}";
         }
     }
 }

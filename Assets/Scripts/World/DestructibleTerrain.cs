@@ -116,6 +116,29 @@ namespace Ratms.World
         private Texture2D tex;
         private Color32[] pixels;    // cache de píxeles para carvear rápido
         private bool dirty;          // si true, reconstruiremos en LateUpdate
+
+        // (0.19) Zona que ha cambiado de SÓLIDO/AIRE desde el último collider:
+        // los contornos solo rehacen ese trozo de su rejilla. "Todo" tras
+        // cargar un mapa nuevo.
+        private bool solidChangedAll = true;
+        private bool hasSolidChange;
+        private RectInt solidChange;
+
+        /// <summary>
+        ///  Se avisa cada vez que el collider del terreno cambia de forma
+        ///  (explosión...). Las ratas "aparcadas" se sueltan al oírlo: su
+        ///  Rigidbody duerme y Unity no le recalcula los contactos, así que si una
+        ///  explosión le quitaba el suelo sin empujarla, se quedaba flotando.
+        /// </summary>
+        public static event System.Action ShapeChanged;
+
+        private void MarkSolidChanged(int xmin, int ymin, int xmax, int ymax)
+        {
+            if (!hasSolidChange) { solidChange = new RectInt(xmin, ymin, xmax - xmin, ymax - ymin); hasSolidChange = true; return; }
+            int x0 = Mathf.Min(solidChange.xMin, xmin), y0 = Mathf.Min(solidChange.yMin, ymin);
+            int x1 = Mathf.Max(solidChange.xMax, xmax), y1 = Mathf.Max(solidChange.yMax, ymax);
+            solidChange = new RectInt(x0, y0, x1 - x0, y1 - y0);
+        }
         // Máscara de "tierra principal" (la conectada al suelo del mapa).
         // Se reconstruye en cada Rebuild — se usa para que el skyline
         // ignore islas flotantes. true = es parte del cuerpo principal.
@@ -300,6 +323,7 @@ namespace Ratms.World
 
             EnsureTexture();
             pixels = source.GetPixels32();
+            solidChangedAll = true;
             dirty = true;
         }
 
@@ -332,6 +356,7 @@ namespace Ratms.World
             // el generador la reutiliza para otra cosa.
             System.Array.Copy(srcPixels, pixels, srcPixels.Length);
 
+            solidChangedAll = true;
             Rebuild();
             dirty = false;
         }
@@ -383,6 +408,7 @@ namespace Ratms.World
         private void BuildTestTerrain()
         {
             EnsureTexture();
+            solidChangedAll = true;
             Color32 air = new Color32(0, 0, 0, 0);
 
             int groundLevel = Mathf.RoundToInt(textureHeight * 0.6f);
@@ -441,6 +467,7 @@ namespace Ratms.World
                         pixels[row + x] = air;
                 }
             }
+            MarkSolidChanged(xmin, ymin, xmax, ymax);
         }
 
         /// <summary>
@@ -494,12 +521,24 @@ namespace Ratms.World
             float funnelStartY = -0.55f * bowlB;                          // dónde empieza a abrirse
             float funnelTop = radius * craterFunnelHeight;                // hasta dónde sube
             float funnelBaseHalf = radius * 0.835f;                       // = anchura del cuenco en funnelStartY
-            // Caja a recorrer: el embudo puede ser bastante más ancho arriba.
-            expand += scorch + Mathf.CeilToInt(funnelTop + radius);
-            ymin = Mathf.Max(0, center.y - expand);
-            ymax = Mathf.Min(textureHeight - 1, center.y + expand);
-            xmin = Mathf.Max(0, center.x - expand);
-            xmax = Mathf.Min(textureWidth - 1, center.x + expand);
+            // Caja a recorrer AJUSTADA a la forma (0.19): antes era un cuadrado
+            // de ~3 radios por lado y la mayoría de píxeles caían lejos.
+            //  · Cuenco: radio máximo con ruido = radius·(1+irr); en vertical
+            //    se aplasta (dy·vScale), así que su alto es bowlB·(1+irr).
+            //  · Embudo: llega hasta funnelTop por arriba y se abre a 45°.
+            float maxR = radius * (1f + irregularity);
+            float funnelMaxHalf = (funnelBaseHalf + (funnelTop - funnelStartY)) * (1f + irregularity * 0.4f);
+            int halfW = Mathf.CeilToInt(Mathf.Max(maxR, funnelTop > funnelStartY ? funnelMaxHalf : 0f)) + scorch + 1;
+            int down = Mathf.CeilToInt(maxR / vScale) + scorch + 1;
+            int up = Mathf.CeilToInt(Mathf.Max(maxR / vScale, funnelTop)) + scorch + 1;
+            ymin = Mathf.Max(0, center.y - down);
+            ymax = Mathf.Min(textureHeight - 1, center.y + up);
+            xmin = Mathf.Max(0, center.x - halfW);
+            xmax = Mathf.Min(textureWidth - 1, center.x + halfW);
+            // Distancia (del cuenco) a partir de la cual un píxel está fuera
+            // del todo, aunque el ruido empuje el borde hacia fuera.
+            float farOut = maxR + scorch;
+            float farOutSq = farOut * farOut;
 
             for (int y = ymin; y <= ymax; y++)
             {
@@ -509,7 +548,14 @@ namespace Ratms.World
                     int dx = x - center.x;
                     int dy = y - center.y;
                     float dyS = dy * vScale;
-                    float dist = Mathf.Sqrt(dx * dx + dyS * dyS);
+                    float distSq = dx * dx + dyS * dyS;
+                    bool inFunnelBand = dy >= funnelStartY && dy <= funnelTop;
+                    // DESCARTE RÁPIDO: lejos del cuenco y fuera del embudo → ni
+                    // ruido ni trigonometría (es la gran mayoría de píxeles).
+                    if (distSq > farOutSq &&
+                        (!inFunnelBand || Mathf.Abs(dx) - (funnelBaseHalf + (dy - funnelStartY)) * (1f + irregularity * 0.4f) > scorch))
+                        continue;
+                    float dist = Mathf.Sqrt(distSq);
 
                     // Ángulo 0..2π → tomamos Perlin(cos, sin) para que varíe
                     // continuamente al girar. Escala 1.8 = ~3 "bollos" por vuelta.
@@ -524,7 +570,7 @@ namespace Ratms.World
                     // "Cuánto fuera" está el píxel del agujero (≤0 = dentro).
                     // Es el mínimo entre el cuenco y el embudo.
                     float outside = dist - effectiveR;
-                    if (dy >= funnelStartY && dy <= funnelTop)
+                    if (inFunnelBand)
                     {
                         // Menos ruido en el embudo: con el ruido entero, la anchura
                         // subía y bajaba con la altura y dejaba mini-voladizos.
@@ -555,6 +601,7 @@ namespace Ratms.World
                 }
             }
 
+            MarkSolidChanged(xmin, ymin, xmax, ymax);
             ClearFloatingDecor(xmin, xmax, ymin, Mathf.Min(textureHeight - 1, ymax + 16));
         }
 
@@ -689,6 +736,7 @@ namespace Ratms.World
                 for (int y = y0; y <= y1; y++)
                     for (int x = x0; x <= x1; x++)
                         t.pixels[y * t.textureWidth + x] = color;
+                t.solidChangedAll = true;
                 t.dirty = true;
             }
         }
@@ -911,8 +959,13 @@ namespace Ratms.World
             if (!edgesHost.activeSelf) edgesHost.SetActive(true);
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
+            RectInt? changed = solidChangedAll || !hasSolidChange ? (RectInt?)null : solidChange;
+            if (!solidChangedAll && !hasSolidChange) changed = new RectInt(0, 0, 0, 0);   // nada cambió de forma
             var loops = PixelContours.Build(pixels, textureWidth, textureHeight, pixelsPerUnit,
-                                            contourSimplifyPx, minContourPoints);
+                                            contourSimplifyPx, minContourPoints, changed);
+            solidChangedAll = false;
+            hasSolidChange = false;
+            ShapeChanged?.Invoke();
             long contourMs = sw.ElapsedMilliseconds;
 
             // Reutilizamos los EdgeCollider2D que ya había (crear/destruir

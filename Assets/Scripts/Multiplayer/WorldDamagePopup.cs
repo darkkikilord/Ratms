@@ -50,6 +50,7 @@ namespace Ratms.Networking
         /// </summary>
         public static WorldDamagePopup SpawnImpact(Vector3 worldPos, string text, Color color)
         {
+            text = Ratms.UI.Loc.Show(text);   // "¡PAM!", "¡Sin munición!"... en el idioma de este PC
             // Z FIJA (-4): el popup es 2D ortográfico y el sortingOrder=32000
             // ya garantiza que se pinte por DELANTE de todo. Antes ponía la Z
             // basándome en Camera.main al spawnear, pero si la cámara se movía
@@ -228,7 +229,7 @@ namespace Ratms.Networking
         {
             // Daño "muerte instantánea" del agua: no muestres "9999",
             // queda más limpio un símbolo claro.
-            if (type == DamageType.Water) return "AGUA!";
+            if (type == DamageType.Water) return Ratms.UI.Loc.T("¡AGUA!");
 
             string prefix = type switch
             {

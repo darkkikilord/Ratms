@@ -101,6 +101,7 @@ namespace Ratms.Networking
                 if (ArmsLost == 1) parts.Add(HasHook ? "garfio" : "manca");
                 else if (ArmsLost >= 2) parts.Add(HasHook ? "sin brazos (garfio)" : "SIN BRAZOS");
                 if (HeadHurt) parts.Add("tuerta");
+                for (int i = 0; i < parts.Count; i++) parts[i] = Ratms.UI.Loc.T(parts[i]);
                 return string.Join(" · ", parts);
             }
         }
@@ -125,9 +126,10 @@ namespace Ratms.Networking
             if (tm != null && m != null && !m.IsTestDummy)
             {
                 string n = m.RatName.Value.ToString();
-                string text = zone == ZoneLegs ? (LegsLost >= 2 ? $"¡{n} SE QUEDA SIN PATAS!\nA rastras por la trinchera" : $"¡{n} pierde una pata!")
-                            : zone == ZoneArms ? (ArmsLost >= 2 ? $"¡{n} SIN BRAZOS!\nAhora pelea a MORDISCOS" : $"¡{n} pierde un brazo!")
-                            : $"¡A {n} LE HAN SALTADO UN OJO!";
+                string fmt = zone == ZoneLegs ? (LegsLost >= 2 ? "¡{0} SE QUEDA SIN PATAS!\nA rastras por la trinchera" : "¡{0} pierde una pata!")
+                           : zone == ZoneArms ? (ArmsLost >= 2 ? "¡{0} SIN BRAZOS!\nAhora pelea a MORDISCOS" : "¡{0} pierde un brazo!")
+                           : "¡A {0} LE HAN SALTADO UN OJO!";
+                string text = Ratms.UI.Loc.Pack(fmt, n);   // cada PC lo traduce al mostrarlo
                 tm.AnnounceServer(text, new Color(1f, 0.35f, 0.25f));
             }
             return true;
@@ -297,13 +299,18 @@ namespace Ratms.Networking
         ///  p. ej. el centro de la explosión): sirve para decidir qué parte
         ///  del cuerpo se arranca.
         /// </summary>
+        /// <summary>(Servidor) Una rata ha perdido vida: (rata, vida perdida). Lo usan las estadísticas.</summary>
+        public static event System.Action<NetworkHealth, int> OnDamagedServer;
+
         public void ApplyDamageServer(int amount, Vector3 hitPoint, DamageType type, Vector2? source)
         {
             if (!IsServer) return;
             if (IsDead.Value || amount <= 0) return;
 
             int newHp = Mathf.Max(0, CurrentHealth.Value - amount);
+            int lost = CurrentHealth.Value - newHp;
             CurrentHealth.Value = newHp;
+            OnDamagedServer?.Invoke(this, lost);
 
             // Propagamos el popup a todos los clientes (incluido el dueño).
             // Mandamos el tipo como byte para minimizar el tamaño del paquete.

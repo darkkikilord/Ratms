@@ -75,6 +75,7 @@ namespace Ratms.Networking
                 transport.SetRelayServerData(serverData);
 
                 // Arrancamos como host
+                NetcodeHygiene.BeforeSessionStart();
                 NetworkManager.Singleton.StartHost();
 
                 return joinCode;
@@ -111,6 +112,7 @@ namespace Ratms.Networking
                 transport.SetRelayServerData(serverData);
 
                 // Arrancamos como cliente
+                NetcodeHygiene.BeforeSessionStart();
                 NetworkManager.Singleton.StartClient();
 
                 Debug.Log($"[Relay] Unido a sala {joinCode}");

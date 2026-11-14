@@ -86,6 +86,8 @@ namespace Ratms.Testing
             Directory.CreateDirectory(outDir);
 
             gameScene = GetArg("-autoTestScene") ?? gameScene;
+            // Idioma de la prueba: español salvo "-autoTestLang en" (sin guardarlo).
+            Ratms.UI.Loc.SetSessionLanguage(GetArg("-autoTestLang") == "en" ? Ratms.UI.Loc.Lang.En : Ratms.UI.Loc.Lang.Es);
             string biomeArg = GetArg("-autoTestBiome");
             if (biomeArg != null && Enum.TryParse(biomeArg, true, out BiomeType b))
                 forcedBiome = b;
@@ -312,6 +314,7 @@ namespace Ratms.Testing
             yield return WaitFor(() => nm.ConnectedClientsIds.Count >= 2, 60f, "que se conecte el cliente");
             if (finished) yield break;
             Log($"Cliente conectado ({nm.ConnectedClientsIds.Count} jugadores).");
+            if (forcedBiome.HasValue) BiomeManager.SelectedBiomeType = forcedBiome.Value;   // -autoTestBiome (lo manda el host)
             yield return WaitFor(() => LobbySync.Roster.Count >= 2 && LobbySync.AllReady, 20f, "que el cliente marque ¡Listo!", fatal: false);
             Log($"Sala de espera: {string.Join(", ", LobbySync.Roster.Select(e => $"{e.name}{(e.ready ? " (listo)" : "")}"))} · todos listos: {(LobbySync.AllReady ? "✓" : "⚠")}");
             if (!LobbySync.AllReady) Problem("Lobby: el cliente no aparece como listo");
@@ -945,6 +948,13 @@ namespace Ratms.Testing
             yield return Capture("U00_menu_principal");
             var mm = FindFirstObjectByType<Ratms.UI.MainMenuController>();
             if (mm == null) { Finish("No encuentro MainMenuController"); yield break; }
+            // Panel multijugador (sin conectar: solo el aspecto)
+            mm.OnMultiplayer();
+            yield return new WaitForSeconds(0.5f);
+            yield return Capture("U00b_multijugador");
+            MultiplayerMenuController.Instance?.HideAllPanels();
+            mm.ShowMain();
+            yield return new WaitForSeconds(0.3f);
             mm.OnPlay();
             yield return new WaitForSeconds(0.5f);
             yield return Capture("U01_jugar");
@@ -981,7 +991,36 @@ namespace Ratms.Testing
             FindFirstObjectByType<TurnHUD>()?.OpenPause();
             yield return new WaitForSeconds(0.5f);
             yield return Capture("U06_pausa");
-            Log("Menús: capturas U00–U06 ✓");
+            FindFirstObjectByType<Ratms.UI.PauseMenu>()?.Close();
+
+            // VICTORIA: liquidamos al resto de equipos (servidor) → cartel con estadísticas.
+            var mine0 = tm.CurrentRat;
+            if (mine0 != null) mine0.GetComponent<NetworkHealth>().ApplyDamageServer(30, mine0.transform.position, DamageType.Explosion);
+            foreach (var rat in FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None))
+                if (rat.IsSpawned && !rat.IsTestDummy && mine0 != null && rat.TeamIndex.Value != mine0.TeamIndex.Value)
+                    rat.GetComponent<NetworkHealth>().ApplyDamageServer(9999, rat.transform.position, DamageType.Explosion);
+            yield return WaitFor(() => tm.GameEnded.Value, 10f, "el final de la partida", fatal: false);
+            yield return new WaitForSeconds(1.2f);
+            var ov = FindFirstObjectByType<VictoryOverlay>();
+            Log($"Victoria → cartel: {(ov != null && ov.enabled ? "✓" : "⚠ no aparece")} · estadísticas: {(MatchStats.Last != null ? MatchStats.Last.teams.Count + " equipos ✓" : "⚠ no llegaron")}");
+            if (ov == null || MatchStats.Last == null) Problem("Victoria: falta el cartel o las estadísticas");
+            yield return Capture("U07_victoria");
+
+            // REVANCHA (partida local): debe arrancar otra partida sola.
+            if (ov != null)
+            {
+                ov.OnRematch?.Invoke();
+                yield return new WaitForSeconds(1f);
+                NetworkTurnManager tm2 = null;
+                yield return WaitFor(() => (tm2 = NetworkTurnManager.Instance) != null && tm2 != tm && !tm2.GameEnded.Value &&
+                                           tm2.CurrentRatId.Value != ulong.MaxValue, 30f, "la revancha", fatal: false);
+                bool ok = tm2 != null && tm2 != tm && !tm2.GameEnded.Value;
+                Log($"Revancha → nueva partida: {(ok ? "✓" : "⚠ no arrancó")}");
+                if (!ok) Problem("La revancha no arrancó otra partida");
+                yield return new WaitForSeconds(1.5f);
+                yield return Capture("U08_revancha");
+            }
+            Log("Menús: capturas U00–U08 ✓");
             TurnHUD.ExitToMenu();
             yield return WaitFor(() => SceneManager.GetActiveScene().name == "MainMenu", 10f, "volver al menú", fatal: false);
             Finish(null);
@@ -1020,6 +1059,20 @@ namespace Ratms.Testing
         {
             ulong last = ulong.MaxValue - 1;
             int n = 0;
+            // HUELLA DEL MAPA: host y cliente deben dar el MISMO número. Si no,
+            // cada uno juega en un mapa distinto (el bug de la alcantarilla de 0.18).
+            var gen = FindFirstObjectByType<Ratms.World.TerrainGenerator>();
+            var hl = gen != null ? gen.GetHeightLine() : null;
+            if (hl != null)
+            {
+                unchecked
+                {
+                    int hash = 17;
+                    foreach (int v in hl) hash = hash * 31 + v;
+                    var bm = Ratms.World.BiomeManager.Instance;
+                    Log($"Huella del mapa: {hash} · bioma {(bm != null && bm.Current != null ? bm.Current.biomeName : "?")}");
+                }
+            }
             while (!finished)
             {
                 var tm = NetworkTurnManager.Instance;

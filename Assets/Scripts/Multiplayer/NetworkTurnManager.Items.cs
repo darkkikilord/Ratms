@@ -97,7 +97,7 @@ namespace Ratms.Networking
             if (target == null) return;
             team.forcedRat = target;
             AddAmmoServer(team.index, WeaponsMenuUI.WeaponId.SelectRat, -1);
-            AnnounceClientRpc($"¡{target.RatName.Value} toma el relevo!", TurnHUD.TeamTextColor(team.index));
+            AnnounceClientRpc(Ratms.UI.Loc.Pack("¡{0} toma el relevo!", target.RatName.Value), TurnHUD.TeamTextColor(team.index));
             AdvanceTurnServer();
         }
 
@@ -345,7 +345,7 @@ namespace Ratms.Networking
             if (it.kind == ItemKind.HealthCrate)
             {
                 h.HealServer(MatchRules.HealthCrateAmount);
-                return (it.id, $"+{MatchRules.HealthCrateAmount} vida", new Color(0.5f, 1f, 0.5f));
+                return (it.id, Ratms.UI.Loc.Pack("+{0} vida", MatchRules.HealthCrateAmount), new Color(0.5f, 1f, 0.5f));
             }
             if (it.content == TrapContent)
             {
@@ -356,7 +356,7 @@ namespace Ratms.Networking
             if (h != null && h.NeedsProsthesis && (Random.value < 0.5f || NetworkHealth.ForceInjuries))
             {
                 string pt = h.GiveProsthesisServer();
-                if (pt != null) { AnnounceServer($"¡{rat.RatName.Value} se pone {(pt.Contains("PATA") ? "una pata de palo" : "un garfio")}!", new Color(0.95f, 0.85f, 0.5f)); return (it.id, pt, new Color(1f, 0.9f, 0.4f)); }
+                if (pt != null) { AnnounceServer(Ratms.UI.Loc.Pack(pt.Contains("PATA") ? "¡{0} se pone una pata de palo!" : "¡{0} se pone un garfio!", rat.RatName.Value), new Color(0.95f, 0.85f, 0.5f)); return (it.id, pt, new Color(1f, 0.9f, 0.4f)); }
             }
             var loot = CrateLoot[it.content % CrateLoot.Length];
             AddAmmoServer(team.index, loot.w, loot.n);

@@ -72,6 +72,8 @@ namespace Ratms.UI
             var canvasGo = GameObject.Find("MainCanvas");
             var canvas = canvasGo != null ? canvasGo.GetComponent<Canvas>() : FindFirstObjectByType<Canvas>();
             MenuDressing.Install(canvas, backgroundImage != null ? backgroundImage.transform : null);
+            // Textos de la escena (botones, paneles del multijugador) en el idioma elegido.
+            if (canvas != null) LocText.Install(canvas.transform);
         }
 
         /// <summary>

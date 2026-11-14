@@ -47,6 +47,7 @@ namespace Ratms.Networking
 
             var utp = nm.GetComponent<UnityTransport>();
             if (utp != null) utp.SetConnectionData("127.0.0.1", 7777, "127.0.0.1");   // local, sin Relay
+            if (!nm.IsListening) NetcodeHygiene.BeforeSessionStart();
             if (!nm.IsListening && !nm.StartHost()) { Debug.LogError("[Práctica] No se pudo arrancar el host local."); End(); yield break; }
             nm.SceneManager.LoadScene(scene, UnityEngine.SceneManagement.LoadSceneMode.Single);
 

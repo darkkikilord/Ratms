@@ -65,6 +65,11 @@ namespace Ratms.World
         // ============================================================
         //  COLINAS (perfil del suelo)
         // ============================================================
+        [Header("Forma del mapa")]
+        [Tooltip("Worms = islas con salientes, arcos, túneles, islotes flotantes y canales (0.18.1). " +
+                 "Clásico = el perfil de colinas con cuevas de antes (los campos de 'Colinas' y 'Cuevas' solo valen para este).")]
+        [SerializeField] private TerrainShapeStyle shapeStyle = TerrainShapeStyle.Worms;
+
         [Header("Colinas (perfil del suelo)")]
         [Tooltip("Altura base del suelo respecto al alto total. 0.5 = el suelo está justo a la mitad, dejando bastante cielo.")]
         [SerializeField, Range(0.2f, 0.8f)] private float baseHeightRatio = 0.5f;
@@ -235,6 +240,14 @@ namespace Ratms.World
         /// Lo usa TerrainCaveBackdrop para dibujar un fondo oscuro con la forma
         /// exacta del terreno (no un rectángulo).</summary>
         public int[] GetHeightLine() => lastHeightLine;
+
+        // Línea bajo la cual el hueco se ve como "tierra de fondo" (cuevas y
+        // túneles). En el estilo Worms NO es la línea de altura: bajo un
+        // saliente o una isla flotante debe verse el cielo, no tierra.
+        private int[] lastBackdropLine;
+        /// <summary>Línea (px por columna) para el fondo oscuro de cuevas. Si es
+        /// null, usa <see cref="GetHeightLine"/>.</summary>
+        public int[] GetBackdropLine() => lastBackdropLine ?? lastHeightLine;
         public int TextureWidth => width;
         public int TextureHeight => height;
         public float PixelsPerUnit => terrain != null ? terrain.PixelsPerUnit : 32f;
@@ -345,6 +358,19 @@ namespace Ratms.World
         ///  Genera un mapa con una semilla concreta. En multijugador, el host
         ///  elegirá la semilla y la mandará por red → todos generan el mismo mapa.
         /// </summary>
+        /// <summary>
+        ///  Vuelve a generar EL MISMO mapa (misma semilla), p. ej. para repintarlo
+        ///  con los colores de otro bioma. Si aún no se ha generado ninguno no hace
+        ///  nada: ya lo generará quien tenga la semilla buena (la red).
+        ///  ⚠ No usar <see cref="Generate"/> para esto: elige semilla AL AZAR y en
+        ///  multijugador cada PC acabaría con un mapa distinto.
+        /// </summary>
+        public void RegenerateSameSeed()
+        {
+            if (!HasHeightLine) return;
+            GenerateWithSeed(seed);
+        }
+
         public void GenerateWithSeed(int newSeed)
         {
             seed = newSeed;
@@ -375,9 +401,19 @@ namespace Ratms.World
             float offGrainX = (float)(rng.NextDouble() * 10000.0);
             float offGrainY = (float)(rng.NextDouble() * 10000.0);
 
+            int[] heightLine;
+            Color32[] pixels;
+            lastIslandTops.Clear();
+            if (shapeStyle == TerrainShapeStyle.Worms)
+            {
+                pixels = PaintWormsShape(offGrainX, offGrainY, out heightLine);
+            }
+            else
+            {
+            lastBackdropLine = null;
             // --- 1) Calcular la línea de altura del suelo para cada x ---
             int baseHeight = Mathf.RoundToInt(height * baseHeightRatio);
-            int[] heightLine = new int[width];
+            heightLine = new int[width];
             for (int x = 0; x < width; x++)
             {
                 // Centramos cada Perlin en 0 (restando 0.5 y multiplicando por 2)
@@ -454,7 +490,7 @@ namespace Ratms.World
             }
 
             // --- 2) Rellenar píxeles de la silueta principal ---
-            Color32[] pixels = new Color32[width * height];
+            pixels = new Color32[width * height];
             Color32 air = new Color32(0, 0, 0, 0);
 
             for (int y = 0; y < height; y++)
@@ -545,7 +581,6 @@ namespace Ratms.World
             }
 
             // --- 3) Islas flotantes ---
-            lastIslandTops.Clear();
             for (int i = 0; i < floatingIslandCount; i++)
             {
                 int ix = rng.Next(floatingIslandMaxRadius + 5,
@@ -571,6 +606,8 @@ namespace Ratms.World
                 int topPy = iy + Mathf.RoundToInt(ry) + 2;   // +2 = margen sobre la hierba
                 lastIslandTops.Add(new Vector2Int(ix, topPy));
             }
+
+            } // fin del estilo Clásico
 
             // --- 3.5) Decoración (flores, huesos, tuberías...) ---
             if (decorate)
@@ -605,6 +642,59 @@ namespace Ratms.World
             // preguntarnos "¿a qué altura está el suelo en esta X de mundo?"
             // y pegar a las ratas a la superficie actual del mapa procedural.
             lastHeightLine = heightLine;
+        }
+
+        /// <summary>
+        ///  Estilo Worms: pide la FORMA a <see cref="WormsTerrainShape"/> y la
+        ///  colorea. Como ahora hay salientes y túneles, la hierba no se calcula
+        ///  con la línea de altura sino columna a columna, bajando desde arriba:
+        ///  cada vez que pasamos de aire a tierra empieza una "superficie" (con
+        ///  su borde brillante y su banda de hierba). Así también tienen hierba
+        ///  el suelo de los túneles, las islas flotantes y lo alto de los arcos.
+        /// </summary>
+        private Color32[] PaintWormsShape(float offGrainX, float offGrainY, out int[] heightLine)
+        {
+            var shape = WormsTerrainShape.Build(width, height, seed);
+            var pixels = new Color32[width * height];
+            heightLine = new int[width];
+            for (int x = 0; x < width; x++)
+            {
+                int depth = -1;          // -1 = aún no hemos tocado tierra en esta columna
+                int top = 0;
+                for (int y = height - 1; y >= 0; y--)
+                {
+                    int idx = y * width + x;
+                    if (!shape.solid[idx]) { depth = -1; continue; }
+                    if (depth < 0) { depth = 0; if (top == 0) top = y; }
+                    else depth++;
+
+                    if (depth < grassOutlinePx) pixels[idx] = grassOutlineColor;
+                    else if (depth < grassBandPx) pixels[idx] = grassColor;
+                    else
+                    {
+                        Color32 dirt = DirtPixel(x, y, offGrainX, offGrainY);
+                        if (depthDarkening > 0f)
+                        {
+                            // Oscurece según lo hondo que estamos bajo el PERFIL de colinas de la
+                            // columna (no bajo el último túnel): si no, debajo de
+                            // cada túnel la tierra volvía a ser clara y salían
+                            // franjas verticales.
+                            float t = Mathf.Clamp01((shape.backdropLine[x] + 44 - y - grassBandPx) / (float)Mathf.Max(1, depthDarkeningRangePx));
+                            float k = 1f - depthDarkening * t * (2f - t);
+                            dirt = new Color32((byte)(dirt.r * k), (byte)(dirt.g * k), (byte)(dirt.b * k), dirt.a);
+                        }
+                        pixels[idx] = dirt;
+                    }
+                }
+                heightLine[x] = top;
+            }
+            // El fondo oscuro nunca por ENCIMA de la superficie de verdad: en una
+            // cuesta que el ruido ha bajado respecto al perfil, quedaba una franja
+            // oscura "flotando" sobre la hierba. Bajo un saliente sigue viéndose cielo.
+            lastBackdropLine = new int[width];
+            for (int x = 0; x < width; x++)
+                lastBackdropLine[x] = Mathf.Min(shape.backdropLine[x], heightLine[x] - 24);
+            return pixels;
         }
 
         // ============================================================
@@ -850,11 +940,17 @@ namespace Ratms.World
                     if (dist <= effectiveRadius)
                     {
                         pebblePixelsPainted++;
+                        // ROCA, no agujero: antes el centro era casi negro y
+                        // las piedras parecían cráteres. Ahora es una piedra
+                        // con luz arriba-izquierda y sombra abajo-derecha.
                         float t = dist / effectiveRadius;
-                        float tCurved = t * t;
-                        Color32 core = new Color32(30, 22, 18, 255);
-                        Color32 rim = LerpColor32(dirtColorDark, dirtColorMid, 0.35f);
-                        return LerpColor32(core, rim, tCurved);
+                        float lx = -dx / Mathf.Max(1f, effectiveRadius), ly = dy / Mathf.Max(1f, effectiveRadius);
+                        float light = Mathf.Clamp01(0.5f + (lx * 0.55f + ly * 0.8f) * 0.6f);
+                        Color32 stoneDark = LerpColor32(dirtColorDark, new Color32(70, 66, 62, 255), 0.5f);
+                        Color32 stoneLight = LerpColor32(dirtColor, new Color32(170, 160, 145, 255), 0.45f);
+                        Color32 stone = LerpColor32(stoneDark, stoneLight, light);
+                        if (t > 0.86f) stone = LerpColor32(stone, dirtColorDark, 0.6f);   // contorno
+                        return LerpColor32(stone, baseColor, 0.25f);
                     }
                 }
             }
@@ -997,6 +1093,41 @@ namespace Ratms.World
             return Escape(1) || Escape(-1);
         }
 
+        /// <summary>
+        ///  Relleno por inundación del AIRE desde la fila de arriba del mapa:
+        ///  true = desde ese píxel se puede llegar al cielo sin atravesar tierra.
+        ///  Las bolsas de cueva cerradas quedan a false.
+        /// </summary>
+        private bool[] SkyConnectedAir(Color32[] pixels)
+        {
+            var open = new bool[width * height];
+            var stack = new int[width * height];
+            int sp = 0;
+            int top = height - 1;
+            for (int x = 0; x < width; x++)
+            {
+                int i = top * width + x;
+                if (!DestructibleTerrain.IsSolidPixel(pixels[i])) { open[i] = true; stack[sp++] = i; }
+            }
+            while (sp > 0)
+            {
+                int c = stack[--sp];
+                int cx = c % width;
+                if (cx > 0) Push(c - 1);
+                if (cx < width - 1) Push(c + 1);
+                if (c >= width) Push(c - width);
+                if (c + width < open.Length) Push(c + width);
+            }
+            return open;
+
+            void Push(int n)
+            {
+                if (open[n] || DestructibleTerrain.IsSolidPixel(pixels[n])) return;
+                open[n] = true;
+                stack[sp++] = n;
+            }
+        }
+
         private void ScanValidSpawnPixels(Color32[] pixels)
         {
             validSpawnPixels.Clear();
@@ -1013,12 +1144,18 @@ namespace Ratms.World
             // No spawnear más arriba de este límite (evita picos aislados en el cielo)
             int maxY = height - RAT_HEIGHT_PX - 5;
 
+            // 0.18.1: SOLO aire que se comunica con el cielo. Antes valía el
+            // suelo de cualquier cueva, y había ratas que empezaban dentro de
+            // una bolsa cerrada ("en un cráter") sin forma de salir.
+            bool[] open = SkyConnectedAir(pixels);
+
             for (int x = lateralMargin; x < width - lateralMargin; x++)
             {
                 for (int y = Mathf.Max(GROUND_DEPTH_PX, minSpawnY); y < maxY; y++)
                 {
                     // Este píxel debe ser AIRE
                     if (DestructibleTerrain.IsSolidPixel(pixels[y * width + x])) continue;
+                    if (!open[y * width + x]) continue;
                     // El píxel de debajo debe ser SÓLIDO
                     if (!DestructibleTerrain.IsSolidPixel(pixels[(y - 1) * width + x])) continue;
                     // Espacio libre arriba (para el cuerpo de la rata)
@@ -1048,5 +1185,12 @@ namespace Ratms.World
                 }
             }
         }
+    }
+
+    /// <summary>Forma del mapa que dibuja <see cref="TerrainGenerator"/>.</summary>
+    public enum TerrainShapeStyle
+    {
+        Worms = 0,     // islas con salientes, túneles, islotes y canales (0.18.1)
+        Classic = 1,   // perfil de colinas con cuevas (hasta 0.18)
     }
 }

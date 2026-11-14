@@ -224,8 +224,11 @@ namespace Ratms.Networking
             {
                 case Kind.Mine:
                     if (!Armed.Value && age > 2f) { Armed.Value = true; BeepClientRpc(); }
-                    if (Armed.Value && triggerAt < 0f && RatNear(0.95f)) { triggerAt = Time.time + 0.6f; BeepClientRpc(); }
-                    if (triggerAt > 0f && Time.time >= triggerAt) Explode(transform.position, 2.0f, 40, 9f);
+                    // 0.22: antes hacía ~3 de daño (en 0,6 s la rata ya se había alejado
+                    // casi al borde del radio). Ahora: mecha más corta, radio mayor y un
+                    // mínimo de daño para quien la pisa (como la mina de Worms: duele).
+                    if (Armed.Value && triggerAt < 0f && RatNear(0.95f)) { triggerAt = Time.time + 0.45f; BeepClientRpc(); }
+                    if (triggerAt > 0f && Time.time >= triggerAt) Explode(transform.position, 2.4f, 45, 9f, minFrac: 0.45f);
                     return;
                 case Kind.Cheese:
                     if (!lured && age > 1.4f)
@@ -416,7 +419,7 @@ namespace Ratms.Networking
             if (triggerAt < 0f) triggerAt = Time.time + 0.25f;
         }
 
-        private void Explode(Vector2 at, float radius, int maxDamage, float knockback, bool big = false, bool quiet = false)
+        private void Explode(Vector2 at, float radius, int maxDamage, float knockback, bool big = false, bool quiet = false, float minFrac = 0f)
         {
             if (!IsServer || exploded) return;
             exploded = true;
@@ -428,7 +431,8 @@ namespace Ratms.Networking
                 done.Add(nh);
                 Vector2 body = nh.BodyCenter;
                 float t = Mathf.Clamp01(1f - Vector2.Distance(at, body) / radius);
-                int dmg = Mathf.CeilToInt(maxDamage * t);
+                if (t <= 0f) continue;
+                int dmg = Mathf.CeilToInt(maxDamage * Mathf.Lerp(minFrac, 1f, t));
                 if (dmg <= 0) continue;
                 nh.ApplyDamageServer(dmg, body, DamageType.Explosion, at);
                 Vector2 away = body - at;

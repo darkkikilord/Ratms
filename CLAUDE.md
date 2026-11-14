@@ -122,6 +122,7 @@ Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMe
 - `TrenchGUI.Scale` = mín(alto/1080, ancho/1440) (mín. 0.5): los paneles anchos caben en 4:3/5:4.
 - `LoadingScreen` (Core, se crea sola): "Cavando trincheras…" con rata corriendo y consejo al azar. Se enciende con los `SceneEvent` Load de NGO o `LoadingScreen.Show()` (`SceneLoader`) y se apaga cuando ya hay ratas en la partida (tope 12 s).
 - Icono del juego: `Assets/Art/Icon/RatmsIcon.png` (rata con casco, 32 px ampliado ×8), puesto con `PlayerSettings.SetIcons`.
+- 0.22.1: código de sala copiable (se copia solo al crear la sala, clic para recopiar; "Unirse" lo rellena del portapapeles), "Mi equipo" pieza a pieza (botones cuerpo/pelo/sombrero/cola/ojos/boca en `TeamEditor`), mina más dañina (mecha 0,45 s, radio 2,4, `Explode(minFrac)`), nube de gas que daña en casi todo lo que se ve (`GasSystem`: radio 1,15×size).
 - Pruebas: `tools\autotest.ps1 -Width W -Height H` para probar otras resoluciones. Falsas alarmas quitadas: "ATRAVESADO" durante la prueba del agua y "no sube la pared" (ahora con suelo plano y cielo libre).
 
 ## Convenciones
@@ -141,7 +142,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilación rápida: `tools\compilar-rapido.ps1`. Compilación completa de Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.22 (resoluciones, pantalla de carga e icono). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.22.1 (resoluciones, pantalla de carga, icono, código de sala copiable, Mi equipo pieza a pieza). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)

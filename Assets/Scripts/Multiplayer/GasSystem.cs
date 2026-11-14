@@ -110,7 +110,7 @@ namespace Ratms.Networking
                 bool inside = false;
                 foreach (var p in puffs)
                 {
-                    float r = p.size * 0.9f;
+                    float r = p.size * 1.15f;   // 0.22: casi lo que se ve (antes 0.9: la nube "no hacía nada")
                     if ((p.pos - b).sqrMagnitude < r * r && p.life > 0.4f) { inside = true; break; }
                 }
                 if (!inside) continue;

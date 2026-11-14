@@ -187,7 +187,16 @@ namespace Ratms.Testing
             Select(WeaponsMenuUI.WeaponId.Mine);
             yield return new WaitForSeconds(0.3f);
             rat.TestPressFire();
-            yield return new WaitForSeconds(2.6f);
+            yield return new WaitForSeconds(0.4f);
+            // Como en Worms, la mina también salta con quien la puso: la rata se aparta.
+            {
+                var rrb = rat.GetComponent<Rigidbody2D>();
+                float sd = rat.FacingRight ? 1f : -1f;
+                rrb.position += new Vector2(sd * 3.5f, 0.2f);
+                rrb.linearVelocity = Vector2.zero;
+                rat.TestResetFallTracking();
+            }
+            yield return new WaitForSeconds(2.2f);
             NetworkGadget mineG = null;
             foreach (var g in FindObjectsByType<NetworkGadget>(FindObjectsSortMode.None)) if (g.Type == NetworkGadget.Kind.Mine) mineG = g;
             bool armed = mineG != null && mineG.Armed.Value;

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Content *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Select-String *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(powershell -ExecutionPolicy Bypass -File tools\\compilar-rapido.ps1)",
+      "PowerShell(powershell -ExecutionPolicy Bypass -File tools\\compilar-rapido.ps1 -Warnings)",
+      "Bash(powershell -ExecutionPolicy Bypass -File tools/compilar-rapido.ps1)",
+      "Bash(powershell -ExecutionPolicy Bypass -File tools/compilar-rapido.ps1 -Warnings)"
+    ]
+  }
+}

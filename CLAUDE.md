@@ -7,7 +7,7 @@ El usuario habla español: responde, comenta el código y escribe los commits en
 - **Unity 6000.0.50f1**, URP 17.0.4, 2D (Rigidbody2D, sprites, PPU=32 en el terreno).
 - **Netcode for GameObjects 2.1.1** + **Unity Relay** (Authentication 3.3.3, Relay 1.1.1).
 - Input: API clásica `Input.GetAxisRaw` / `GetKeyDown` (el paquete Input System está instalado pero no se usa en los scripts).
-- Tras cambiar C#, **compila en batchmode** (comando en la sección Git) y corrige los `error CS` antes de commitear. Lo que no se puede verificar compilando (sensación de juego, multijugador real) se apunta para que el usuario lo pruebe.
+- Tras cambiar C#, **compila** con `powershell -ExecutionPolicy Bypass -File tools\compilar-rapido.ps1` (MSBuild, ~2 s, vale con Unity abierto) y corrige los `error CS` antes de commitear. Detalles y cuándo hace falta además la compilación de Unity (Netcode ILPP, prefabs, cierre de versión): skill `/compilar`. Para cerrar una versión: skill `/version`. Lo que no se puede verificar compilando (sensación de juego, multijugador real) se apunta para que el usuario lo pruebe.
 
 ## Estructura (`Assets/Scripts`)
 | Carpeta | Namespace | Qué hay |
@@ -92,7 +92,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 ## Git
 - Rama de trabajo: `Main` (sigue a `origin/Main`, repo `darkkikilord/Ratms`).
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
-- Compilar sin abrir Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
+- Compilación rápida: `tools\compilar-rapido.ps1`. Compilación completa de Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
 - Commits con versión: `Ratms 0.X: resumen`. Último: 0.18 (arsenal, fuego, mano, salto y spawn). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.

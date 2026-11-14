@@ -123,10 +123,10 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 2. **0.16 — Economía de armas** ✅ munición limitada, cajas (armas/botiquín/trampa, "Cambiar rata"), barriles en cadena. (En 0.16 también: ratas por piezas, armas pixel-art, menús 4, música/avisos 5, lobby 6.)
    **0.17 — Mutilaciones** ✅ (petición del usuario, fuera del plan).
    **0.18 — Arsenal y fuego** ✅ (petición del usuario): lanzallamas, metralleta, bomba de racimo, ataque aéreo y napalm; fuego real; mano bien puesta; salir de agujeros (escalar + voltereta); spawn en buenos sitios; arreglos de red de 0.17.1 (menú al volver de partida, rata rival glicheada).
-   **0.19 — Menús, idiomas y terreno Worms** ✅ (el usuario lo pidió antes que la IA): bloque 4 (menús bonitos, opciones con idioma, estadísticas y revancha) + inglés con selector + terreno estilo Worms + arreglos de multijugador (voltereta visible, daño de caída tras explosión, auto-daño del misil, alcantarilla desincronizada, ratas en cuevas cerradas) + granada más floja + explosiones 3× más baratas.
-3. Jugar solo: IA de ratas enemigas con dificultades. ← SIGUIENTE
+   **0.19 — Menús, idiomas y terreno Worms** ✅ (petición del usuario): bloque 4 (menús bonitos, opciones con idioma, estadísticas y revancha) + inglés con selector + terreno estilo Worms + arreglos de multijugador (voltereta visible, daño de caída tras explosión, auto-daño del misil, alcantarilla desincronizada, ratas en cuevas cerradas) + granada más floja + explosiones 3× más baratas.
+3. ~~Jugar solo: IA de ratas enemigas~~ ❌ DESCARTADO por el usuario (14 nov 2026): el juego NO tendrá IA. No proponerla.
 4. Menús ✅ (0.19). Queda: elegir sombrero/cola pieza a pieza en "Mi equipo".
-5. Presentación: música, anuncios, cámara inteligente, más biomas de trinchera, animaciones.
+5. Presentación (← SIGUIENTE): música, anuncios, cámara inteligente, más biomas de trinchera, animaciones.
 6. Online pulido: lobby con "listo", reglas del host, reconexión, revancha.
 7. Publicar: icono, pantalla de carga, itch.io.
 

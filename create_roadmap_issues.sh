@@ -32,9 +32,6 @@ issue() {
 
 echo ">>> Issues..."
 
-issue "[0.20] Jugar solo: IA de ratas enemigas con dificultades" "feature,plan-versiones" \
-"Bloque 3 del plan. Fácil: se mueve poco, apunta con mucho error y sin viento. Normal: calcula el tiro de bazooka/granada con algo de fallo. Difícil: compensa el viento, elige arma según distancia (bate de cerca, ataque aéreo si estás a cubierto) y evita agua y barriles. La IA es un equipo más en partida local."
-
 issue "[Probar] 0.19 en multijugador real" "probar" \
 "- La voltereta del rival se ve en el otro PC.
 - Una rata lanzada por una explosión en el turno de otro se hace daño al caer.

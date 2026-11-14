@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "com.coplaydev.coplay": "https://github.com/CoplayDev/unity-plugin.git#beta",
+    "com.coplaydev.unity-mcp": "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v10.3.0",
     "com.unity.collab-proxy": "2.8.2",
     "com.unity.feature.2d": "2.0.1",
     "com.unity.ide.rider": "3.0.36",

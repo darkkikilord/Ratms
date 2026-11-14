@@ -63,6 +63,42 @@ namespace Ratms.Networking
         /// </summary>
         public readonly NetworkVariable<byte> Injuries = new(0);
 
+        // ---------------- 0.21: VENENO ----------------
+        /// <summary>Turnos de veneno que le quedan (0 = sana). Cada turno de su equipo pierde vida.</summary>
+        public readonly NetworkVariable<byte> PoisonTurns = new(0);
+        public bool Poisoned => PoisonTurns.Value > 0;
+        public const int PoisonDamagePerTurn = 6;
+
+        /// <summary>(Servidor) Envenena <paramref name="turns"/> turnos (no se acumula: se queda el mayor).</summary>
+        public void PoisonServer(int turns)
+        {
+            if (!IsServer || IsDead.Value) return;
+            if (PoisonTurns.Value == 0) StatusClientRpc(0);
+            PoisonTurns.Value = (byte)Mathf.Clamp(Mathf.Max(PoisonTurns.Value, turns), 0, 9);
+        }
+
+        /// <summary>(Servidor) Al empezar el turno de su equipo: el veneno hace su efecto.</summary>
+        public void PoisonTickServer()
+        {
+            if (!IsServer || IsDead.Value || PoisonTurns.Value == 0) return;
+            PoisonTurns.Value--;
+            ApplyDamageServer(Mathf.Min(PoisonDamagePerTurn, Mathf.Max(1, CurrentHealth.Value - 1)), BodyCenter, DamageType.Poison);
+        }
+
+        /// <summary>Aviso de estado sobre la rata: 0 envenenada, 1 quemada, 2 cegada, 3 amputada.</summary>
+        [ClientRpc]
+        public void StatusClientRpc(byte kind)
+        {
+            Vector2 b = BodyCenter + Vector2.up * 1.25f;
+            switch (kind)
+            {
+                case 0: WorldDamagePopup.SpawnImpact(b, "¡ENVENENADA!", new Color(0.55f, 0.95f, 0.3f)); Sfx.Play(Sfx.Id.Ouch, 0.7f); break;
+                case 1: WorldDamagePopup.SpawnImpact(b, "¡QUEMADA!", new Color(1f, 0.6f, 0.15f)); break;
+                case 2: WorldDamagePopup.SpawnImpact(b, "¡CEGADA!", new Color(0.8f, 0.8f, 1f)); break;
+                default: WorldDamagePopup.SpawnImpact(b, "¡AMPUTADA!", new Color(1f, 0.3f, 0.25f)); break;
+            }
+        }
+
         public const int ZoneLegs = 0, ZoneArms = 1, ZoneHead = 2;
 
         public int LegsLost => Injuries.Value & 3;

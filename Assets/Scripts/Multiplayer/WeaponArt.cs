@@ -182,6 +182,159 @@ namespace Ratms.Networking
         //  ARMAS NUEVAS (0.18)
         // ============================================================
         /// <summary>Lanzallamas de trinchera: depósito de gasolina a la espalda, manguera y lanza con piloto encendido.</summary>
+        // ============================================================
+        //  0.21 — ARSENAL DE TRINCHERA
+        // ============================================================
+        /// <summary>Icono de la rata-bomba: rata gris con un cartucho de dinamita a la espalda.</summary>
+        public static Sprite RatBombIcon() => Make("ratbomb", new Vector2(6.5f, 0.5f), 32f,
+            ".....oFo.....",
+            "....oRRRo....",
+            "..oooRrRooo..",
+            ".oUUUUUUUUUoo",
+            "oUUUUUUUUUUUCo",
+            ".oUUUUUUUUUoo.",
+            "..oUo..oUo....",
+            "..oo....oo....");
+
+        /// <summary>Mina antipersona: cúpula de metal con piloto rojo.</summary>
+        public static Sprite Mine() => Make("mine", new Vector2(5f, 0.5f), 32f,
+            "....oo....",
+            "...oRRo...",
+            "..oMMMMo..",
+            ".oMMMMMmo.",
+            "oMMmMMmMmo",
+            "ommmmmmmmo",
+            "oooooooooo");
+
+        /// <summary>Paloma mensajera (mira a la DERECHA). 0 = alas arriba, 1 = alas abajo.</summary>
+        public static Sprite Pigeon(int frame) => frame % 2 == 0
+            ? Make("pigeon0", new Vector2(7f, 4f), 32f,
+                ".....oo........",
+                "....oPPo.......",
+                "...oPPpo....oo.",
+                ".ooPPPPPoooPPCo",
+                "oPPPPPPPPPPPPPbo",
+                ".opPPPPPPPpppo.",
+                "...oRo..oRo....",
+                "....o....o.....")
+            : Make("pigeon1", new Vector2(7f, 4f), 32f,
+                "............oo.",
+                "..........ooPCo",
+                ".ooooooooPPPPPbo",
+                "oPPPPPPPPPPPPo.",
+                ".opPPPpPPPppo..",
+                "...oPPpo.......",
+                "....oPo.oRo....",
+                ".....o...o.....");
+
+        /// <summary>Mortero: tubo sobre bípode.</summary>
+        public static Sprite Mortar() => Make("mortar", new Vector2(3f, 1f), 32f,
+            ".........oooo",
+            ".......ooGGGo",
+            ".....ooGGGgo.",
+            "...ooGGGgoo..",
+            ".ooGGGgoo....",
+            "oGGGgoo......",
+            "ogmoo.o......",
+            "omo..o.o.....",
+            "oo..o...o....");
+
+        /// <summary>Bidón de gas venenoso con calavera.</summary>
+        public static Sprite GasCan() => Make("gascan", new Vector2(5f, 0.5f), 32f,
+            "..ooo.....",
+            ".oMMMoooo.",
+            "oVVVVVVVVo",
+            "oVvVVVVvVo",
+            "oVVCCCVVVo",
+            "oVVCoCVVVo",
+            "oVVVCVVVVo",
+            "oVvVVVVvVo",
+            "ovvvvvvvvo",
+            ".oooooooo.");
+
+        /// <summary>Cuña de queso apestoso.</summary>
+        public static Sprite Cheese() => Make("cheese", new Vector2(5f, 0.5f), 32f,
+            "........oo",
+            "......ooXo",
+            "....ooXXXo",
+            "..ooXxXXXo",
+            "ooXXXXXxXo",
+            "oxXXxXXXXo",
+            "oxxxxxxxxo",
+            "oooooooooo");
+
+        /// <summary>Bomba bíblica de queso: rueda de queso con una cruz de latón y aureola.</summary>
+        public static Sprite HolyCheese() => Make("holycheese", new Vector2(5.5f, 0.5f), 32f,
+            "..ooYYYoo..",
+            ".Y.......Y.",
+            "...ooooo...",
+            "..oXXXXXo..",
+            ".oXXbXXxXo.",
+            "oXXbbbXXXxo",
+            "oXxXbXXXxXo",
+            "oXXXbXXXXXo",
+            ".oxXXXXXxo.",
+            "..oxxxxxo..",
+            "...ooooo...");
+
+        /// <summary>Fusil con bayoneta calada.</summary>
+        public static Sprite Bayonet() => Make("bayonet", new Vector2(6f, 2.5f), 32f,
+            "oooo.......................",
+            "oWWWooooooooooooooooo......",
+            "owwwwwWWWWWWWWWWWWWWomnnnnn",
+            ".oooowwoooooooooooooo......",
+            "....owo....................",
+            "....oo.....................");
+
+        /// <summary>Pala de trinchera.</summary>
+        public static Sprite Shovel() => Make("shovel", new Vector2(4f, 2f), 32f,
+            "oo..............ooo.",
+            "oWwwwwwwwwwwwwwoMMMo",
+            "oWwwwwwwwwwwwwwoMMMMo",
+            "oo..............oMMo",
+            "................oo..");
+
+        /// <summary>Montón de sacos terreros (icono).</summary>
+        public static Sprite Sandbags() => Make("sandbags", new Vector2(7f, 0.5f), 32f,
+            "...ooooooo....",
+            "..oTTTTTTto...",
+            "..otttttttoo..",
+            ".ooooooooooooo",
+            "oTTTTtoTTTTTto",
+            "ottttttotttttto",
+            "ooooooooooooooo");
+
+        /// <summary>Fusil de francotirador con mira telescópica.</summary>
+        public static Sprite Sniper() => Make("sniper", new Vector2(8.5f, 3f), 32f,
+            "........ooooo..............",
+            "........oMbMo..............",
+            "ooooo..oommmoooooooooooooo.",
+            "oWWWWooowMMMMMMMMMMMMMMMMMo",
+            "owwwwwwwwmmmmmmmmmmmoooooo.",
+            ".oooowwoooooo..............",
+            "....owo....................",
+            "....oo.....................");
+
+        /// <summary>Arco de madera (cuerda a la izquierda, mira a la derecha).</summary>
+        public static Sprite Bow() => Make("bow", new Vector2(3f, 5.5f), 32f,
+            "...oo..",
+            "..oWWo.",
+            "..Y.oWo",
+            "..Y..Wo",
+            "..Y..wo",
+            "..Y..Wo",
+            "..Y..Wo",
+            "..Y..wo",
+            "..Y.oWo",
+            "..oWWo.",
+            "...oo..");
+
+        /// <summary>Flecha (mira a la DERECHA).</summary>
+        public static Sprite Arrow() => Make("arrow", new Vector2(7f, 1.5f), 32f,
+            "S..........oo.",
+            "SSwwwwwwwwwMMo",
+            "S..........oo.");
+
         public static Sprite Flamethrower() => Make("flamer", new Vector2(6.5f, 2.5f), 32f,
             ".oooo....................",
             "oKKkKo..............ooo..",
@@ -346,6 +499,16 @@ namespace Ratms.Networking
             'k' => new Color32(112, 40, 24, 255),
             'O' => new Color32(255, 132, 30, 255),    // llama naranja
             'Q' => new Color32(255, 222, 96, 255),    // llama amarilla (corazón)
+            // 0.21
+            'X' => new Color32(250, 204, 70, 255),    // queso
+            'x' => new Color32(200, 150, 40, 255),    // queso oscuro / agujeros
+            'V' => new Color32(96, 138, 62, 255),     // bidón de gas
+            'v' => new Color32(60, 94, 40, 255),
+            'P' => new Color32(164, 164, 178, 255),   // paloma
+            'p' => new Color32(108, 110, 126, 255),
+            'T' => new Color32(196, 170, 118, 255),   // saco terrero
+            't' => new Color32(150, 124, 80, 255),
+            'U' => new Color32(140, 132, 126, 255),   // pelo de rata gris
             _ => new Color32(0, 0, 0, 0),
         };
     }

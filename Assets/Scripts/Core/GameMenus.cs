@@ -15,7 +15,7 @@ namespace Ratms.UI
         {
             GUI.depth = -10;
             TrenchGUI.Begin();
-            var r = new Rect((TrenchGUI.VW - 760f) * 0.5f, (TrenchGUI.VH - 700f) * 0.5f, 760f, 700f);
+            var r = new Rect((TrenchGUI.VW - 800f) * 0.5f, (TrenchGUI.VH - 750f) * 0.5f, 800f, 750f);
             TrenchGUI.Panel(r);
             TrenchGUI.Title(new Rect(r.x, r.y + 18f, r.width, 50f), "OPCIONES");
             TrenchGUI.OptionsBlock(new Rect(r.x + 40f, r.y + 90f, r.width - 80f, TrenchGUI.OptionsBlockHeight));
@@ -71,7 +71,7 @@ namespace Ratms.UI
                 }
                 case Page.Options:
                 {
-                    var r = Centered(760f, 700f);
+                    var r = Centered(800f, 750f);
                     TrenchGUI.Panel(r);
                     TrenchGUI.Title(new Rect(r.x, r.y + 18f, r.width, 50f), "OPCIONES");
                     TrenchGUI.OptionsBlock(new Rect(r.x + 40f, r.y + 90f, r.width - 80f, TrenchGUI.OptionsBlockHeight));

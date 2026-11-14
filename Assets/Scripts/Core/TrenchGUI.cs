@@ -176,6 +176,21 @@ namespace Ratms.UI
             return result;
         }
 
+        /// <summary>Selector "Etiqueta:  ◀  valor  ▶". Devuelve -1, 0 o +1 según la flecha pulsada.</summary>
+        public static int Stepper(Rect r, string label, string value, float labelWidth = 230f)
+        {
+            Label(new Rect(r.x, r.y, labelWidth, r.height), label);
+            float bx = r.x + labelWidth, bw = r.width - labelWidth;
+            int result = 0;
+            if (Button(new Rect(bx + 3f, r.y, 64f, r.height), "◀")) result = -1;
+            if (Button(new Rect(bx + bw - 67f, r.y, 64f, r.height), "▶")) result = 1;
+            var st = LabelStyle.alignment;
+            LabelStyle.alignment = TextAnchor.MiddleCenter;
+            Label(new Rect(bx + 70f, r.y, bw - 140f, r.height), value);
+            LabelStyle.alignment = st;
+            return result;
+        }
+
         /// <summary>Interruptor Sí/No.</summary>
         public static bool Toggle(Rect r, string label, bool value, float labelWidth = 300f)
         {
@@ -419,7 +434,7 @@ namespace Ratms.UI
         public static event Action OnVolumesChanged;
 
         /// <summary>Altura que ocupa <see cref="OptionsBlock"/> (para dimensionar la ventana).</summary>
-        public const float OptionsBlockHeight = 9 * 52f + 12f;
+        public const float OptionsBlockHeight = 10 * 52f + 12f;
 
         /// <summary>Dibuja el bloque de opciones en <paramref name="area"/>. Devuelve la altura usada.</summary>
         public static float OptionsBlock(Rect area)
@@ -444,8 +459,18 @@ namespace Ratms.UI
             LaughsOn = Toggle(new Rect(area.x, y, area.width, h), "Risas y frases de las ratas", LaughsOn, tw); y += gap;
             ShakeOn = Toggle(new Rect(area.x, y, area.width, h), "Temblor de cámara", ShakeOn, tw); y += gap;
             Ratms.Networking.ControlHints.Enabled = Toggle(new Rect(area.x, y, area.width, h), "Ayudas de controles", Ratms.Networking.ControlHints.Enabled, tw); y += gap;
-            bool full = Toggle(new Rect(area.x, y, area.width, h), "Pantalla completa", Screen.fullScreen, tw);
-            if (full != Screen.fullScreen) Screen.fullScreen = full;
+            // Pantalla y resolución (DisplaySettings): la completa va a la resolución
+            // elegida, no estira la de la ventana.
+            int mode = Choice(new Rect(area.x, y, area.width, h), "Pantalla", new[] { "Ventana", "Completa" }, DisplaySettings.Fullscreen ? 1 : 0, tw);
+            if (mode != (DisplaySettings.Fullscreen ? 1 : 0)) DisplaySettings.Set(mode == 1, DisplaySettings.Chosen);
+            y += gap;
+            var list = DisplaySettings.Available();
+            var cur = DisplaySettings.Chosen;
+            int idx = Mathf.Max(0, list.IndexOf(cur));
+            string resText = $"{cur.x} × {cur.y}" + (cur == DisplaySettings.Native ? "  (" + Loc.T("nativa") + ")" : "");
+            int step = Stepper(new Rect(area.x, y, area.width, h), "Resolución", resText, tw);
+            if (step != 0 && list.Count > 0)
+                DisplaySettings.Set(DisplaySettings.Fullscreen, list[Mathf.Clamp(idx - step, 0, list.Count - 1)]);   // ▶ = más grande (la lista va de mayor a menor)
             y += gap;
             return y - area.y;
         }

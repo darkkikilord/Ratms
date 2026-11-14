@@ -388,6 +388,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: -2253911629886400664, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
       insertIndex: -1
       addedObject: {fileID: 194349590979774580}
+    - targetCorrespondingSourceObject: {fileID: -2253911629886400664, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 8721611817653337216}
   m_SourcePrefab: {fileID: -8435245712485981826, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}
 --- !u!95 &1190916561255911831 stripped
 Animator:
@@ -835,6 +838,31 @@ MonoBehaviour:
   strikeBombs: 5
   strikeSpacing: 0.8
   planeSpeed: 10
+--- !u!114 &8721611817653337216
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6927920246332017463}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6429d0c5a3bd1204ab066e9741cddfbd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShowTopMostFoldoutHeaderGroup: 1
+  chargeRate: 12
+  maxBow: 22
+  maxMortar: 18
+  maxThrow: 14
+  sniperRange: 60
+  sniperDamage: 45
+  bayonetDamage: 22
+  bayonetReach: 0.7
+  bayonetRadius: 0.6
+  bayonetPush: 9
+  sandbagW: 2.6
+  sandbagH: 0.75
 --- !u!4 &7910872146381693778 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7878350319992209165, guid: ff40e08c35b3b5e4280614a25ea75254, type: 3}

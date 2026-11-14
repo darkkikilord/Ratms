@@ -120,7 +120,8 @@ namespace Ratms.Networking
                 // o se quedarían los puntos congelados en pantalla.
                 if (weaponsMenu != null &&
                     weaponsMenu.SelectedWeapon != WeaponsMenuUI.WeaponId.Grenade &&
-                    weaponsMenu.SelectedWeapon != WeaponsMenuUI.WeaponId.ClusterBomb)
+                    weaponsMenu.SelectedWeapon != WeaponsMenuUI.WeaponId.ClusterBomb &&
+                    !NetworkTrenchArsenal.UsesTrajectory(weaponsMenu.SelectedWeapon))   // 0.21: las pinta el arsenal de trinchera
                 {
                     trajectoryDots.Hide();
                 }

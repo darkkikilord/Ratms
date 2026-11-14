@@ -100,6 +100,7 @@ namespace Ratms.Networking
         private NetworkTeleport teleport;
         private NetworkNinjaRope rope;
         private NetworkArsenal arsenal;
+        private NetworkTrenchArsenal trench;   // 0.21: arsenal de trinchera
         private int shotsThisTurn;
 
         [Tooltip("Menú de armas de la propia rata (se auto-resuelve). Sirve para saber qué arma está equipada y disparar la correcta.")]
@@ -356,7 +357,8 @@ namespace Ratms.Networking
         /// </summary>
         public void TestResetFallTracking()
         {
-            peakYSinceLastGround = transform.position.y;
+            // rb.position: si acaban de mover el Rigidbody, el transform aún no se ha enterado.
+            peakYSinceLastGround = rb != null ? rb.position.y : transform.position.y;
             wasGroundedLastFrame = false;
         }
 
@@ -371,6 +373,31 @@ namespace Ratms.Networking
         // ==================================================================
         /// <summary>true = la rata mira a la derecha.</summary>
         public bool FacingRight => facingRight.Value;
+
+        // ---------------- 0.21: QUESO APESTOSO ----------------
+        private Vector2 lureTarget;
+        private float lureUntil = -1f;
+
+        /// <summary>¿Está corriendo hacia un queso apestoso? (solo tiene sentido en el dueño)</summary>
+        public bool Lured => IsOwner && Time.time < lureUntil;
+
+        /// <summary>El servidor avisa: durante unos segundos esta rata corre hacia el queso.</summary>
+        [ClientRpc]
+        public void LureClientRpc(Vector2 at, float seconds)
+        {
+            if (!IsOwner) return;
+            lureTarget = at;
+            lureUntil = Time.time + seconds;
+            if (parked && rb != null) { parked = false; rb.gravityScale = defaultGravityScale >= 0f ? defaultGravityScale : 1f; }
+            if (rb != null) rb.WakeUp();
+        }
+
+        private float LureInput()
+        {
+            float x = health != null ? health.BodyCenter.x : transform.position.x;
+            float dx = lureTarget.x - x;
+            return Mathf.Abs(dx) < 0.35f ? 0f : Mathf.Sign(dx);
+        }
 
         /// <summary>Ángulo de apuntado (−90 abajo … 90 arriba), visto desde la dirección en que mira.</summary>
         public float AimDegrees => aimAngle.Value;
@@ -444,6 +471,7 @@ namespace Ratms.Networking
             teleport = GetComponent<NetworkTeleport>();
             rope = GetComponent<NetworkNinjaRope>();
             arsenal = GetComponent<NetworkArsenal>();
+            trench = GetComponent<NetworkTrenchArsenal>();
             if (weaponsMenu == null) weaponsMenu = GetComponentInChildren<WeaponsMenuUI>();
             if (health == null) health = GetComponent<NetworkHealth>();
 
@@ -652,7 +680,7 @@ namespace Ratms.Networking
         /// <summary>Lo llama NetworkTeleport tras mover la rata: sin "caída" falsa y sin aparcar.</summary>
         public void OnTeleported()
         {
-            peakYSinceLastGround = transform.position.y;
+            peakYSinceLastGround = rb != null ? rb.position.y : transform.position.y;   // el transform puede ir un paso por detrás
             if (parked && rb != null) { parked = false; rb.gravityScale = defaultGravityScale >= 0f ? defaultGravityScale : 1f; }
         }
 
@@ -701,14 +729,16 @@ namespace Ratms.Networking
             {
                 // Si pierdo el turno mientras me movía, dejo de empujar y cancelo
                 // cualquier carga en curso (bazooka o granada).
-                inputX = 0f;
+                inputX = Lured ? LureInput() : 0f;   // el queso apestoso tira de ella igualmente
                 if (bazooka != null && bazooka.IsCharging) bazooka.CancelCharging();
                 if (grenadeThrower != null && grenadeThrower.IsCharging) grenadeThrower.CancelCharging();
                 if (arsenal != null) arsenal.CancelAll();
+                if (trench != null) trench.CancelAll();
                 return;
             }
 
             inputX = TestInputX ?? Input.GetAxisRaw("Horizontal");
+            if (Lured) inputX = LureInput();   // ¡huele a queso! no hay quien la pare
 
             // Salto — acepta W o la flecha arriba (lo que cada quien prefiera).
             // ESPACIO se queda reservado para disparar.
@@ -937,13 +967,15 @@ namespace Ratms.Networking
                 return;
             }
 
+            // RATA-BOMBA corriendo: ESPACIO la revienta (aunque ya hayas "disparado").
+            if (fireDown && trench != null && trench.TryDetonateRatBomb()) return;
+
             // Ya usaste tu arma este turno → solo puedes moverte (huir).
             if (firedThisTurn) return;
 
             // SIN BRAZOS: no hay armas que sujetar → MORDISCO (ESPACIO).
             // Teletransporte y cambiar rata no necesitan manos.
-            if (!hands && equipped != WeaponsMenuUI.WeaponId.Teleport && equipped != WeaponsMenuUI.WeaponId.SelectRat
-                && equipped != WeaponsMenuUI.WeaponId.AirStrike && equipped != WeaponsMenuUI.WeaponId.Napalm)
+            if (!hands && (equipped == WeaponsMenuUI.WeaponId.None || WeaponsMenuUI.NeedsHands(equipped)))
             {
                 if (fireDown && bat != null && bat.Bite(GetWeaponForward()))
                 {
@@ -1022,6 +1054,19 @@ namespace Ratms.Networking
             if (arsenal != null && NetworkArsenal.Handles(equipped))
             {
                 if (arsenal.HandleInput(equipped, fireDown, fireUp, GetWeaponForward(), out float endIn))
+                {
+                    firedThisTurn = true;
+                    SpendAmmo(equipped);
+                    ScheduleEndTurn(endIn);
+                }
+                return;
+            }
+
+            // ARSENAL DE TRINCHERA 0.21: rata-bomba, mina, paloma, mortero, gas,
+            // queso, bayoneta, pala, sacos, bomba bíblica, francotirador y arco.
+            if (trench != null && NetworkTrenchArsenal.Handles(equipped))
+            {
+                if (trench.HandleInput(equipped, fireDown, fireUp, GetWeaponForward(), out float endIn))
                 {
                     firedThisTurn = true;
                     SpendAmmo(equipped);
@@ -1210,7 +1255,7 @@ namespace Ratms.Networking
                 // Con la cuerda enganchada NUNCA se aparca: anularía la gravedad
                 // y la velocidad, y la rata ni se columpiaría ni podría trepar.
                 bool onRope = rope != null && rope.IsAttached;
-                UpdateParking((CanControl() && Mathf.Abs(inputX) > 0.01f) || onRope);
+                UpdateParking(((CanControl() || Lured) && Mathf.Abs(inputX) > 0.01f) || onRope);
                 if (parked) return;   // quieta del todo: nada más que hacer este paso
             }
 
@@ -1239,7 +1284,7 @@ namespace Ratms.Networking
                 return;
             }
 
-            if (!CanControl())
+            if (!CanControl() && !Lured)
             {
                 // Sin control (turno ajeno, transición, o tras disparar).
                 // Antes no tocábamos nada y pasaban dos cosas raras:
@@ -1656,6 +1701,9 @@ namespace Ratms.Networking
         ///  rotación + escala y obtenemos el vector que realmente apunta hacia
         ///  el frente del arma flipeada.
         /// </summary>
+        /// <summary>Hacia dónde apunta el arma ahora mismo (para las ayudas visuales de otras armas).</summary>
+        public Vector2 WeaponForwardPublic => GetWeaponForward();
+
         private Vector2 GetWeaponForward()
         {
             if (weaponHolder == null) return Vector2.right;

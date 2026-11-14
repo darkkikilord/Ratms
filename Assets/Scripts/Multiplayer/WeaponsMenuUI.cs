@@ -39,10 +39,23 @@ namespace Ratms.Networking
             ClusterBomb  = 10,
             AirStrike    = 11,
             Napalm       = 12,
+            // 0.21 — arsenal de trinchera
+            RatBomb      = 13,   // rata kamikaze que corre sola
+            Mine         = 14,
+            Pigeon       = 15,   // paloma mensajera teledirigida
+            Mortar       = 16,
+            GasCan       = 17,
+            Cheese       = 18,   // queso apestoso: atrae a las ratas
+            Bayonet      = 19,
+            Shovel       = 20,
+            Sandbags     = 21,
+            HolyCheese   = 22,   // la bomba bíblica de queso
+            Sniper       = 23,
+            Bow          = 24,
         }
 
-        /// <summary>Número de armas (tamaño del bloque de munición por equipo).</summary>
-        public const int Count = 13;
+        /// <summary>Número de armas (tamaño del bloque de munición por equipo en la red).</summary>
+        public const int Count = 25;
 
         private struct WeaponEntry
         {
@@ -92,12 +105,26 @@ namespace Ratms.Networking
             new WeaponEntry { id = WeaponId.ClusterBomb,  displayName = "Bomba de racimo",            implemented = true, shortcut = KeyCode.E },
             new WeaponEntry { id = WeaponId.AirStrike,    displayName = "Ataque aéreo (clic)",        implemented = true, shortcut = KeyCode.R },
             new WeaponEntry { id = WeaponId.Napalm,       displayName = "Napalm aéreo (clic)",        implemented = true, shortcut = KeyCode.F },
+            new WeaponEntry { id = WeaponId.RatBomb,      displayName = "Rata-bomba",                 implemented = true, shortcut = KeyCode.T },
+            new WeaponEntry { id = WeaponId.Mine,         displayName = "Mina",                       implemented = true, shortcut = KeyCode.G },
+            new WeaponEntry { id = WeaponId.Pigeon,       displayName = "Paloma bomba",               implemented = true, shortcut = KeyCode.Y },
+            new WeaponEntry { id = WeaponId.Mortar,       displayName = "Mortero",                    implemented = true, shortcut = KeyCode.H },
+            new WeaponEntry { id = WeaponId.GasCan,       displayName = "Bidón de gas",               implemented = true, shortcut = KeyCode.Z },
+            new WeaponEntry { id = WeaponId.Cheese,       displayName = "Queso apestoso",             implemented = true, shortcut = KeyCode.X },
+            new WeaponEntry { id = WeaponId.Bayonet,      displayName = "Bayoneta",                   implemented = true, shortcut = KeyCode.B },
+            new WeaponEntry { id = WeaponId.Shovel,       displayName = "Pala",                       implemented = true, shortcut = KeyCode.N },
+            new WeaponEntry { id = WeaponId.Sandbags,     displayName = "Sacos terreros",             implemented = true, shortcut = KeyCode.M },
+            new WeaponEntry { id = WeaponId.HolyCheese,   displayName = "Bomba bíblica de queso",     implemented = true, shortcut = KeyCode.J },
+            new WeaponEntry { id = WeaponId.Sniper,       displayName = "Francotirador",              implemented = true, shortcut = KeyCode.K },
+            new WeaponEntry { id = WeaponId.Bow,          displayName = "Arco",                       implemented = true, shortcut = KeyCode.L },
         };
 
         /// <summary>Tecla que se pinta en el arsenal.</summary>
         private static string KeyLabel(WeaponEntry w) => w.shortcut switch
         {
             KeyCode.Q => "Q", KeyCode.E => "E", KeyCode.R => "R", KeyCode.F => "F",
+            KeyCode.T => "T", KeyCode.G => "G", KeyCode.Y => "Y", KeyCode.H => "H", KeyCode.Z => "Z", KeyCode.X => "X",
+            KeyCode.B => "B", KeyCode.N => "N", KeyCode.M => "M", KeyCode.J => "J", KeyCode.K => "K", KeyCode.L => "L",
             _ => w.id == WeaponId.None ? "0" : $"{(int)w.id + 1}",
         };
 
@@ -120,6 +147,18 @@ namespace Ratms.Networking
             WeaponId.ClusterBomb  => "Bomba de racimo",
             WeaponId.AirStrike    => "Ataque aéreo",
             WeaponId.Napalm       => "Napalm aéreo",
+            WeaponId.RatBomb      => "Rata-bomba",
+            WeaponId.Mine         => "Mina",
+            WeaponId.Pigeon       => "Paloma bomba",
+            WeaponId.Mortar       => "Mortero",
+            WeaponId.GasCan       => "Bidón de gas",
+            WeaponId.Cheese       => "Queso apestoso",
+            WeaponId.Bayonet      => "Bayoneta",
+            WeaponId.Shovel       => "Pala",
+            WeaponId.Sandbags     => "Sacos terreros",
+            WeaponId.HolyCheese   => "Bomba bíblica de queso",
+            WeaponId.Sniper       => "Francotirador",
+            WeaponId.Bow          => "Arco",
             _                 => "Ninguna",
         };
 
@@ -227,11 +266,13 @@ namespace Ratms.Networking
 
         /// <summary>¿Hace falta tener brazos para usar esta arma?</summary>
         public static bool NeedsHands(WeaponId id) => id != WeaponId.None && id != WeaponId.Teleport && id != WeaponId.SelectRat
-                                                      && id != WeaponId.AirStrike && id != WeaponId.Napalm;   // el avión se pide por radio
+                                                      && id != WeaponId.AirStrike && id != WeaponId.Napalm    // el avión se pide por radio
+                                                      && id != WeaponId.Pigeon && id != WeaponId.RatBomb;     // se van solas
 
         /// <summary>¿Se apunta con el RATÓN (clic en el mapa) en vez de con W/S?</summary>
         public static bool ClickTargeted(WeaponId id) => id == WeaponId.Teleport || id == WeaponId.SelectRat
-                                                         || id == WeaponId.AirStrike || id == WeaponId.Napalm;
+                                                         || id == WeaponId.AirStrike || id == WeaponId.Napalm
+                                                         || id == WeaponId.Pigeon || id == WeaponId.Sandbags;
 
         private NetworkHealth ownerHealth;
 
@@ -273,6 +314,18 @@ namespace Ratms.Networking
             WeaponId.ClusterBomb => WeaponArt.ClusterBomb(),
             WeaponId.AirStrike => WeaponArt.Plane(),
             WeaponId.Napalm => WeaponArt.NapalmIcon(),
+            WeaponId.RatBomb => WeaponArt.RatBombIcon(),
+            WeaponId.Mine => WeaponArt.Mine(),
+            WeaponId.Pigeon => WeaponArt.Pigeon(0),
+            WeaponId.Mortar => WeaponArt.Mortar(),
+            WeaponId.GasCan => WeaponArt.GasCan(),
+            WeaponId.Cheese => WeaponArt.Cheese(),
+            WeaponId.Bayonet => WeaponArt.Bayonet(),
+            WeaponId.Shovel => WeaponArt.Shovel(),
+            WeaponId.Sandbags => WeaponArt.Sandbags(),
+            WeaponId.HolyCheese => WeaponArt.HolyCheese(),
+            WeaponId.Sniper => WeaponArt.Sniper(),
+            WeaponId.Bow => WeaponArt.Bow(),
             _ => null,
         };
 
@@ -280,10 +333,11 @@ namespace Ratms.Networking
         // Orden y grupos del panel (como la caja de armas de Worms).
         private static readonly (string group, WeaponId[] ids)[] Groups =
         {
-            ("Explosivos", new[] { WeaponId.Bazooka, WeaponId.Grenade, WeaponId.ClusterBomb, WeaponId.Dynamite }),
-            ("Armas de fuego", new[] { WeaponId.Shotgun, WeaponId.MachineGun, WeaponId.Flamethrower, WeaponId.Bat }),
-            ("Movimiento y trucos", new[] { WeaponId.Rope, WeaponId.Teleport, WeaponId.SelectRat, WeaponId.None }),
-            ("Apoyo aéreo", new[] { WeaponId.AirStrike, WeaponId.Napalm }),
+            ("Explosivos", new[] { WeaponId.Bazooka, WeaponId.Grenade, WeaponId.ClusterBomb, WeaponId.Dynamite, WeaponId.Mortar, WeaponId.HolyCheese }),
+            ("Armas de fuego", new[] { WeaponId.Shotgun, WeaponId.MachineGun, WeaponId.Sniper, WeaponId.Bow, WeaponId.Flamethrower }),
+            ("Cuerpo a cuerpo y trampas", new[] { WeaponId.Bat, WeaponId.Bayonet, WeaponId.Mine, WeaponId.RatBomb, WeaponId.GasCan, WeaponId.Cheese }),
+            ("Movimiento y obras", new[] { WeaponId.Rope, WeaponId.Teleport, WeaponId.Shovel, WeaponId.Sandbags, WeaponId.SelectRat, WeaponId.None }),
+            ("Apoyo aéreo", new[] { WeaponId.AirStrike, WeaponId.Napalm, WeaponId.Pigeon }),
         };
 
         /// <summary>Cómo se usa cada arma (una o dos líneas, en español: se traduce).</summary>
@@ -302,6 +356,18 @@ namespace Ratms.Networking
             WeaponId.SelectRat => "Haz clic en otra rata tuya: jugará tu próximo turno (este lo pierdes).",
             WeaponId.AirStrike => "Haz clic en el mapa: caen cinco bombas en fila. Arrastra con el clic derecho para mirar lejos.",
             WeaponId.Napalm => "Haz clic en el mapa: lluvia de fuego. Arrastra con el clic derecho para mirar lejos.",
+            WeaponId.RatBomb => "ESPACIO suelta una rata con dinamita que corre sola y salta. Vuelve a pulsar ESPACIO para hacerla estallar.",
+            WeaponId.Mine => "ESPACIO la deja a tus pies. Se arma en 2 segundos y explota cuando alguien pasa cerca.",
+            WeaponId.Pigeon => "Haz clic en el objetivo: la paloma vuela hacia allí esquivando el terreno por arriba.",
+            WeaponId.Mortar => "W/S apunta. Mantén ESPACIO para cargar. El proyectil cae en picado y suelta metralla. No le afecta el viento.",
+            WeaponId.GasCan => "W/S apunta. Mantén ESPACIO para lanzarlo. Suelta una nube venenosa que el viento arrastra.",
+            WeaponId.Cheese => "W/S apunta. Mantén ESPACIO para lanzarlo. Las ratas de alrededor corren hacia él... y revienta.",
+            WeaponId.Bayonet => "Ponte al lado y pulsa ESPACIO: estocada hacia arriba que siempre arranca algo.",
+            WeaponId.Shovel => "W/S apunta y ESPACIO cava un túnel en esa dirección para esconderte.",
+            WeaponId.Sandbags => "Haz clic donde quieras poner una barricada de sacos. Sirve de cobertura o de puente.",
+            WeaponId.HolyCheese => "W/S apunta. Mantén ESPACIO para lanzarla. ¡Aleluya! Explosión enorme. Solo sale en cajas.",
+            WeaponId.Sniper => "W/S apunta (la mira láser ayuda) y ESPACIO dispara. Mucho daño y llega muy lejos.",
+            WeaponId.Bow => "W/S apunta. Mantén ESPACIO para tensar. Cada flecha hace un efecto al azar: quema, veneno, ceguera o amputación.",
             _ => "Guarda el arma para andar y saltar con las manos libres.",
         };
 
@@ -319,7 +385,7 @@ namespace Ratms.Networking
             EnsureStyles(1f);
             float vh = Ratms.UI.TrenchGUI.VH;
 
-            const float tile = 78f, gap = 8f, pad = 18f, cols = 4f, groupH = 24f, infoH = 104f;
+            const float tile = 66f, gap = 7f, pad = 18f, cols = 6f, groupH = 24f, infoH = 104f;
             float W = pad * 2f + cols * tile + (cols - 1f) * gap;
             float H = 54f;
             foreach (var g in Groups) H += groupH + tile + gap;

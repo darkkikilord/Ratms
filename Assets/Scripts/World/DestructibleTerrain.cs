@@ -741,6 +741,70 @@ namespace Ratms.World
             }
         }
 
+        // ============================================================
+        //  0.21 — PALA Y SACOS TERREROS
+        // ============================================================
+        /// <summary>Cava un agujero REDONDO y limpio (sin cuenco, embudo ni chamuscado): para túneles.</summary>
+        public void DigHole(Vector2 worldPos, float worldRadius)
+        {
+            if (pixels == null) return;
+            Vector3 local = transform.InverseTransformPoint(worldPos);
+            PunchCircleInPixels(new Vector2Int(Mathf.RoundToInt(local.x * pixelsPerUnit), Mathf.RoundToInt(local.y * pixelsPerUnit)),
+                                Mathf.CeilToInt(worldRadius * pixelsPerUnit));
+            dirty = true;
+        }
+
+        public static void DigAllAt(Vector2 worldPos, float worldRadius)
+        {
+            for (int i = s_all.Count - 1; i >= 0; i--)
+                if (s_all[i] != null) s_all[i].DigHole(worldPos, worldRadius);
+        }
+
+        /// <summary>
+        ///  Pone una barricada de SACOS TERREROS (tierra sólida nueva) centrada en
+        ///  <paramref name="center"/>. Solo rellena aire: no pisa el terreno que hubiera.
+        ///  Los sacos son "ladrillos" de 14×8 px con borde oscuro, en filas alternas.
+        /// </summary>
+        public void FillSandbags(Vector2 center, float worldW, float worldH)
+        {
+            if (pixels == null) return;
+            Vector3 lc = transform.InverseTransformPoint(center);
+            int cx = Mathf.RoundToInt(lc.x * pixelsPerUnit), cy = Mathf.RoundToInt(lc.y * pixelsPerUnit);
+            int hw = Mathf.RoundToInt(worldW * pixelsPerUnit * 0.5f), hh = Mathf.RoundToInt(worldH * pixelsPerUnit * 0.5f);
+            int x0 = Mathf.Max(0, cx - hw), x1 = Mathf.Min(textureWidth - 1, cx + hw);
+            int y0 = Mathf.Max(0, cy - hh), y1 = Mathf.Min(textureHeight - 1, cy + hh);
+            var light = new Color32(196, 170, 118, 255);
+            var mid = new Color32(170, 144, 96, 255);
+            var dark = new Color32(110, 88, 56, 255);
+            const int bw = 14, bh = 8;
+            for (int y = y0; y <= y1; y++)
+            {
+                int row = (y - y0) / bh, yy = (y - y0) % bh;
+                int shift = (row % 2) * (bw / 2);
+                for (int x = x0; x <= x1; x++)
+                {
+                    int idx = y * textureWidth + x;
+                    if (IsSolidPixel(pixels[idx])) continue;
+                    int xx = (x - x0 + shift) % bw;
+                    // Esquinas redondeadas: un saco no es un ladrillo
+                    bool corner = (xx == 0 || xx == bw - 1) && (yy == 0 || yy == bh - 1);
+                    if (corner) continue;
+                    bool edge = xx == 0 || xx == bw - 1 || yy == 0 || yy == bh - 1;
+                    Color32 c = edge ? dark : (yy >= bh - 3 ? light : mid);
+                    if (!edge && ((x * 7 + y * 13) % 11 == 0)) c = dark;   // trama de arpillera
+                    pixels[idx] = c;
+                }
+            }
+            MarkSolidChanged(x0, y0, x1, y1);
+            dirty = true;
+        }
+
+        public static void FillSandbagsAll(Vector2 center, float worldW, float worldH)
+        {
+            for (int i = s_all.Count - 1; i >= 0; i--)
+                if (s_all[i] != null) s_all[i].FillSandbags(center, worldW, worldH);
+        }
+
         public static void CarveAllAt(Vector2 worldPos, float worldRadius)
         {
             for (int i = s_all.Count - 1; i >= 0; i--)

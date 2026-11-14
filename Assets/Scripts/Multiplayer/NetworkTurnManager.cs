@@ -134,6 +134,7 @@ namespace Ratms.Networking
         partial void StatsOnSpawn();
         partial void StatsOnDespawn();
         partial void StatsOnGameStart();
+        partial void PoisonOnTurnBegin();
 
         // =========================================================
         // CICLO DE VIDA
@@ -346,6 +347,7 @@ namespace Ratms.Networking
                     TurnTimeRemaining.Value = TurnDuration;
                     Wind.Value = RollWind();
                     ItemsOnTurnBegin();
+                    PoisonOnTurnBegin();
                     return;
                 }
             }

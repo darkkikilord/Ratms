@@ -28,6 +28,7 @@ public static class RatmsPrefabSetup
             changed |= Ensure<NetworkTeleport>(root);
             changed |= Ensure<NetworkNinjaRope>(root);
             changed |= Ensure<NetworkArsenal>(root);   // 0.18: lanzallamas, metralleta, ataque aéreo
+            changed |= Ensure<NetworkTrenchArsenal>(root);   // 0.21: arsenal de trinchera
 
             if (changed)
             {
@@ -42,6 +43,53 @@ public static class RatmsPrefabSetup
         finally
         {
             PrefabUtility.UnloadPrefabContents(root);
+        }
+    }
+
+    private const string GrenadePrefabPath = "Assets/Prefabs/Prefabs multiplayer/Grenade.prefab";
+    private const string GadgetPrefabPath = "Assets/Prefabs/Prefabs multiplayer/Gadget.network.prefab";
+    private const string NetworkPrefabsListPath = "Assets/DefaultNetworkPrefabs.asset";
+
+    /// <summary>
+    ///  0.21: crea el prefab de red <c>Gadget.network</c> (proyectiles del arsenal
+    ///  de trinchera) COPIANDO el de la granada (misma física, collider y
+    ///  NetworkTransform) y cambiando NetworkGrenade por NetworkGadget. Lo
+    ///  registra en la lista de prefabs de red. Idempotente.
+    /// </summary>
+    [MenuItem("Ratms/Setup/Crear prefab Gadget (arsenal de trinchera)")]
+    public static void EnsureGadgetPrefab()
+    {
+        if (AssetDatabase.LoadAssetAtPath<GameObject>(GadgetPrefabPath) == null)
+        {
+            if (!AssetDatabase.CopyAsset(GrenadePrefabPath, GadgetPrefabPath))
+            {
+                Debug.LogError("[RatmsPrefabSetup] No pude copiar el prefab de la granada.");
+                return;
+            }
+            var root = PrefabUtility.LoadPrefabContents(GadgetPrefabPath);
+            try
+            {
+                root.name = "Gadget.network";
+                foreach (var g in root.GetComponentsInChildren<NetworkGrenade>(true)) Object.DestroyImmediate(g);
+                if (root.GetComponent<NetworkGadget>() == null) root.AddComponent<NetworkGadget>();
+                PrefabUtility.SaveAsPrefabAsset(root, GadgetPrefabPath);
+                Debug.Log("[RatmsPrefabSetup] Creado " + GadgetPrefabPath);
+            }
+            finally { PrefabUtility.UnloadPrefabContents(root); }
+        }
+
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(GadgetPrefabPath);
+        var list = AssetDatabase.LoadAssetAtPath<Unity.Netcode.NetworkPrefabsList>(NetworkPrefabsListPath);
+        if (list == null || prefab == null) { Debug.LogError("[RatmsPrefabSetup] Falta la lista de prefabs de red o el prefab."); return; }
+        bool already = false;
+        foreach (var p in list.PrefabList) if (p.Prefab == prefab) already = true;
+        if (!already)
+        {
+            list.Add(new Unity.Netcode.NetworkPrefab { Prefab = prefab });
+            EditorUtility.SetDirty(list);
+            AssetDatabase.SaveAssetIfDirty(list);   // (SaveAssets solo no lo escribía)
+            AssetDatabase.SaveAssets();
+            Debug.Log("[RatmsPrefabSetup] Gadget.network registrado en la lista de prefabs de red.");
         }
     }
 

@@ -42,7 +42,7 @@ namespace Ratms.Testing
     ///  Normalmente no se lanza a mano: usa <c>tools/autotest.ps1</c>, que
     ///  compila la build y la ejecuta con estos argumentos.
     /// </summary>
-    public class AutoPlayTest : MonoBehaviour
+    public partial class AutoPlayTest : MonoBehaviour
     {
         private const string ArgEnable = "-ratmsAutoTest";
 
@@ -164,6 +164,7 @@ namespace Ratms.Testing
             if (role == "client") { yield return RunClientMulti(); yield break; }
             if (role == "practice") { yield return RunPractice(); yield break; }
             if (role == "arsenal") { yield return RunArsenal(); yield break; }
+            if (role == "trench") { yield return RunTrench(); yield break; }
 
             // --- 1) Menú principal ---------------------------------
             yield return new WaitForSeconds(2.5f);
@@ -2362,6 +2363,7 @@ namespace Ratms.Testing
             float feetOffset = (col.bounds.min.y - (box != null ? box.edgeRadius : 0f)) - rat.transform.position.y;
             rb.position = new Vector2(bestX, surfY + 0.1f - feetOffset);
             rb.linearVelocity = Vector2.zero;
+            rat.TestResetFallTracking();   // ya mismo: la caída se vigila en cada frame (0.21)
             yield return new WaitForFixedUpdate();
             rat.TestResetFallTracking();
             yield return new WaitForSeconds(0.3f);

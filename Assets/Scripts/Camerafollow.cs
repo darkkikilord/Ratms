@@ -220,9 +220,19 @@ public class CameraFollow : MonoBehaviour
             shakeOffset = (Vector3)(Random.insideUnitCircle * shakeAmp);
         else
             shakeAmp = 0f;
-        transform.position = basePosition + shakeOffset;
-
         cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, zoom, 1f - Mathf.Exp(-zoomSpeed * Time.unscaledDeltaTime));
+
+        // PÍXELES NÍTIDOS (0.21): la cámara se coloca en múltiplos exactos de
+        // un píxel de PANTALLA. Si no, al moverse despacio el pixel-art
+        // "tiembla" (cada píxel cae a caballo entre dos de la pantalla).
+        Vector3 p = basePosition + shakeOffset;
+        float pxPerUnit = Screen.height / Mathf.Max(0.01f, 2f * cam.orthographicSize);
+        if (pxPerUnit > 1f)
+        {
+            p.x = Mathf.Round(p.x * pxPerUnit) / pxPerUnit;
+            p.y = Mathf.Round(p.y * pxPerUnit) / pxPerUnit;
+        }
+        transform.position = p;
     }
 
     private Vector3 ComputeDesired(ref float zoom, ref float smooth)
@@ -294,7 +304,9 @@ public class CameraFollow : MonoBehaviour
             {
                 float a = mv.AimDegrees * Mathf.Deg2Rad;
                 var dir = new Vector3(Mathf.Cos(a) * (mv.FacingRight ? 1f : -1f), Mathf.Sin(a), 0f);
-                pos += dir * aimLookAhead;
+                bool sniper = w == WeaponsMenuUI.WeaponId.Sniper;
+                pos += dir * aimLookAhead * (sniper ? 3.5f : 1f);   // francotirador: mira mucho más lejos
+                if (sniper) zoom = targetZoom + 2.5f;
             }
         }
         return pos;

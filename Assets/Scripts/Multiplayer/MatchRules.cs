@@ -110,7 +110,19 @@ namespace Ratms.Networking
                 WeaponsMenuUI.WeaponId.ClusterBomb => 2,
                 WeaponsMenuUI.WeaponId.AirStrike => 1,
                 WeaponsMenuUI.WeaponId.Napalm => 1,
-                _ => -1,   // bazuca, escopeta, bate, cuerda y metralleta: infinitas
+                // 0.21 — arsenal de trinchera
+                WeaponsMenuUI.WeaponId.RatBomb => 1,
+                WeaponsMenuUI.WeaponId.Mine => 2,
+                WeaponsMenuUI.WeaponId.Pigeon => 1,
+                WeaponsMenuUI.WeaponId.Mortar => 2,
+                WeaponsMenuUI.WeaponId.GasCan => 1,
+                WeaponsMenuUI.WeaponId.Cheese => 1,
+                WeaponsMenuUI.WeaponId.Shovel => 2,
+                WeaponsMenuUI.WeaponId.Sandbags => 2,
+                WeaponsMenuUI.WeaponId.HolyCheese => 0,   // solo en cajas
+                WeaponsMenuUI.WeaponId.Sniper => 2,
+                WeaponsMenuUI.WeaponId.Bow => 3,
+                _ => -1,   // bayoneta infinita, como el bate   // bazuca, escopeta, bate, cuerda y metralleta: infinitas
             };
         }
 

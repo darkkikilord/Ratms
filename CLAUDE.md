@@ -108,6 +108,15 @@ Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMe
 - **Animación** (`RatAppearance.Juice`): estirar al despegar, aplastar al aterrizar (polvo si cae fuerte), inclinación en el aire, balanceo al andar, respiración y saltito al empezar su turno. Todo por escala/giro del sprite desde los pies.
 - Prueba: `-Role menus` añade U05b (ayudas) y U05c (vista general).
 
+## Arsenal de trinchera y pantalla (0.21)
+- 12 armas nuevas, `WeaponId` 13-24 (`WeaponsMenuUI.Count` = 25; la munición se amplía sola): **Rata-bomba** (T), **Mina** (G), **Paloma bomba** (Y, clic), **Mortero** (H), **Bidón de gas** (Z), **Queso apestoso** (X), **Bayoneta** (B), **Pala** (N), **Sacos terreros** (M, clic con fantasma), **Bomba bíblica de queso** (J, munición 0: solo en cajas), **Francotirador** (K, mira láser) y **Arco** (L).
+- `NetworkTrenchArsenal` (raíz de la rata, vía `RatmsPrefabSetup.EnsureRatComponents`): entrada del dueño, carga con la parábola compartida (`UsesTrajectory`; el bazuca ya no la oculta para estas), arma en la mano para todos, láser, fantasma de sacos, mira de la paloma y los ServerRpc (francotirador = rayo; bayoneta = golpe hacia arriba que SIEMPRE amputa si hay mutilaciones; pala = `NetworkDestructibleTerrain.ServerDig`; sacos = `ServerSandbags` → `DestructibleTerrain.FillSandbags`). ESPACIO revienta tu rata-bomba aunque ya hayas disparado (`TryDetonateRatBomb`, antes del `firedThisTurn`).
+- `NetworkGadget` = proyectil único (prefab **Gadget.network**, copia de la granada creada con `RatmsPrefabSetup.EnsureGadgetPrefab`, registrado en `DefaultNetworkPrefabs`) con `Kind`: RatBomb (anda y salta; 9 s), Mine (se arma a 2 s, proximidad y en cadena con `OnServerExplosion`), Pigeon (vuela al clic esquivando el terreno), MortarShell (+4 Shrapnel), Arrow (efecto al azar: quemadura/veneno/ceguera/amputación), GasCan (`GasSystem`), Cheese (`tm.ServerLure` → `NetworkPlayerMovement.LureClientRpc`: la rata anda sola hacia el queso, también fuera de su turno) y HolyCheese (coro `Sfx.Id.Choir`, radio 6).
+- **Veneno**: `NetworkHealth.PoisonTurns` (red); al empezar el turno de su equipo pierde 6 (nunca le mata) — `NetworkTurnManager.Trench.cs`. `DamageType.Poison`/`Bullet`. Avisos de estado: `NetworkHealth.StatusClientRpc`.
+- `GasSystem`: nubes locales como el fuego (`tm.GasClientRpc`), el viento las arrastra; daño y veneno solo en el servidor.
+- **Pantalla** (`DisplaySettings`): Opciones → Pantalla (Ventana/Completa) y Resolución (◀ ▶, `TrenchGUI.Stepper`). La completa va a la resolución elegida (nativa por defecto): antes `Screen.fullScreen = true` estiraba la de la ventana (borroso en 2K). La cámara se ajusta a píxeles de pantalla (sin temblor del pixel-art).
+- Prueba: `tools\autotest.ps1 -Role trench` (T00–T13; monta un "campo de tiro" plano con `BuildRange` y cura a la rata entre armas).
+
 ## Convenciones
 - Comentarios abundantes en español con `/// <summary>` explicando el *porqué* (el usuario aprende leyéndolos). Mantener ese estilo.
 - `[Header]` + `[Tooltip]` en español en todos los campos del Inspector.
@@ -125,7 +134,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilación rápida: `tools\compilar-rapido.ps1`. Compilación completa de Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.20 (cámara, música, animaciones y arsenal). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.21 (arsenal de trinchera: 12 armas nuevas y resolución). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)

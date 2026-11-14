@@ -237,6 +237,7 @@ namespace Ratms.Networking
                 DamageType.Fire      => "~",  // fuego
                 DamageType.Fall      => "v",  // caída
                 DamageType.Melee     => "x",  // golpe
+                DamageType.Poison    => "%",  // veneno
                 _                    => "-",
             };
             return $"{prefix}{amount}";
@@ -250,6 +251,7 @@ namespace Ratms.Networking
                 DamageType.Fire      => new Color(1f, 0.6f, 0.1f),   // naranja
                 DamageType.Fall      => new Color(0.85f, 0.85f, 0.4f), // amarillo
                 DamageType.Water     => new Color(0.3f, 0.7f, 1f),   // azul
+                DamageType.Poison    => new Color(0.55f, 0.95f, 0.3f), // verde veneno
                 DamageType.Melee     => new Color(1f, 0.9f, 0.3f),   // amarillo cálido
                 _                    => new Color(1f, 0.2f, 0.2f),   // rojo genérico
             };

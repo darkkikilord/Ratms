@@ -15,6 +15,8 @@ namespace Ratms.Networking
         Fire      = 2,  // futuro (lanzallamas, napalm)
         Fall      = 3,  // caída (aún no implementado, pero reservado)
         Water     = 4,  // muerte por agua
-        Melee     = 5   // futuro (cuerpo a cuerpo, bate)
+        Melee     = 5,  // cuerpo a cuerpo (bate, bayoneta)
+        Poison    = 6,  // veneno (flechas, gas): cada turno
+        Bullet    = 7   // francotirador, flechas
     }
 }

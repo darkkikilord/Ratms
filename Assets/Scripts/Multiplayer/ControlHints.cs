@@ -59,22 +59,30 @@ namespace Ratms.Networking
             if (rope != null && rope.IsAttached)
                 return T("← →: balancearte  ·  W/S: subir y bajar  ·  ESPACIO o ↑: soltarte");
             if (rat.FiredThisTurn)
-                return T("Ya has usado tu arma: ¡corre a cubrirte!");
+                return NetworkGadget.ActiveRatBombOf(rat.NetworkObjectId) != null
+                    ? T("ESPACIO: ¡revienta la rata-bomba!")
+                    : T("Ya has usado tu arma: ¡corre a cubrirte!");
 
             var w = menu != null ? menu.SelectedWeapon : WeaponsMenuUI.WeaponId.None;
             if (w == WeaponsMenuUI.WeaponId.None)
                 return T("TAB: armas  ·  ← →: andar  ·  ↑: saltar (dos veces: voltereta)  ·  clic derecho: mover la cámara");
             if (WeaponsMenuUI.ClickTargeted(w))
                 return T("Clic: elegir el sitio  ·  clic derecho y arrastrar: mirar lejos  ·  V: vista general");
-            bool charge = w == WeaponsMenuUI.WeaponId.Bazooka || w == WeaponsMenuUI.WeaponId.Grenade || w == WeaponsMenuUI.WeaponId.ClusterBomb;
+            bool charge = w == WeaponsMenuUI.WeaponId.Bazooka || w == WeaponsMenuUI.WeaponId.Grenade || w == WeaponsMenuUI.WeaponId.ClusterBomb
+                          || NetworkTrenchArsenal.UsesTrajectory(w);
             bool hold = w == WeaponsMenuUI.WeaponId.Flamethrower;
             string fire = charge ? T("ESPACIO: mantén para cargar, suelta para disparar")
                         : hold ? T("ESPACIO: mantén para echar fuego")
                         : w == WeaponsMenuUI.WeaponId.Dynamite ? T("ESPACIO: soltarla y ¡a correr!")
                         : w == WeaponsMenuUI.WeaponId.Rope ? T("ESPACIO: lanzar la cuerda")
                         : w == WeaponsMenuUI.WeaponId.Bat ? T("ESPACIO: batazo")
+                        : w == WeaponsMenuUI.WeaponId.Bayonet ? T("ESPACIO: estocada")
+                        : w == WeaponsMenuUI.WeaponId.Shovel ? T("ESPACIO: cavar")
+                        : w == WeaponsMenuUI.WeaponId.Mine ? T("ESPACIO: dejar la mina")
+                        : w == WeaponsMenuUI.WeaponId.RatBomb ? T("ESPACIO: soltar la rata-bomba")
                         : T("ESPACIO: disparar");
-            string aim = w == WeaponsMenuUI.WeaponId.Dynamite ? "" : T("W/S: apuntar") + "  ·  ";
+            bool noAim = w == WeaponsMenuUI.WeaponId.Dynamite || w == WeaponsMenuUI.WeaponId.Mine || w == WeaponsMenuUI.WeaponId.RatBomb;
+            string aim = noAim ? "" : T("W/S: apuntar") + "  ·  ";
             return aim + fire + "  ·  " + T("TAB: cambiar de arma");
         }
 

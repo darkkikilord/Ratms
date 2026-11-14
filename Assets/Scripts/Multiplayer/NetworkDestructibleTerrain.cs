@@ -141,6 +141,26 @@ namespace Ratms.Networking
             OnServerExplosion?.Invoke(worldPos, worldRadius);
         }
 
+        /// <summary>(Servidor) Cava un agujero limpio (pala). No cuenta como explosión: no revienta barriles.</summary>
+        public void ServerDig(Vector2 worldPos, float worldRadius)
+        {
+            if (!IsServer || worldRadius <= 0f) return;
+            DigClientRpc(worldPos, worldRadius);
+        }
+
+        [ClientRpc]
+        private void DigClientRpc(Vector2 worldPos, float worldRadius) => DestructibleTerrain.DigAllAt(worldPos, worldRadius);
+
+        /// <summary>(Servidor) Pone sacos terreros (tierra nueva) en todos los PCs.</summary>
+        public void ServerSandbags(Vector2 center, float w, float h)
+        {
+            if (!IsServer) return;
+            SandbagsClientRpc(center, w, h);
+        }
+
+        [ClientRpc]
+        private void SandbagsClientRpc(Vector2 center, float w, float h) => DestructibleTerrain.FillSandbagsAll(center, w, h);
+
         [ClientRpc]
         private void CarveClientRpc(Vector2 worldPos, float worldRadius)
         {

@@ -49,6 +49,9 @@ namespace Ratms.Networking
             AddAmmoServer(rat.TeamIndex.Value, (WeaponsMenuUI.WeaponId)weapon, -1);
         }
 
+        /// <summary>(Solo PRUEBAS, servidor) Da munición a un equipo.</summary>
+        public void TestGiveAmmo(int team, WeaponsMenuUI.WeaponId w, int n) => AddAmmoServer(team, w, n);
+
         private void AddAmmoServer(int team, WeaponsMenuUI.WeaponId w, int delta)
         {
             if (team < 0 || w == WeaponsMenuUI.WeaponId.None) return;
@@ -141,6 +144,17 @@ namespace Ratms.Networking
             (WeaponsMenuUI.WeaponId.ClusterBomb, 1, "+1 Bomba de racimo"),
             (WeaponsMenuUI.WeaponId.AirStrike, 1, "+1 Ataque aéreo"),
             (WeaponsMenuUI.WeaponId.Napalm, 1, "+1 Napalm aéreo"),
+            // 0.21 — arsenal de trinchera
+            (WeaponsMenuUI.WeaponId.RatBomb, 1, "+1 Rata-bomba"),
+            (WeaponsMenuUI.WeaponId.Mine, 2, "+2 Minas"),
+            (WeaponsMenuUI.WeaponId.Pigeon, 1, "+1 Paloma bomba"),
+            (WeaponsMenuUI.WeaponId.Mortar, 1, "+1 Mortero"),
+            (WeaponsMenuUI.WeaponId.GasCan, 1, "+1 Bidón de gas"),
+            (WeaponsMenuUI.WeaponId.Cheese, 1, "+1 Queso apestoso"),
+            (WeaponsMenuUI.WeaponId.Sniper, 1, "+1 Francotirador"),
+            (WeaponsMenuUI.WeaponId.Bow, 2, "+2 Flechas"),
+            (WeaponsMenuUI.WeaponId.Sandbags, 1, "+1 Sacos terreros"),
+            (WeaponsMenuUI.WeaponId.HolyCheese, 1, "¡BOMBA BÍBLICA DE QUESO!"),   // la rara: sale lo mismo que las demás, pero solo hay UNA entrada
         };
         private const byte TrapContent = 250;
 

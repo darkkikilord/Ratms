@@ -419,7 +419,7 @@ namespace Ratms.UI
         public static event Action OnVolumesChanged;
 
         /// <summary>Altura que ocupa <see cref="OptionsBlock"/> (para dimensionar la ventana).</summary>
-        public const float OptionsBlockHeight = 8 * 52f + 12f;
+        public const float OptionsBlockHeight = 9 * 52f + 12f;
 
         /// <summary>Dibuja el bloque de opciones en <paramref name="area"/>. Devuelve la altura usada.</summary>
         public static float OptionsBlock(Rect area)
@@ -443,6 +443,7 @@ namespace Ratms.UI
             GoreOn = Toggle(new Rect(area.x, y, area.width, h), "Sangre y vísceras", GoreOn, tw); y += gap;
             LaughsOn = Toggle(new Rect(area.x, y, area.width, h), "Risas y frases de las ratas", LaughsOn, tw); y += gap;
             ShakeOn = Toggle(new Rect(area.x, y, area.width, h), "Temblor de cámara", ShakeOn, tw); y += gap;
+            Ratms.Networking.ControlHints.Enabled = Toggle(new Rect(area.x, y, area.width, h), "Ayudas de controles", Ratms.Networking.ControlHints.Enabled, tw); y += gap;
             bool full = Toggle(new Rect(area.x, y, area.width, h), "Pantalla completa", Screen.fullScreen, tw);
             if (full != Screen.fullScreen) Screen.fullScreen = full;
             y += gap;

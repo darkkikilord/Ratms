@@ -17,7 +17,7 @@ namespace Ratms.UI
     /// </summary>
     public class MenuDressing : MonoBehaviour
     {
-        public const string Version = "v0.19";
+        public const string Version = "v0.20";
 
         private RectTransform canvasRect, layer;
         private readonly List<Marcher> marchers = new();

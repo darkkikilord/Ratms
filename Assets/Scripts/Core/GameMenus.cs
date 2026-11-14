@@ -15,11 +15,11 @@ namespace Ratms.UI
         {
             GUI.depth = -10;
             TrenchGUI.Begin();
-            var r = new Rect((TrenchGUI.VW - 760f) * 0.5f, (TrenchGUI.VH - 640f) * 0.5f, 760f, 640f);
+            var r = new Rect((TrenchGUI.VW - 760f) * 0.5f, (TrenchGUI.VH - 700f) * 0.5f, 760f, 700f);
             TrenchGUI.Panel(r);
             TrenchGUI.Title(new Rect(r.x, r.y + 18f, r.width, 50f), "OPCIONES");
-            TrenchGUI.OptionsBlock(new Rect(r.x + 40f, r.y + 90f, r.width - 80f, 420f));
-            if (TrenchGUI.Button(new Rect(r.x + r.width * 0.3f, r.yMax - 76f, r.width * 0.4f, 52f), "Volver", big: true) ||
+            TrenchGUI.OptionsBlock(new Rect(r.x + 40f, r.y + 90f, r.width - 80f, TrenchGUI.OptionsBlockHeight));
+            if (TrenchGUI.Button(new Rect(r.x + r.width * 0.3f, r.yMax - 70f, r.width * 0.4f, 52f), "Volver", big: true) ||
                 (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape))
             {
                 PlayerPrefs.Save();
@@ -71,11 +71,11 @@ namespace Ratms.UI
                 }
                 case Page.Options:
                 {
-                    var r = Centered(760f, 640f);
+                    var r = Centered(760f, 700f);
                     TrenchGUI.Panel(r);
                     TrenchGUI.Title(new Rect(r.x, r.y + 18f, r.width, 50f), "OPCIONES");
-                    TrenchGUI.OptionsBlock(new Rect(r.x + 40f, r.y + 90f, r.width - 80f, 420f));
-                    if (TrenchGUI.Button(new Rect(r.x + r.width * 0.3f, r.yMax - 76f, r.width * 0.4f, 52f), "Volver", big: true) || esc)
+                    TrenchGUI.OptionsBlock(new Rect(r.x + 40f, r.y + 90f, r.width - 80f, TrenchGUI.OptionsBlockHeight));
+                    if (TrenchGUI.Button(new Rect(r.x + r.width * 0.3f, r.yMax - 70f, r.width * 0.4f, 52f), "Volver", big: true) || esc)
                     { PlayerPrefs.Save(); page = Page.Main; }
                     break;
                 }
@@ -114,6 +114,7 @@ namespace Ratms.UI
                 "Flechas IZQ / DER   andar          Flecha ARRIBA   saltar",
                 "W / S   apuntar          ESPACIO   disparar (mantén para más fuerza)",
                 "1-8 o TAB   elegir arma        ESC   pausa",
+                "Clic derecho y arrastrar   mover la cámara     V   vista general     C   volver a tu rata",
                 "",
                 "• Cada turno usas UN arma; después aún puedes moverte para huir.",
                 "• Las ratas de tu equipo juegan por turnos, una cada vez.",

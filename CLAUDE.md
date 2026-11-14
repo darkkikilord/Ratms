@@ -16,7 +16,7 @@ El usuario habla español: responde, comenta el código y escribe los commits en
 | `World/` | `Ratms.World` | Terreno procedural y destructible, biomas, fondos, agua mortal |
 | `Core/` | `Ratms.Core` / `Ratms.UI` | Menú principal, opciones, carga de escenas |
 | `Testing/` | `Ratms.Testing` | `AutoPlayTest`: prueba automática con capturas (solo se activa con `-ratmsAutoTest`) |
-| `Camerafollow.cs` | (sin namespace) | Cámara del juego (SÍ se usa en red): seguimiento, shake, foco de impacto, zoom con rueda |
+| `Camerafollow.cs` | (sin namespace) | Cámara del juego (SÍ se usa en red): cámara inteligente + cámara libre (ver "Presentación (0.20)") |
 | `Player/`, `Weapons ( armas )/`, `turns (turnos)/` | (sin namespace) | **Legacy de un jugador**, previo al multijugador. No ampliar; el juego real es la versión de red |
 | `Assets/Editor/` | — | `AutoTestBuild` (build para la prueba), `RatmsPrefabSetup` (añade componentes a prefabs por código) |
 
@@ -98,6 +98,16 @@ Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMe
 - `Mi equipo`: campos con texto de ejemplo (`TrenchGUI.Field`) y aspecto descrito con `RatLook.Describe()` (traducido).
 - Prueba: `tools\autotest.ps1 -Role menus` (U00–U08: menú, multijugador, jugar, mi equipo, opciones, arsenal, pausa, VICTORIA y REVANCHA) y `-Lang en` para las capturas en inglés (no toca las preferencias del jugador: `Loc.SetSessionLanguage`).
 
+## Presentación (0.20)
+- **Cámara** (`CameraFollow`, prioridades): cámara libre > pausa de impacto (se aleja para encuadrar las ratas cercanas, `ZoomToFitAround`) > proyectil (mira por delante según su velocidad y se aleja si va rápido) > rata volando tras el impacto (la sigue hasta que aterriza; velocidad medida por posición porque en los demás PCs el cuerpo es cinemático) > rata del turno (su CUERPO, con adelanto hacia donde apuntas). `SmoothDamp` y nunca fuera del mapa (`ClampToMap`). API de siempre: `SetTarget`, `FollowTransform`, `FocusOnImpact`, `Shake`.
+- **Cámara libre**: clic DERECHO y arrastrar; con armas de clic (`WeaponsMenuUI.ClickTargeted`) el borde de la pantalla la desplaza; **V** = vista general (`ToggleOverview`), **C** = volver. Se sale sola al moverte/disparar, en un impacto o al cambiar el turno. Zoom libre hasta `maxFreeZoom` 24.
+- `OffscreenRatMarkers` (en la cámara): flechitas en el borde hacia las ratas fuera de pantalla, color de equipo + nombre y vida; recordatorio tenue de controles en cámara libre.
+- **Arsenal (TAB)** rehecho: cuadrícula por grupos (`WeaponsMenuUI.Groups`) con icono, tecla y munición; ficha abajo con "cómo se usa" (`WeaponsMenuUI.HowTo`, traducible). Estilo `TrenchGUI`.
+- **Ayudas de controles** (`ControlHints`, en la cámara): una línea tenue abajo a la izquierda en tu turno según lo que haces; se atenúa con los turnos (`hint_turns`) y se apaga en Opciones (`opt_hints`).
+- **Música** (`Music`): lista de 9 canciones compuestas por código (marcha, polka, vals y fúnebre; acordeón, pífano, metales, armónica), estructura Intro·A·A'·B·A·Final (40-110 s). Listas por ánimo: menú, batalla y MUERTE SÚBITA (cambia sola). Al acabar una entra otra con fundido; se componen en un hilo (`Task.Run`, solo matemáticas) y se guardan como mucho 4. Rótulo "♪ nombre" discreto al empezar.
+- **Animación** (`RatAppearance.Juice`): estirar al despegar, aplastar al aterrizar (polvo si cae fuerte), inclinación en el aire, balanceo al andar, respiración y saltito al empezar su turno. Todo por escala/giro del sprite desde los pies.
+- Prueba: `-Role menus` añade U05b (ayudas) y U05c (vista general).
+
 ## Convenciones
 - Comentarios abundantes en español con `/// <summary>` explicando el *porqué* (el usuario aprende leyéndolos). Mantener ese estilo.
 - `[Header]` + `[Tooltip]` en español en todos los campos del Inspector.
@@ -115,7 +125,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilación rápida: `tools\compilar-rapido.ps1`. Compilación completa de Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.19 (menús, idiomas, terreno Worms y arreglos). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.20 (cámara, música, animaciones y arsenal). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)
@@ -126,7 +136,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
    **0.19 — Menús, idiomas y terreno Worms** ✅ (petición del usuario): bloque 4 (menús bonitos, opciones con idioma, estadísticas y revancha) + inglés con selector + terreno estilo Worms + arreglos de multijugador (voltereta visible, daño de caída tras explosión, auto-daño del misil, alcantarilla desincronizada, ratas en cuevas cerradas) + granada más floja + explosiones 3× más baratas.
 3. ~~Jugar solo: IA de ratas enemigas~~ ❌ DESCARTADO por el usuario (14 nov 2026): el juego NO tendrá IA. No proponerla.
 4. Menús ✅ (0.19). Queda: elegir sombrero/cola pieza a pieza en "Mi equipo".
-5. Presentación (← SIGUIENTE): música, anuncios, cámara inteligente, más biomas de trinchera, animaciones.
+5. Presentación: **0.20** ✅ cámara inteligente + libre, música variada, animaciones, arsenal más claro y ayudas. El usuario NO quiere más biomas de momento.
 6. Online pulido: lobby con "listo", reglas del host, reconexión, revancha.
 7. Publicar: icono, pantalla de carga, itch.io.
 

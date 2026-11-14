@@ -294,10 +294,78 @@ namespace Ratms.Networking
             }
             else if (sr.transform.rotation != Quaternion.identity) sr.transform.rotation = Quaternion.identity;
 
+            // --- ANIMACIÓN "DE GOMA" (0.20): estirar, aplastar, inclinar y respirar ---
+            bool flipping = ft >= 0f && ft < 1f;
+            float sx, sy;
+            Juice(dt, f, out sx, out sy, out float tilt, flipping);
+            if (!flipping && Mathf.Abs(tilt) > 0.01f)
+                sr.transform.rotation = Quaternion.Euler(0f, 0f, tilt);
+
             Vector3 ls = transform.lossyScale;
             float squash = flash * flash;
-            sr.transform.localScale = new Vector3((1f + 0.22f * squash) / Mathf.Max(0.0001f, Mathf.Abs(ls.x)),
-                                                  (1f - 0.18f * squash) / Mathf.Max(0.0001f, Mathf.Abs(ls.y)), 1f);
+            sr.transform.localScale = new Vector3((1f + 0.22f * squash) * sx / Mathf.Max(0.0001f, Mathf.Abs(ls.x)),
+                                                  (1f - 0.18f * squash) * sy / Mathf.Max(0.0001f, Mathf.Abs(ls.y)), 1f);
+        }
+
+        // Muelle del estirado/aplastado: 1 = normal, >1 = estirada en vertical.
+        private float stretch = 1f, stretchVel;
+        private bool wasAir;
+        private float airPeakVy;
+        private bool wasTurn;
+        private float tiltNow;
+
+        /// <summary>
+        ///  Animación por escala y giro (sirve en todos los PCs: sale de la
+        ///  velocidad medida, no de la física, que en los rivales es cinemática):
+        ///   · al despegar se ESTIRA y al aterrizar se APLASTA (más cuanto más
+        ///     fuerte cae; si cae fuerte, además levanta polvo);
+        ///   · en el aire se INCLINA hacia donde va;
+        ///   · andando se balancea un poco y quieta RESPIRA;
+        ///   · cuando le toca el turno da un saltito de "¡firmes!".
+        ///  Se escala desde los PIES (el sprite tiene el pivote abajo).
+        /// </summary>
+        private void Juice(float dt, Frame f, out float sx, out float sy, out float tilt, bool flipping)
+        {
+            bool air = f == Frame.Air;
+            if (air && !wasAir) { stretchVel += 2.6f; airPeakVy = 0f; }                 // despegue
+            if (air) airPeakVy = Mathf.Min(airPeakVy, vy);                               // la caída más rápida
+            if (!air && wasAir)
+            {
+                float impact = Mathf.Clamp01(-airPeakVy / 12f);
+                stretchVel -= 3f + 7f * impact;                                           // aterrizaje
+                if (impact > 0.55f && sr != null)   // solo caídas de verdad, no cada saltito
+                    Fx.Dust(new Vector2(sr.transform.position.x, sr.transform.position.y + 0.05f), Vector2.up, Mathf.RoundToInt(4 + 6 * impact));
+            }
+            wasAir = air;
+
+            // ¡Firmes!: al empezar su turno
+            var tm = NetworkTurnManager.Instance;
+            bool turn = tm != null && !tm.InTransition.Value && tm.CurrentRatId.Value == movement.NetworkObjectId;
+            if (turn && !wasTurn) stretchVel += 3.2f;
+            wasTurn = turn;
+
+            // Muelle amortiguado hacia 1
+            stretchVel += (1f - stretch) * 260f * dt;
+            stretchVel *= Mathf.Exp(-14f * dt);
+            stretch = Mathf.Clamp(stretch + stretchVel * dt, 0.7f, 1.35f);
+
+            float breathe = 1f;
+            float sway = 0f;
+            if (f == Frame.Idle0 || f == Frame.Idle1 || f == Frame.Blink)
+                breathe = 1f + 0.018f * Mathf.Sin(Time.time * 2.4f + movement.NetworkObjectId);
+            else if (f >= Frame.Walk0 && f <= Frame.Walk3)
+                sway = 3f * Mathf.Sin(animTime * Mathf.PI * 0.5f);
+
+            float s = stretch * breathe;
+            sy = s;
+            sx = 1f / Mathf.Sqrt(s);   // conserva el "volumen": si se estira, adelgaza
+
+            // Inclinación: en el aire, según la velocidad; andando, el balanceo.
+            float dir = movement.FacingRight ? 1f : -1f;
+            float target = air ? Mathf.Clamp(vy * 2.2f, -14f, 14f) * dir : sway * dir;
+            if (flipping) target = 0f;
+            tiltNow = Mathf.Lerp(tiltNow, target, 1f - Mathf.Exp(-10f * dt));
+            tilt = tiltNow;
         }
 
         private void OnDisable()

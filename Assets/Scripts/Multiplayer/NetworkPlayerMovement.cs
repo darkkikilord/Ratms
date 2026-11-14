@@ -372,6 +372,9 @@ namespace Ratms.Networking
         /// <summary>true = la rata mira a la derecha.</summary>
         public bool FacingRight => facingRight.Value;
 
+        /// <summary>Ángulo de apuntado (−90 abajo … 90 arriba), visto desde la dirección en que mira.</summary>
+        public float AimDegrees => aimAngle.Value;
+
         /// <summary>Dirección del arma en el mundo (apuntado + lado al que mira).</summary>
         public Vector2 WeaponForward => GetWeaponForward();
 

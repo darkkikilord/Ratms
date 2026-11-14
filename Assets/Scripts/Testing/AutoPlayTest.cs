@@ -988,6 +988,17 @@ namespace Ratms.Testing
             menu.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.SelectRat;
             yield return new WaitForSeconds(0.5f);
             yield return Capture("U05_cambiar_rata_aros");
+            // Ayudas de controles (con el arsenal cerrado y la bazuca en la mano)
+            menu.SelectedIndexNet.Value = (int)WeaponsMenuUI.WeaponId.Bazooka;
+            yield return new WaitForSeconds(0.4f);
+            yield return Capture("U05b_ayudas");
+            // Vista general (V): todo el mapa y las ratas
+            CameraFollow.Instance?.ToggleOverview();
+            yield return new WaitForSeconds(1.5f);
+            Log($"Vista general: {(CameraFollow.Instance != null && CameraFollow.Instance.Overview ? "✓" : "⚠")}");
+            yield return Capture("U05c_vista_general");
+            CameraFollow.Instance?.ExitFree();
+            yield return new WaitForSeconds(0.8f);
             FindFirstObjectByType<TurnHUD>()?.OpenPause();
             yield return new WaitForSeconds(0.5f);
             yield return Capture("U06_pausa");
@@ -2375,7 +2386,13 @@ namespace Ratms.Testing
             {
                 bool solid = DestructibleTerrain.IsSolidAtWorld(new Vector2(x, y));
                 if (!solid) seenAir = true;
-                else if (seenAir) return y;
+                else if (seenAir)
+                {
+                    // El lecho bajo el agua (los canales) no es "suelo": la rata se ahogaría.
+                    var water = FindFirstObjectByType<WaterDeathZone>();
+                    if (water != null && y < water.SurfaceY + 1f) return null;
+                    return y;
+                }
             }
             return null;
         }

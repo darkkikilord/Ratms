@@ -130,6 +130,8 @@ namespace Ratms.Networking
 
         /// <summary>Abre/cierra el arsenal (prueba automática).</summary>
         public void SetVisible(bool v) => visible = v;
+        /// <summary>¿Está abierto el panel de armas?</summary>
+        public bool IsOpen => visible;
 
         public override void OnNetworkSpawn()
         {
@@ -252,7 +254,7 @@ namespace Ratms.Networking
         // ==============================================================
         //  ARSENAL (panel de armas) — estilo caja de munición de trinchera
         // ==============================================================
-        private GUIStyle rowStyle, rowSel, titleStyle, hintStyle, ammoStyle;
+        private GUIStyle rowStyle, rowSel, titleStyle, hintStyle, ammoStyle, keyStyle;
         private Texture2D panelTex, rowTex, rowSelTex, rowOffTex;
         private float stylesScale = -1f;
 
@@ -274,57 +276,149 @@ namespace Ratms.Networking
             _ => null,
         };
 
+        // ---------- 0.20: cuadrícula por grupos + ficha de "cómo se usa" ----------
+        // Orden y grupos del panel (como la caja de armas de Worms).
+        private static readonly (string group, WeaponId[] ids)[] Groups =
+        {
+            ("Explosivos", new[] { WeaponId.Bazooka, WeaponId.Grenade, WeaponId.ClusterBomb, WeaponId.Dynamite }),
+            ("Armas de fuego", new[] { WeaponId.Shotgun, WeaponId.MachineGun, WeaponId.Flamethrower, WeaponId.Bat }),
+            ("Movimiento y trucos", new[] { WeaponId.Rope, WeaponId.Teleport, WeaponId.SelectRat, WeaponId.None }),
+            ("Apoyo aéreo", new[] { WeaponId.AirStrike, WeaponId.Napalm }),
+        };
+
+        /// <summary>Cómo se usa cada arma (una o dos líneas, en español: se traduce).</summary>
+        public static string HowTo(WeaponId id) => id switch
+        {
+            WeaponId.Bazooka => "W/S apunta. Mantén ESPACIO para cargar y suelta para disparar. El viento lo desvía.",
+            WeaponId.Grenade => "W/S apunta. Mantén ESPACIO para la fuerza. Rebota y explota a los 3 segundos.",
+            WeaponId.ClusterBomb => "Como la granada, pero al explotar suelta cinco bombetas.",
+            WeaponId.Dynamite => "ESPACIO la deja a tus pies. Explota a los 5 segundos: ¡corre!",
+            WeaponId.Shotgun => "W/S apunta y ESPACIO dispara. Tienes dos disparos este turno.",
+            WeaponId.MachineGun => "W/S apunta y ESPACIO suelta una ráfaga de balas.",
+            WeaponId.Flamethrower => "W/S apunta. Mantén ESPACIO para echar fuego.",
+            WeaponId.Bat => "Ponte al lado y pulsa ESPACIO: manda a volar a quien tengas delante.",
+            WeaponId.Rope => "W/S apunta y ESPACIO la lanza. ← → para balancearte, W/S para subir o bajar, ESPACIO o ↑ la suelta.",
+            WeaponId.Teleport => "Haz clic donde quieras aparecer.",
+            WeaponId.SelectRat => "Haz clic en otra rata tuya: jugará tu próximo turno (este lo pierdes).",
+            WeaponId.AirStrike => "Haz clic en el mapa: caen cinco bombas en fila. Arrastra con el clic derecho para mirar lejos.",
+            WeaponId.Napalm => "Haz clic en el mapa: lluvia de fuego. Arrastra con el clic derecho para mirar lejos.",
+            _ => "Guarda el arma para andar y saltar con las manos libres.",
+        };
+
+        private WeaponEntry EntryOf(WeaponId id)
+        {
+            foreach (var w in weapons) if (w.id == id) return w;
+            return weapons[0];
+        }
+
         private void OnGUI()
         {
             if (!visible || !IsMyActiveRat()) return;
 
-            float scale = Mathf.Max(0.7f, Screen.height / 1080f);
-            EnsureStyles(scale);
-            var prevMatrix = GUI.matrix;
-            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
-            float vh = Screen.height / scale;
+            Ratms.UI.TrenchGUI.Begin();
+            EnsureStyles(1f);
+            float vh = Ratms.UI.TrenchGUI.VH;
 
-            const float W = 360f, rowH = 34f, pad = 12f;
-            float H = 52f + weapons.Length * (rowH + 4f) + 34f;
-            float x = panelOffset.x, y = vh - H - panelOffset.y;
-            GUI.DrawTexture(new Rect(x, y, W, H), panelTex);
-            GUI.Label(new Rect(x, y + 8f, W, 34f), Ratms.UI.Loc.T("ARSENAL"), titleStyle);
+            const float tile = 78f, gap = 8f, pad = 18f, cols = 4f, groupH = 24f, infoH = 104f;
+            float W = pad * 2f + cols * tile + (cols - 1f) * gap;
+            float H = 54f;
+            foreach (var g in Groups) H += groupH + tile + gap;
+            H += infoH + 34f;
+            float x = panelOffset.x, y = Mathf.Max(10f, vh - H - panelOffset.y);
+            var panel = new Rect(x, y, W, H);
+            Ratms.UI.TrenchGUI.Panel(panel);
+            Ratms.UI.TrenchGUI.Title(new Rect(x, y + 6f, W, 40f), "ARSENAL");
 
-            float ry = y + 50f;
-            foreach (var w in weapons)
+            WeaponId shown = SelectedWeapon;   // la ficha: la que tenga el ratón encima, o la elegida
+            float gy = y + 54f;
+            var e = Event.current;
+            foreach (var (group, ids) in Groups)
             {
-                int ammo = w.id == WeaponId.None ? -1 : AmmoLeft(w.id);
-                bool empty = ammo == 0 || (!HandsOk && NeedsHands(w.id));
-                bool sel = w.id == SelectedWeapon;
-                var r = new Rect(x + pad, ry, W - pad * 2, rowH);
-                GUI.DrawTexture(r, empty ? rowOffTex : sel ? rowSelTex : rowTex);
-
-                // Icono del arma (su dibujo pixel-art)
-                var icon = IconOf(w.id);
-                if (icon != null)
+                Ratms.UI.TrenchGUI.Small(new Rect(x + pad, gy, W - pad * 2f, groupH), group);
+                gy += groupH;
+                for (int i = 0; i < ids.Length; i++)
                 {
-                    var tr = icon.textureRect;
-                    var tex = icon.texture;
-                    float iw = 52f, ih = Mathf.Min(rowH - 8f, iw * tr.height / tr.width);
-                    float iwFit = ih * tr.width / tr.height;
-                    var pc = GUI.color;
-                    if (empty) GUI.color = new Color(1f, 1f, 1f, 0.35f);
-                    GUI.DrawTextureWithTexCoords(new Rect(r.x + 6f + (iw - iwFit) * 0.5f, r.y + (rowH - ih) * 0.5f, iwFit, ih), tex,
-                        new Rect(tr.x / tex.width, tr.y / tex.height, tr.width / tex.width, tr.height / tex.height));
-                    GUI.color = pc;
+                    var id = ids[i];
+                    var r = new Rect(x + pad + i * (tile + gap), gy, tile, tile);
+                    bool hover = r.Contains(e.mousePosition);
+                    if (hover) shown = id;
+                    DrawTile(r, id, hover);
+                    if (GUI.Button(r, GUIContent.none, GUIStyle.none) && Usable(id))
+                    {
+                        SelectedIndexNet.Value = (int)id;
+                        Sfx.Play(Sfx.Id.Whack, 0.25f, 0.15f);
+                    }
                 }
-
-                string number = KeyLabel(w);
-                string name = w.id == WeaponId.None ? Ratms.UI.Loc.T("Guardar arma") : ShortName(w.id);
-                if (GUI.Button(new Rect(r.x + 64f, r.y, r.width - 64f - 60f, rowH), $"{number}  {name}", sel ? rowSel : rowStyle) && !empty)
-                    SelectedIndexNet.Value = (int)w.id;
-
-                ammoStyle.normal.textColor = empty ? new Color(0.9f, 0.35f, 0.3f) : new Color(1f, 0.88f, 0.55f);
-                GUI.Label(new Rect(r.xMax - 60f, r.y, 54f, rowH), w.id == WeaponId.None ? "" : ammo < 0 ? "∞" : $"x{ammo}", ammoStyle);
-                ry += rowH + 4f;
+                gy += tile + gap;
             }
-            GUI.Label(new Rect(x, y + H - 30f, W, 24f), Ratms.UI.Loc.T("Apuntar W/S  ·  Usar ESPACIO  ·  TAB cierra"), hintStyle);
-            GUI.matrix = prevMatrix;
+
+            // Ficha: nombre + cómo se usa
+            var info = new Rect(x + pad, gy + 2f, W - pad * 2f, infoH);
+            if (e.type == EventType.Repaint)
+            {
+                var c = GUI.color;
+                GUI.color = new Color(0f, 0f, 0f, 0.35f);
+                GUI.DrawTexture(info, Texture2D.whiteTexture);
+                GUI.color = c;
+            }
+            string title = shown == WeaponId.None ? Ratms.UI.Loc.T("Guardar arma") : ShortName(shown);
+            int ammo = shown == WeaponId.None ? -1 : AmmoLeft(shown);
+            Ratms.UI.TrenchGUI.Label(new Rect(info.x + 10f, info.y + 4f, info.width - 20f, 30f),
+                title + (shown == WeaponId.None ? "" : ammo < 0 ? "   ∞" : $"   x{ammo}") + $"   [{KeyLabel(EntryOf(shown))}]");
+            string how = Ratms.UI.Loc.T(HowTo(shown));
+            if (!HandsOk && NeedsHands(shown)) how = Ratms.UI.Loc.T("Sin brazos no puedes usarla: con ESPACIO muerdes.");
+            else if (ammo == 0) how = Ratms.UI.Loc.T("Sin munición. Las cajas que caen del cielo traen más.");
+            GUI.Label(new Rect(info.x + 10f, info.y + 36f, info.width - 20f, info.height - 40f), how, Ratms.UI.TrenchGUI.SmallStyle);
+
+            GUI.Label(new Rect(x, y + H - 32f, W, 24f), Ratms.UI.Loc.T("Clic o tecla para elegir  ·  TAB cierra"), hintStyle);
+            Ratms.UI.TrenchGUI.End();
+        }
+
+        /// <summary>Casilla de un arma: icono, tecla en la esquina y munición.</summary>
+        private void DrawTile(Rect r, WeaponId id, bool hover)
+        {
+            if (Event.current.type != EventType.Repaint) return;
+            int ammo = id == WeaponId.None ? -1 : AmmoLeft(id);
+            bool usable = Usable(id) || id == WeaponId.None;
+            bool sel = id == SelectedWeapon;
+            var c = GUI.color;
+            // Marco: latón si está elegida, claro al pasar el ratón
+            GUI.color = sel ? new Color(1f, 0.8f, 0.3f, 1f) : hover ? new Color(1f, 1f, 1f, 0.55f) : new Color(0f, 0f, 0f, 0.5f);
+            GUI.DrawTexture(new Rect(r.x - 2f, r.y - 2f, r.width + 4f, r.height + 4f), Texture2D.whiteTexture);
+            GUI.color = sel ? new Color(0.42f, 0.30f, 0.12f, 1f) : usable ? new Color(0.22f, 0.18f, 0.12f, 1f) : new Color(0.13f, 0.11f, 0.09f, 1f);
+            GUI.DrawTexture(r, Texture2D.whiteTexture);
+            GUI.color = c;
+
+            var icon = IconOf(id);
+            if (icon != null)
+            {
+                var tr = icon.textureRect;
+                var tex = icon.texture;
+                float maxW = r.width - 16f, maxH = r.height - 30f;
+                float k = Mathf.Min(maxW / tr.width, maxH / tr.height);
+                float iw = tr.width * k, ih = tr.height * k;
+                if (!usable) GUI.color = new Color(1f, 1f, 1f, 0.3f);
+                GUI.DrawTextureWithTexCoords(new Rect(r.center.x - iw * 0.5f, r.y + 8f + (maxH - ih) * 0.5f, iw, ih), tex,
+                    new Rect(tr.x / tex.width, tr.y / tex.height, tr.width / tex.width, tr.height / tex.height));
+                GUI.color = c;
+            }
+            else
+            {
+                // "Guardar arma": sin dibujo, solo el texto
+                int fs = rowStyle.fontSize;
+                rowStyle.alignment = TextAnchor.MiddleCenter;
+                rowStyle.fontSize = 13;
+                GUI.Label(new Rect(r.x, r.y + 4f, r.width, r.height - 20f), Ratms.UI.Loc.T("Manos libres"), rowStyle);
+                rowStyle.alignment = TextAnchor.MiddleLeft;
+                rowStyle.fontSize = fs;
+            }
+            // Tecla (arriba a la izquierda) y munición (abajo)
+            GUI.Label(new Rect(r.x + 4f, r.y + 2f, 30f, 20f), KeyLabel(EntryOf(id)), keyStyle);
+            if (id != WeaponId.None)
+            {
+                ammoStyle.normal.textColor = ammo == 0 ? new Color(0.95f, 0.35f, 0.3f) : new Color(1f, 0.88f, 0.55f);
+                GUI.Label(new Rect(r.x, r.yMax - 24f, r.width - 6f, 22f), ammo < 0 ? "∞" : $"x{ammo}", ammoStyle);
+            }
         }
 
         private void EnsureStyles(float scale)
@@ -344,7 +438,11 @@ namespace Ratms.Networking
             titleStyle.normal.textColor = new Color(0.95f, 0.78f, 0.4f);
             hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.MiddleCenter };
             hintStyle.normal.textColor = new Color(0.8f, 0.76f, 0.66f);
-            ammoStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, alignment = TextAnchor.MiddleRight, fontStyle = FontStyle.Bold };
+            ammoStyle = new GUIStyle(GUI.skin.label) { fontSize = 17, alignment = TextAnchor.MiddleRight, fontStyle = FontStyle.Bold };
+            keyStyle = new GUIStyle(GUI.skin.label) { fontSize = 14, alignment = TextAnchor.UpperLeft, fontStyle = FontStyle.Bold };
+            keyStyle.normal.textColor = new Color(1f, 1f, 1f, 0.6f);
+            if (Ratms.UI.TrenchGUI.Stencil != null) ammoStyle.font = keyStyle.font = Ratms.UI.TrenchGUI.Stencil;
+            if (Ratms.UI.TrenchGUI.Typewriter != null) hintStyle.font = Ratms.UI.TrenchGUI.Typewriter;
         }
 
         private static Texture2D Tex(Color c)

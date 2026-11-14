@@ -437,6 +437,19 @@ namespace Ratms.UI
             ("Requiescat in pizza", "Requiescat in pizza"),
             ("Carne de cañón", "Cannon fodder"),
             ("¡Adiós, mundo cruel!", "Goodbye, cruel world!"),
+
+            // ---------------- Pantalla de carga (0.22) ----------------
+            ("Cavando trincheras", "Digging trenches"),
+            ("Consejo: TAB abre el arsenal; cada arma tiene su tecla.", "Tip: TAB opens the arsenal; every weapon has its own key."),
+            ("Consejo: con V ves el mapa entero y con el botón derecho mueves la cámara.", "Tip: V shows the whole map and right-drag moves the camera."),
+            ("Consejo: el viento desvía bazucas, gas y palomas, pero no el mortero.", "Tip: wind pushes bazookas, gas and pigeons, but not the mortar."),
+            ("Consejo: el agua no perdona. Nada de bañarse.", "Tip: water is unforgiving. No swimming."),
+            ("Consejo: los barriles explotan en cadena. Úsalos a tu favor.", "Tip: barrels blow up in chains. Use them to your advantage."),
+            ("Consejo: una rata sin patas no salta. Cuida tus piezas.", "Tip: a rat with no legs can't jump. Look after your parts."),
+            ("Consejo: el queso apestoso atrae a las ratas enemigas... y revienta.", "Tip: stinky cheese lures enemy rats... and then it pops."),
+            ("Consejo: las cajas pueden traer armas, vida... o una trampa.", "Tip: crates may hold weapons, health... or a trap."),
+            ("Consejo: los sacos terreros sirven de muro o de puente.", "Tip: sandbags work as a wall or as a bridge."),
+            ("Consejo: la voltereta (doble salto) sube más que un salto normal.", "Tip: the backflip (double jump) goes higher than a normal jump."),
         };
     }
 }

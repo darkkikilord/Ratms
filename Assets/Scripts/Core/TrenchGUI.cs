@@ -60,7 +60,9 @@ namespace Ratms.UI
 
         public static void Begin()
         {
-            Scale = Mathf.Max(0.6f, Screen.height / 1080f);
+            // 0.22: también por ancho, para ventanas estrechas (4:3, 5:4...)
+            // donde los paneles anchos (victoria, opciones) se salían por los lados.
+            Scale = Mathf.Max(0.5f, Mathf.Min(Screen.height / 1080f, Screen.width / 1440f));
             Ensure();
             saved = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(Scale, Scale, 1f));

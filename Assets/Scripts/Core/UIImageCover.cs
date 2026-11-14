@@ -22,6 +22,26 @@ namespace Ratms.UI
         private Image image;
         private RectTransform rect;
         private Vector2Int lastScreen;
+        private Image fill;
+
+        private void EnsureFill(Vector2 size, RectTransform canvasRect)
+        {
+            if (fill == null)
+            {
+                var go = new GameObject("FondoRelleno", typeof(RectTransform), typeof(Image));
+                go.transform.SetParent(transform.parent, false);
+                fill = go.GetComponent<Image>();
+                fill.sprite = image.sprite;
+                fill.raycastTarget = false;
+                fill.color = new Color(0.82f, 0.82f, 0.82f, 1f);   // un pelín más oscuro: el ojo va al centro
+            }
+            fill.gameObject.SetActive(true);
+            fill.transform.SetSiblingIndex(transform.GetSiblingIndex());   // justo detrás
+            var r = (RectTransform)fill.transform;
+            r.anchorMin = r.anchorMax = r.pivot = new Vector2(0.5f, 0.5f);
+            r.sizeDelta = size;
+            r.position = canvasRect.position;
+        }
 
         private void Awake()
         {
@@ -59,6 +79,19 @@ namespace Ratms.UI
             Vector2 size = areaAspect > spriteAspect
                 ? new Vector2(area.x, area.x / spriteAspect)
                 : new Vector2(area.y * spriteAspect, area.y);
+
+            // 0.22: en pantallas MÁS ANCHAS que 16:9 (ultrapanorámicas) el recorte
+            // de arriba/abajo se comía el título RATMS (está dibujado en el fondo).
+            // Ahora la imagen se recorta como en 16:9 y los lados se rellenan con
+            // una copia estirada por detrás (cielo con cielo, suelo con suelo).
+            const float maxAspect = 16f / 9f;
+            if (areaAspect > maxAspect && spriteAspect < maxAspect)
+            {
+                float h = area.y * maxAspect / spriteAspect;
+                size = new Vector2(h * spriteAspect, h);
+                EnsureFill(new Vector2(area.x, h), canvasRect);
+            }
+            else if (fill != null) fill.gameObject.SetActive(false);
 
             image.preserveAspect = false;   // ya la proporción la llevamos nosotros
 

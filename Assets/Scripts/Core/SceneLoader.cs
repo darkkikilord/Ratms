@@ -23,6 +23,7 @@ namespace Ratms.Core
 
         public static void LoadScene(string sceneName)
         {
+            Ratms.UI.LoadingScreen.Show();
             SceneManager.LoadScene(sceneName);
         }
 

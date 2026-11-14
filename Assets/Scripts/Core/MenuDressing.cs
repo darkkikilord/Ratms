@@ -17,7 +17,7 @@ namespace Ratms.UI
     /// </summary>
     public class MenuDressing : MonoBehaviour
     {
-        public const string Version = "v0.21";
+        public const string Version = "v0.22";
 
         private RectTransform canvasRect, layer;
         private readonly List<Marcher> marchers = new();
@@ -45,6 +45,12 @@ namespace Ratms.UI
         private void Build(Canvas canvas, Transform background)
         {
             canvasRect = canvas.GetComponent<RectTransform>();
+
+            // 0.22: en pantallas más anchas que 16:9 (ultrapanorámicas) el menú se
+            // salía por arriba (escalaba a medias entre ancho y alto). "Expand"
+            // garantiza que el diseño de 1920×1080 cabe entero en cualquier proporción.
+            var scaler = canvas.GetComponent<CanvasScaler>();
+            if (scaler != null) scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
             softSprite = SoftCircle();
 
             // Capa propia justo encima del fondo (por debajo de los paneles/botones)

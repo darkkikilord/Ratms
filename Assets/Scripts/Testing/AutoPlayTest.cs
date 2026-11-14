@@ -124,6 +124,9 @@ namespace Ratms.Testing
             foreach (var h in FindObjectsByType<NetworkHealth>(FindObjectsSortMode.None))
             {
                 if (h.IsDead.Value || reportedFalls.Contains(h.GetInstanceID())) continue;
+                // La prueba del agua tira ADREDE una diana bajo el fondo (y al nacer
+                // aún se llama como la rata del jugador): no es un fallo.
+                if (waterTestRunning) continue;
                 Vector2 b = h.BodyCenter;
                 // Solo cuenta si está DENTRO del ancho del mapa (salir volando
                 // por un lado y caer al agua es legal).
@@ -1581,6 +1584,14 @@ namespace Ratms.Testing
             Log("---- Escalar pared ----");
             yield return PlaceOnFlatSpot(rat, 0.3f, 0.5f, "pared");
             yield return Settle(rb);
+            // Suelo plano y cielo libre (también sobre la cabeza): en mapas con
+            // salientes la rata chocaba con el techo y la prueba fallaba sin motivo.
+            BuildRange(rat, 5f);
+            {
+                var hb = rat.GetComponent<NetworkHealth>().BodyCenter;
+                DestructibleTerrain.TestFillRectWorld(new Vector2(hb.x - 1.2f, hb.y + 0.45f), new Vector2(hb.x + 1.2f, hb.y + 4f), new Color32(0, 0, 0, 0));
+            }
+            yield return Settle(rb);
             side = rat.FacingRight ? 1f : -1f;
             var col = rat.GetComponent<Collider2D>();
             Bounds bb = col.bounds;
@@ -1912,10 +1923,13 @@ namespace Ratms.Testing
             yield return new WaitForSeconds(0.2f);
         }
 
+        private bool waterTestRunning;
+
         private IEnumerator WaterTest(NetworkPlayerMovement rat)
         {
             if (finished) yield break;
             Log("---- Agua ----");
+            waterTestRunning = true;
             var terrain = FindFirstObjectByType<DestructibleTerrain>();
             if (terrain == null) yield break;
             Vector2 drop = new Vector2(terrain.transform.position.x + terrain.WorldSize.x * 0.5f,
@@ -1932,6 +1946,7 @@ namespace Ratms.Testing
             Log($"Diana al agua → {(h.IsDead.Value ? "muerta ✓" : "⚠ sigue viva")} · partida terminada: {(ended ? "⚠ SÍ" : "no ✓")}");
             if (!h.IsDead.Value) Problem("Agua: la diana no murió al caer al agua");
             if (ended) Problem("Agua: la muerte de la diana terminó la partida");
+            waterTestRunning = false;
         }
 
         /// <summary>Espera a los últimos segundos del turno para fotografiar la cuenta atrás en rojo.</summary>

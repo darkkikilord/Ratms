@@ -24,7 +24,9 @@ param(
     [string]$Role = "",
     [string]$Lang = "",
     [string]$UnityExe = "B:\Juegos\6000.0.50f1\Editor\Unity.exe",
-    [int]$TimeoutSeconds = 320
+    [int]$TimeoutSeconds = 320,
+    [int]$Width = 1280,
+    [int]$Height = 720
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,7 +78,7 @@ New-Item -ItemType Directory -Force $runDir | Out-Null
 $gameArgs = @(
     "-ratmsAutoTest",
     "-autoTestOut", "`"$runDir`"",
-    "-screen-fullscreen", "0", "-screen-width", "1280", "-screen-height", "720",
+    "-screen-fullscreen", "0", "-screen-width", "$Width", "-screen-height", "$Height",
     "-logFile", "`"$(Join-Path $runDir 'player.log')`""
 )
 if ($Biome) { $gameArgs += @("-autoTestBiome", $Biome) }

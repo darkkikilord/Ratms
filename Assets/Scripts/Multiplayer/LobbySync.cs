@@ -105,9 +105,9 @@ namespace Ratms.Networking
                 if (nm.IsServer)
                 {
                     string r = Ratms.UI.RulesEditor.Summary();
-                    if (r != lastRulesSent || PlayerNameRegistry.LocalName != lastNameSent) SendHello();
+                    if (r != lastRulesSent || PlayerNameRegistry.LocalName != lastNameSent || ProfileSig() != lastProfileSent) SendHello();
                 }
-                else if (nm.IsConnectedClient && (!helloSent || PlayerNameRegistry.LocalName != lastNameSent)) SendHello();
+                else if (nm.IsConnectedClient && (!helloSent || PlayerNameRegistry.LocalName != lastNameSent || ProfileSig() != lastProfileSent)) SendHello();
             }
         }
 
@@ -125,6 +125,16 @@ namespace Ratms.Networking
             SendHello();
         }
 
+        // 0.22.1: si cambias "Mi equipo" estando ya en la sala, se vuelve a mandar.
+        private string lastProfileSent;
+        private static string ProfileSig()
+        {
+            var d = TeamProfile.Local();
+            var sb = new System.Text.StringBuilder(d.team ?? "");
+            for (int i = 0; i < TeamProfile.Slots; i++) sb.Append('|').Append(d.names[i]).Append(':').Append(d.looks[i]);
+            return sb.ToString();
+        }
+
         private void OnClientLeft(ulong id)
         {
             if (server.Remove(id)) Broadcast();
@@ -135,6 +145,7 @@ namespace Ratms.Networking
         {
             var nm = NetworkManager.Singleton;
             if (nm == null || !nm.IsListening || !registered) return;
+            lastProfileSent = ProfileSig();
             if (nm.IsServer)
             {
                 lastNameSent = PlayerNameRegistry.LocalName;

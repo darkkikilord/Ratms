@@ -281,11 +281,32 @@ namespace Ratms.World
         ///  no aparecen una pegada a la otra.
         /// </summary>
         public Vector3? GetRandomValidSpawnWorld(System.Collections.Generic.IList<Vector3> avoid, float minDistance)
+            => GetRandomValidSpawnWorld(avoid, minDistance, 0f, 1f);
+
+        /// <summary>0.25: como el anterior pero solo entre las fracciones de ancho [fromFrac, toFrac] (modo Fuertes).</summary>
+        public Vector3? GetRandomValidSpawnWorld(System.Collections.Generic.IList<Vector3> avoid, float minDistance, float fromFrac, float toFrac)
         {
             if (validSpawnPixels.Count == 0 || terrain == null) return null;
             float ppu = terrain.PixelsPerUnit;
             Vector3 tPos = terrain.transform.position;
             Vector3 ToWorld(Vector2Int p) => new Vector3(tPos.x + (p.x + 0.5f) / ppu, tPos.y + (p.y + 0.5f) / ppu, tPos.z);
+            if (fromFrac > 0f || toFrac < 1f)
+            {
+                var pool = validSpawnPixels.FindAll(p => p.x >= width * fromFrac && p.x <= width * toFrac);
+                if (pool.Count > 0)
+                {
+                    Vector3 bestP = default; float bestD = -1f;
+                    for (int i = 0; i < 40; i++)
+                    {
+                        Vector3 c = ToWorld(pool[Random.Range(0, pool.Count)]);
+                        float d = float.MaxValue;
+                        if (avoid != null) foreach (var a in avoid) d = Mathf.Min(d, Vector2.Distance(c, a));
+                        if (d >= minDistance) return c;
+                        if (d > bestD) { bestD = d; bestP = c; }
+                    }
+                    return bestP;
+                }
+            }
 
             if (avoid == null || avoid.Count == 0)
                 return ToWorld(validSpawnPixels[Random.Range(0, validSpawnPixels.Count)]);
@@ -655,6 +676,7 @@ namespace Ratms.World
         private Color32[] PaintWormsShape(float offGrainX, float offGrainY, out int[] heightLine)
         {
             var shape = WormsTerrainShape.Build(width, height, seed);
+            if (Ratms.Networking.MatchRules.EffectiveGame == Ratms.Networking.GameMode.Fuertes) FortShape(shape.solid);
             var pixels = new Color32[width * height];
             heightLine = new int[width];
             for (int x = 0; x < width; x++)
@@ -695,6 +717,36 @@ namespace Ratms.World
             for (int x = 0; x < width; x++)
                 lastBackdropLine[x] = Mathf.Min(shape.backdropLine[x], heightLine[x] - 24);
             return pixels;
+        }
+
+        /// <summary>
+        ///  0.25 — MODO FUERTES: canal de agua en medio y un torreón almenado en
+        ///  cada lado (los equipos aparecen cada uno en su mitad).
+        /// </summary>
+        private void FortShape(bool[] solid)
+        {
+            float ppu = PixelsPerUnit;
+            int seabed = 20;
+            // Canal central hasta el agua
+            int g0 = Mathf.RoundToInt(width * 0.43f), g1 = Mathf.RoundToInt(width * 0.57f);
+            for (int x = g0; x < g1; x++)
+                for (int y = seabed; y < height; y++) solid[y * width + x] = false;
+            // Torreones
+            int half = Mathf.RoundToInt(1.6f * ppu), towerH = Mathf.RoundToInt(3.6f * ppu), merlon = Mathf.Max(4, Mathf.RoundToInt(0.4f * ppu));
+            foreach (float fx in new[] { 0.17f, 0.83f })
+            {
+                int cx = Mathf.RoundToInt(width * fx);
+                int top = seabed;
+                for (int y = height - 1; y >= 0; y--) if (solid[y * width + cx]) { top = y; break; }
+                int roof = Mathf.Min(height - Mathf.RoundToInt(3f * ppu), top + towerH);
+                for (int x = cx - half; x <= cx + half; x++)
+                {
+                    if (x < 0 || x >= width) continue;
+                    bool gap = ((x - (cx - half)) / merlon) % 2 == 1;
+                    int yTop = gap ? roof - merlon : roof;
+                    for (int y = seabed; y <= yTop; y++) solid[y * width + x] = true;
+                }
+            }
         }
 
         // ============================================================

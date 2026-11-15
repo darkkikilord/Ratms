@@ -13,6 +13,23 @@ namespace Ratms.Networking
         Practice,
     }
 
+    /// <summary>0.25: MODO DE JUEGO (se elige en las reglas; viaja por red con el bioma).</summary>
+    public enum GameMode : byte
+    {
+        /// <summary>Todos contra todos, como siempre.</summary>
+        Normal,
+        /// <summary>Cada equipo en su castillo, con el agua en medio.</summary>
+        Fuertes,
+        /// <summary>Rey de la colina: puntos por acabar el turno en la bandera.</summary>
+        Colina,
+        /// <summary>Una rata por equipo y un arma al azar cada turno.</summary>
+        Duelo,
+        /// <summary>El mapa empieza sembrado de minas.</summary>
+        Minas,
+        /// <summary>Munición infinita de todo.</summary>
+        BarraLibre,
+    }
+
     /// <summary>
     ///  REGLAS DE PARTIDA. Las lee el HOST al empezar (los clientes reciben el
     ///  resultado por red: vida, turnos, equipos...).
@@ -29,6 +46,37 @@ namespace Ratms.Networking
 
         /// <summary>Tipo de partida que se arranca ahora (lo pone quien la lanza).</summary>
         public static MatchMode Mode = MatchMode.Online;
+
+        // ------------------------------------------------------------
+        //  MODO DE JUEGO (0.25)
+        // ------------------------------------------------------------
+        private static GameMode? game;
+        /// <summary>Modo elegido. En el host lo guarda el editor de reglas; en los clientes lo pone BiomeSyncer.</summary>
+        public static GameMode Game
+        {
+            get => game ??= (GameMode)Mathf.Clamp(PlayerPrefs.GetInt("rule_mode", 0), 0, GameModeCount - 1);
+            set => game = value;
+        }
+        /// <summary>El editor de reglas: cambia el modo y lo recuerda.</summary>
+        public static void SaveGame(GameMode g) { game = g; PlayerPrefs.SetInt("rule_mode", (int)g); }
+        public const int GameModeCount = 6;
+        /// <summary>Modo que se juega DE VERDAD (en práctica, siempre normal).</summary>
+        public static GameMode EffectiveGame => Mode == MatchMode.Practice ? GameMode.Normal : Game;
+
+        public static string GameName(GameMode g) => g switch
+        {
+            GameMode.Fuertes => "Fuertes", GameMode.Colina => "Colina", GameMode.Duelo => "Duelo",
+            GameMode.Minas => "Minas", GameMode.BarraLibre => "Barra libre", _ => "Normal",
+        };
+        public static string GameDescription(GameMode g) => g switch
+        {
+            GameMode.Fuertes => "Cada equipo empieza en su castillo, con el agua en medio.",
+            GameMode.Colina => "Acaba tu turno junto a la bandera para sumar un punto. Gana quien llegue a 5.",
+            GameMode.Duelo => "Una rata por equipo y un arma al azar en cada turno.",
+            GameMode.Minas => "El mapa empieza sembrado de minas. Pisa con cuidado.",
+            GameMode.BarraLibre => "Munición infinita de todas las armas. Caos total.",
+            _ => "Todos contra todos: gana el último equipo en pie.",
+        };
 
         /// <summary>Número de equipos en partida LOCAL (2-4).</summary>
         public static int LocalTeams
@@ -91,7 +139,7 @@ namespace Ratms.Networking
 
         /// <summary>Ratas por equipo que se usan DE VERDAD en la partida que empieza.</summary>
         public static int EffectiveRatsPerTeam =>
-            Mode == MatchMode.Practice ? 1 : (OverrideRatsPerTeam ?? RatsPerTeam);
+            Mode == MatchMode.Practice || EffectiveGame == GameMode.Duelo ? 1 : (OverrideRatsPerTeam ?? RatsPerTeam);
 
         // ------------------------------------------------------------
         //  ECONOMÍA DE ARMAS
@@ -100,6 +148,7 @@ namespace Ratms.Networking
         public static int DefaultAmmo(WeaponsMenuUI.WeaponId w)
         {
             if (Mode == MatchMode.Practice) return w == WeaponsMenuUI.WeaponId.SelectRat ? 0 : -1;
+            if (EffectiveGame == GameMode.BarraLibre) return w == WeaponsMenuUI.WeaponId.SelectRat ? 2 : -1;
             return w switch
             {
                 WeaponsMenuUI.WeaponId.Grenade => 3,

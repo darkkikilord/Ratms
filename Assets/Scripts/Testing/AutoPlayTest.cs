@@ -88,6 +88,7 @@ namespace Ratms.Testing
             gameScene = GetArg("-autoTestScene") ?? gameScene;
             // Idioma de la prueba: español salvo "-autoTestLang en" (sin guardarlo).
             Ratms.UI.Loc.SetSessionLanguage(GetArg("-autoTestLang") == "en" ? Ratms.UI.Loc.Lang.En : Ratms.UI.Loc.Lang.Es);
+            if (System.Enum.TryParse(GetArg("-autoTestMode") ?? "", true, out GameMode forcedMode)) MatchRules.Game = forcedMode;   // 0.25
             string biomeArg = GetArg("-autoTestBiome");
             if (biomeArg != null && Enum.TryParse(biomeArg, true, out BiomeType b))
                 forcedBiome = b;
@@ -168,6 +169,7 @@ namespace Ratms.Testing
             if (role == "practice") { yield return RunPractice(); yield break; }
             if (role == "arsenal") { yield return RunArsenal(); yield break; }
             if (role == "trench") { yield return RunTrench(); yield break; }
+            if (role == "modes") { yield return RunModes(); yield break; }
 
             // --- 1) Menú principal ---------------------------------
             yield return new WaitForSeconds(2.5f);

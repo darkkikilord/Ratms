@@ -31,9 +31,21 @@ namespace Ratms.World
             readPerm: NetworkVariableReadPermission.Everyone,
             writePerm: NetworkVariableWritePermission.Server);
 
+        /// <summary>0.25: modo de juego (Fuertes cambia la forma del mapa en todos los PCs).</summary>
+        private readonly NetworkVariable<byte> gameModeNet = new(0,
+            NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
         public override void OnNetworkSpawn()
         {
             biomeTypeNet.OnValueChanged += OnBiomeTypeChanged;
+            gameModeNet.OnValueChanged += (_, v) =>
+            {
+                if (IsServer) return;
+                Ratms.Networking.MatchRules.Game = (Ratms.Networking.GameMode)v;
+                ApplyBiome((BiomeType)biomeTypeNet.Value);
+            };
+            if (IsServer) gameModeNet.Value = (byte)Ratms.Networking.MatchRules.EffectiveGame;
+            else Ratms.Networking.MatchRules.Game = (Ratms.Networking.GameMode)gameModeNet.Value;
 
             if (IsServer)
             {

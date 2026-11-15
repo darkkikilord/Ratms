@@ -440,6 +440,26 @@ namespace Ratms.UI
 
             // ---------------- Pantalla de carga (0.22) ----------------
             ("(¡copiado!)", "(copied!)"),
+            // ---------------- Modos de juego (0.25) ----------------
+            ("Modo", "Mode"), ("Normal", "Normal"), ("Fuertes", "Forts"), ("Colina", "Hill"), ("Duelo", "Duel"),
+            ("Minas", "Mines"), ("Barra libre", "Open bar"),
+            ("Cada equipo empieza en su castillo, con el agua en medio.", "Each team starts in its own castle, with water in between."),
+            ("Acaba tu turno junto a la bandera para sumar un punto. Gana quien llegue a 5.", "End your turn next to the flag to score a point. First to 5 wins."),
+            ("Una rata por equipo y un arma al azar en cada turno.", "One rat per team and a random weapon every turn."),
+            ("El mapa empieza sembrado de minas. Pisa con cuidado.", "The map starts full of mines. Watch your step."),
+            ("Munición infinita de todas las armas. Caos total.", "Infinite ammo for every weapon. Total chaos."),
+            ("Todos contra todos: gana el último equipo en pie.", "Free for all: the last team standing wins."),
+            ("¡REY DE LA COLINA!\nAcaba tu turno junto a la bandera ({0} puntos para ganar)", "KING OF THE HILL!\nEnd your turn next to the flag ({0} points to win)"),
+            ("¡CAMPO DE MINAS!\nPisa con cuidado", "MINEFIELD!\nWatch your step"),
+            ("¡DUELO!\nUn arma al azar en cada turno", "DUEL!\nA random weapon every turn"),
+            ("¡FUERTES!\nCada equipo en su castillo", "FORTS!\nEvery team in its castle"),
+            ("¡BARRA LIBRE!\nMunición infinita", "OPEN BAR!\nInfinite ammo"),
+            ("Arma del duelo: {0}", "Duel weapon: {0}"),
+            ("¡{0} domina la colina! ({1}/{2})", "{0} holds the hill! ({1}/{2})"),
+            ("(meta {0})", "(goal {0})"),
+            ("Modo {7} · {0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
+             "Mode {7} · {0} rats · {1} health · {2} s turns · sudden death {3} · {4} barrels · crates {5} · mutilations {6}"),
+
             // ---------------- Ratas nuevas (0.24) ----------------
             ("gigante", "giant"), ("enana", "tiny"), ("salchicha", "sausage"), ("cabezona", "bighead"), ("erguida", "upright"),
             ("atigrada", "tabby"), ("manchada", "spotted"), ("zombi", "zombie"), ("chamuscada", "scorched"),

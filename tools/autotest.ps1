@@ -23,6 +23,7 @@ param(
     [string]$Biome = "",
     [string]$Role = "",
     [string]$Lang = "",
+    [string]$Mode = "",
     [string]$UnityExe = "B:\Juegos\6000.0.50f1\Editor\Unity.exe",
     [int]$TimeoutSeconds = 320,
     [int]$Width = 1280,
@@ -82,6 +83,7 @@ $gameArgs = @(
     "-logFile", "`"$(Join-Path $runDir 'player.log')`""
 )
 if ($Biome) { $gameArgs += @("-autoTestBiome", $Biome) }
+if ($Mode) { $gameArgs += @("-autoTestMode", $Mode) }   # 0.25: Fuertes, Colina, Duelo, Minas, BarraLibre
 if ($Lang) { $gameArgs += @("-autoTestLang", $Lang) }   # en = capturas en inglés
 if ($Role)  { $gameArgs += @("-autoTestRole", $Role) }   # local, practice (host/client: usa autotest-multi.ps1)
 

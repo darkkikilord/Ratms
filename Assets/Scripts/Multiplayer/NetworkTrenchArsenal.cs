@@ -374,6 +374,18 @@ namespace Ratms.Networking
             return gadgetPrefab;
         }
 
+        /// <summary>0.25: (servidor) un artefacto sin dueño, p. ej. las minas del modo Minas.</summary>
+        public static NetworkGadget SpawnLooseServer(NetworkGadget.Kind kind, Vector2 at)
+        {
+            var prefab = GadgetPrefab();
+            if (prefab == null) return null;
+            var go = Instantiate(prefab, new Vector3(at.x, at.y, 0f), Quaternion.identity);
+            var g = go.GetComponent<NetworkGadget>();
+            g.Prepare(kind, null, prefab);
+            go.GetComponent<NetworkObject>().Spawn(destroyWithScene: true);
+            return g;
+        }
+
         private NetworkGadget SpawnGadget(NetworkGadget.Kind kind, Vector2 at, Vector2 target = default, int dir = 1)
         {
             var prefab = GadgetPrefab();

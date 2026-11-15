@@ -123,6 +123,7 @@ namespace Ratms.Networking
         {
             TeamNames = new NetworkList<FixedString32Bytes>();
             ItemsAwake();
+            ModesAwake();
         }
 
         // Ganchos para la parte de munición, cajas y barriles (NetworkTurnManager.Items.cs).
@@ -136,6 +137,10 @@ namespace Ratms.Networking
         partial void StatsOnDespawn();
         partial void StatsOnGameStart();
         partial void PoisonOnTurnBegin();
+        partial void ModesAwake();
+        partial void ModesOnSpawn();
+        partial void ModesOnGameStart();
+        partial void ModesOnTurnBegin();
 
         // =========================================================
         // CICLO DE VIDA
@@ -162,6 +167,7 @@ namespace Ratms.Networking
             }
             ItemsOnSpawn();
             StatsOnSpawn();
+            ModesOnSpawn();
         }
 
         public override void OnNetworkDespawn()
@@ -190,6 +196,7 @@ namespace Ratms.Networking
             Debug.Log($"[NetworkTurnManager] Empieza la partida: {teams.Count} equipos.");
             ItemsOnGameStart();
             StatsOnGameStart();
+            ModesOnGameStart();
             AdvanceTurnServer();
         }
 
@@ -309,6 +316,7 @@ namespace Ratms.Networking
             if (!IsServer || GameEnded.Value) return;
 
             bool wasRealTurn = CurrentRatId.Value != ulong.MaxValue;
+            if (wasRealTurn && ModesOnTurnEnd(CurrentTeam.Value)) return;   // 0.25: la Colina puede acabar la partida
             if (SuddenDeath.Value && wasRealTurn)
                 WaterRise.Value += MatchRules.SuddenDeathRisePerTurn;
 
@@ -359,6 +367,7 @@ namespace Ratms.Networking
                     Wind.Value = RollWind();
                     ItemsOnTurnBegin();
                     PoisonOnTurnBegin();
+                    ModesOnTurnBegin();
                     return;
                 }
             }

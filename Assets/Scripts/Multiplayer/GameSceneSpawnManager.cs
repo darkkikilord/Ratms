@@ -358,7 +358,9 @@ namespace Ratms.Networking
                 return;
             }
 
+            spawnTeamHint = team;
             Vector3 pos = ResolveSpawnPosition(index);
+            spawnTeamHint = -1;
             Quaternion rot = Quaternion.identity;
             if (spawnPoints != null && spawnPoints.Length > 0)
             {
@@ -408,6 +410,8 @@ namespace Ratms.Networking
         ///  También se usa como "fallback de rescate" cuando una rata cae al
         ///  vacío — la re-teleportamos a este sitio.
         /// </summary>
+        private int spawnTeamHint = -1;
+
         private Vector3 ResolveSpawnPosition(int index)
         {
             Vector3 pos = Vector3.zero;
@@ -435,7 +439,10 @@ namespace Ratms.Networking
                         int teamsTotal = MatchRules.Mode == MatchMode.Local ? MatchRules.EffectiveLocalTeams : NetworkManager.Singleton.ConnectedClientsIds.Count;
                         int expected = Mathf.Max(spawnedRats.Count + 1, teamsTotal * MatchRules.EffectiveRatsPerTeam);
                         float minDist = expected > 4 ? Mathf.Min(minDistanceBetweenSpawns, 6f) : minDistanceBetweenSpawns;
-                        Vector3? validPos = generator.GetRandomValidSpawnWorld(avoid, minDist);
+                        // 0.25 — Fuertes: cada equipo en su mitad (pares a la izquierda, impares a la derecha).
+                        Vector3? validPos = MatchRules.EffectiveGame == GameMode.Fuertes && spawnTeamHint >= 0
+                            ? generator.GetRandomValidSpawnWorld(avoid, minDist * 0.6f, spawnTeamHint % 2 == 0 ? 0.03f : 0.6f, spawnTeamHint % 2 == 0 ? 0.4f : 0.97f)
+                            : generator.GetRandomValidSpawnWorld(avoid, minDist);
                         if (validPos.HasValue)
                         {
                             while (usedSpawns.Count <= index) usedSpawns.Add(validPos.Value);

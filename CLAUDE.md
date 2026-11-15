@@ -161,6 +161,12 @@ Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMe
 - Gas (`GasSystem`): las nubes salen con poco impulso hacia arriba y se quedan a la altura de las ratas.
 - Prueba: `tools\autotest.ps1 -Role trench2` (las 24 nuevas; la última es el kamikaze).
 
+## Se entiende lo que pasa (0.29)
+- **Ribete del color del equipo** por fuera del contorno de cada rata (`RatAppearance.ToSprite`): se separa del fondo y se ve el equipo.
+- **Flecha del turno** (`TurnMarker`, en `Clarity.cs`): bota grande 3 s sobre la rata que juega y luego queda pequeña mientras no dispare.
+- **Iconos de estado** (`StatusBadges`, debajo de la vida): pata/brazo perdidos (raya roja), pata de palo, garfio, tuerta y envenenada. Se escalan con el zoom para leerse de lejos.
+- Pruebas: clima despejado fijo (`MatchRules.OverrideWeather`, no toca las preferencias).
+
 ## Convenciones
 - Comentarios abundantes en español con `/// <summary>` explicando el *porqué* (el usuario aprende leyéndolos). Mantener ese estilo.
 - `[Header]` + `[Tooltip]` en español en todos los campos del Inspector.
@@ -178,7 +184,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilación rápida: `tools\compilar-rapido.ps1`. Compilación completa de Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.28 (arsenal completo: 49 armas). Antes: 0.27 (espectáculo: cámara lenta, burlas, lápidas y clima). Antes: 0.26 (equipos de varios jugadores online). Antes: 0.25 (modos de juego). Antes: 0.24 (ratas a montones y cuerpos con ventajas). Plan del usuario (15 nov 2026): 0.25 modos de juego, 0.26 equipos de varios jugadores online, 0.27 espectáculo (repetición a cámara lenta, burlas/voces, lápidas, clima), 0.28 muchas armas nuevas (hasta ~48 como Worms); al final, informe con mejoras. Antes: 0.23 (reconexión online). Bloque 6 completo: lobby con ¡Listo!, reglas del host, revancha a la sala (ya existían) y reconexión. Siguiente: bloque 7 (publicar en itch.io). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.29 (claridad: ribete de equipo, flecha del turno e iconos de estado). Antes: 0.28 (arsenal completo: 49 armas). Antes: 0.27 (espectáculo: cámara lenta, burlas, lápidas y clima). Antes: 0.26 (equipos de varios jugadores online). Antes: 0.25 (modos de juego). Antes: 0.24 (ratas a montones y cuerpos con ventajas). Plan del usuario (15 nov 2026): 0.25 modos de juego, 0.26 equipos de varios jugadores online, 0.27 espectáculo (repetición a cámara lenta, burlas/voces, lápidas, clima), 0.28 muchas armas nuevas (hasta ~48 como Worms); al final, informe con mejoras. Antes: 0.23 (reconexión online). Bloque 6 completo: lobby con ¡Listo!, reglas del host, revancha a la sala (ya existían) y reconexión. Siguiente: bloque 7 (publicar en itch.io). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)

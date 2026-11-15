@@ -61,6 +61,8 @@ namespace Ratms.Networking
         //  CLIMA (0.27): 0-4 = Weather, 5 = al azar
         // ------------------------------------------------------------
         public const int WeatherChoices = 6;
+        /// <summary>(Pruebas) clima fijo sin tocar las preferencias guardadas.</summary>
+        public static Weather? OverrideWeather;
         public static int WeatherSetting
         {
             get => Mathf.Clamp(PlayerPrefs.GetInt("rule_weather", 5), 0, WeatherChoices - 1);
@@ -73,6 +75,7 @@ namespace Ratms.Networking
         /// <summary>(Servidor) Clima que se juega: el elegido o uno al azar (más veces despejado).</summary>
         public static Weather PickWeather()
         {
+            if (OverrideWeather.HasValue) return OverrideWeather.Value;
             int s = WeatherSetting;
             if (s < 5) return (Weather)s;
             float r = Random.value;

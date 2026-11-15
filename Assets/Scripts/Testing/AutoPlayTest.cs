@@ -89,6 +89,7 @@ namespace Ratms.Testing
             // Idioma de la prueba: español salvo "-autoTestLang en" (sin guardarlo).
             Ratms.UI.Loc.SetSessionLanguage(GetArg("-autoTestLang") == "en" ? Ratms.UI.Loc.Lang.En : Ratms.UI.Loc.Lang.Es);
             if (System.Enum.TryParse(GetArg("-autoTestMode") ?? "", true, out GameMode forcedMode)) MatchRules.Game = forcedMode;   // 0.25
+            MatchRules.OverrideWeather = Weather.Despejado;   // 0.29: capturas limpias (el papel "show" pone los climas a mano)
             string biomeArg = GetArg("-autoTestBiome");
             if (biomeArg != null && Enum.TryParse(biomeArg, true, out BiomeType b))
                 forcedBiome = b;

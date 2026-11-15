@@ -14,6 +14,7 @@ namespace Ratms.Networking
         partial void SpectacleOnSpawn()
         {
             if (GetComponent<TauntInput>() == null) gameObject.AddComponent<TauntInput>();
+            if (GetComponent<TurnMarker>() == null) gameObject.AddComponent<TurnMarker>();   // 0.29: flecha del turno
             WeatherFx.Ensure();
         }
 

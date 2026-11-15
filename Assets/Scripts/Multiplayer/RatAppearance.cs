@@ -167,6 +167,7 @@ namespace Ratms.Networking
             if (lookCode == 0) lookCode = RatLook.Random(new System.Random((int)m.NetworkObjectId * 7919)).Pack();
             Look = RatLook.Unpack(lookCode);
             frames = GetFrames(lookCode, team);
+            if (GetComponent<StatusBadges>() == null) gameObject.AddComponent<StatusBadges>();   // 0.29: iconos de estado
 
             var go = new GameObject("RatBody");
             go.transform.SetParent(transform, worldPositionStays: false);
@@ -1407,6 +1408,21 @@ namespace Ratms.Networking
                     if (Solid(mat, x - 1, y) || Solid(mat, x + 1, y) || Solid(mat, x, y - 1) || Solid(mat, x, y + 1))
                         outlined[i] = outline;
                 }
+            // 0.29: RIBETE del color del equipo por fuera del contorno: la rata se
+            // separa del fondo (las oscuras ya no se pierden en la tierra) y se
+            // sabe de qué equipo es de un vistazo.
+            var rim = new Color32(Lighten(team, 0.15f).r, Lighten(team, 0.15f).g, Lighten(team, 0.15f).b, 150);
+            var withRim = (Color32[])outlined.Clone();
+            for (int y = 0; y < S; y++)
+                for (int x = 0; x < S; x++)
+                {
+                    int i = y * S + x;
+                    if (outlined[i].a != 0) continue;
+                    bool near = (x > 0 && outlined[i - 1].a == 255 && mat[i - 1] == Empty) || (x < S - 1 && outlined[i + 1].a == 255 && mat[i + 1] == Empty) ||
+                                (y > 0 && outlined[i - S].a == 255 && mat[i - S] == Empty) || (y < S - 1 && outlined[i + S].a == 255 && mat[i + S] == Empty);
+                    if (near) withRim[i] = rim;
+                }
+            outlined = withRim;
 
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
             tex.SetPixels32(outlined);

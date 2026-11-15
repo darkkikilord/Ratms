@@ -250,7 +250,58 @@ namespace Ratms.Networking
         private void SpawnAllConnected()
         {
             var all = new List<ulong>(NetworkManager.Singleton.ConnectedClientsIds);
+            if (MatchRules.Mode == MatchMode.Online && all.Count > 1) { SpawnOnlineBySide(all); return; }
             foreach (var clientId in all) SpawnTeamsForClient(clientId);
+        }
+
+        /// <summary>
+        ///  0.26 — EQUIPOS DE VARIOS JUGADORES: los que eligieron el mismo bando
+        ///  en la sala comparten equipo; los "automáticos" van cada uno en el suyo.
+        ///  Los índices de equipo quedan seguidos (0, 1, 2...).
+        /// </summary>
+        private void SpawnOnlineBySide(List<ulong> all)
+        {
+            all.Sort();
+            var groups = new SortedDictionary<int, List<ulong>>();   // bando (o clave única) → jugadores
+            int autoKey = 100;
+            foreach (var id in all)
+            {
+                if (spawnedClients.Contains(id)) continue;
+                int side = LobbySync.SideOf(id);
+                int key = side >= 0 ? side : autoKey++;
+                if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<ulong>();
+                list.Add(id);
+            }
+            foreach (var kv in groups)
+            {
+                if (nextTeamIndex >= MatchRules.MaxTeams) break;
+                SpawnTeamGroup(nextTeamIndex++, kv.Value, kv.Key < MatchRules.MaxTeams ? kv.Key : -1);
+            }
+        }
+
+        private void SpawnTeamGroup(int team, List<ulong> members, int side = -1)
+        {
+            // Bando compartido sin nombre propio: se llama como el bando ("Rojos", "Azules"...).
+            if (side >= 0 && members.Count > 1) CustomTeamNames[team] = MatchRules.LocalTeamNames[side % MatchRules.LocalTeamNames.Length];
+            foreach (var m in members) spawnedClients.Add(m);
+            int rats = Mathf.Clamp(Mathf.Max(MatchRules.EffectiveRatsPerTeam, members.Count), 1, MatchRules.MaxRatsPerTeam);
+            var bodies = new List<int> { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+            for (int i = bodies.Count - 1; i > 0; i--) { int j = nameRng.Next(i + 1); (bodies[i], bodies[j]) = (bodies[j], bodies[i]); }
+            var lead = LobbySync.ProfileOf(members[0]);
+            if (lead != null && !string.IsNullOrWhiteSpace(lead.team)) CustomTeamNames[team] = lead.team;
+            var slot = new Dictionary<ulong, int>();
+            var given = new HashSet<ulong>();
+            for (int r = 0; r < rats; r++)
+            {
+                ulong owner = members[r % members.Count];   // se reparten: A, B, A, B...
+                int s = slot.TryGetValue(owner, out var v) ? v : 0;
+                slot[owner] = s + 1;
+                var prof = LobbySync.ProfileOf(owner);
+                string ratName = prof != null && s < TeamProfile.Slots && !string.IsNullOrWhiteSpace(prof.names[s]) ? prof.names[s] : NextRatName();
+                ulong chosen = prof != null && s < TeamProfile.Slots ? prof.looks[s] : 0u;
+                NetworkPlayerMovement.SpawnNextLook = chosen != 0 ? chosen : RatLook.Random(nameRng, bodies[r % bodies.Count]).Pack();
+                SpawnRat(owner, team, ratName, asPlayerObject: given.Add(owner));
+            }
         }
 
         // ================================================================

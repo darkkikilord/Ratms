@@ -440,6 +440,10 @@ namespace Ratms.UI
 
             // ---------------- Pantalla de carga (0.22) ----------------
             ("(¡copiado!)", "(copied!)"),
+            // ---------------- Equipos compartidos (0.26) ----------------
+            ("Mi bando", "My side"), ("Automático", "Automatic"),
+            ("¡{0} se ha ido!\nSus ratas pasan a {1}", "{0} has left!\nTheir rats go to {1}"),
+
             // ---------------- Modos de juego (0.25) ----------------
             ("Modo", "Mode"), ("Normal", "Normal"), ("Fuertes", "Forts"), ("Colina", "Hill"), ("Duelo", "Duel"),
             ("Minas", "Mines"), ("Barra libre", "Open bar"),

@@ -22,7 +22,7 @@ namespace Ratms.Networking
             if (menu == null || !menu.LobbyVisible || nm == null || !nm.IsListening) return;
             TrenchGUI.Begin();
             bool host = nm.IsServer;
-            float w = 640f, h = host ? 810f : 540f;
+            float w = 640f, h = host ? 870f : 600f;
             var r = new Rect(TrenchGUI.VW - w - 30f, (TrenchGUI.VH - h) * 0.5f, w, h);
             TrenchGUI.Panel(r);
             float x = r.x + 30f, cw = w - 60f, y = r.y + 14f;
@@ -37,7 +37,9 @@ namespace Ratms.Networking
             {
                 var c = GUI.color;
                 GUI.color = TurnHUD.TeamTextColor(i);
-                TrenchGUI.Label(new Rect(x, y, cw - 160f, 34f), $"{i + 1}. {e.name}{(e.id == nm.LocalClientId ? "  " + Loc.T("(tú)") : "")}");
+                string sideTxt = e.side >= 0 ? "  [" + Loc.T(MatchRules.LocalTeamNames[e.side % MatchRules.LocalTeamNames.Length]) + "]" : "";
+                if (e.side >= 0) GUI.color = TurnHUD.TeamTextColor(e.side);
+                TrenchGUI.Label(new Rect(x, y, cw - 160f, 34f), $"{i + 1}. {e.name}{(e.id == nm.LocalClientId ? "  " + Loc.T("(tú)") : "")}{sideTxt}");
                 GUI.color = e.ready || e.id == NetworkManager.ServerClientId ? new Color(0.6f, 1f, 0.55f) : new Color(1f, 0.7f, 0.5f);
                 TrenchGUI.Label(new Rect(x + cw - 150f, y, 150f, 34f), e.id == NetworkManager.ServerClientId ? "ANFITRIÓN" : e.ready ? "¡LISTO!" : "esperando…");
                 GUI.color = c;
@@ -45,6 +47,15 @@ namespace Ratms.Networking
                 i++;
             }
             y += 10f;
+
+            // 0.26: BANDO — los que eligen el mismo, juegan en el mismo equipo.
+            {
+                int side = LobbySync.LocalSide;
+                string val = side < 0 ? Loc.T("Automático") : Loc.T(MatchRules.LocalTeamNames[side]);
+                int step = TrenchGUI.Stepper(new Rect(x, y, cw, 44f), "Mi bando", val, 190f);
+                if (step != 0) LobbySync.LocalSide = ((side + 1 + step + MatchRules.MaxTeams + 1) % (MatchRules.MaxTeams + 1)) - 1;
+                y += 50f;
+            }
 
             if (!host)
             {

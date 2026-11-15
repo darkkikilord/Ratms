@@ -141,6 +141,13 @@ Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMe
 - Viaja por red en `BiomeSyncer.gameModeNet` (los clientes regeneran el mapa con el modo) y `NetworkTurnManager.GameModeNet`. Lógica en `NetworkTurnManager.Modes.cs` (+ `ModeVisuals`: bandera, círculo y marcador). En las reglas: fila "Modo" (◀ ▶) con su descripción.
 - Prueba: `tools\autotest.ps1 -Role modes` (una partida local por modo). `-Mode X` fuerza el modo en cualquier prueba.
 
+## Equipos de varios jugadores online (0.26)
+- En la sala cada uno elige **Mi bando** (Automático / Rojos / Azules / Verdes / Amarillos): `LobbySync.LocalSide`, viaja en "ratms_hello"/"ratms_roster" (`Entry.side`; `LobbySync.SideOf`).
+- Al empezar online con 2+ jugadores: `GameSceneSpawnManager.SpawnOnlineBySide` agrupa por bando (los automáticos van solos), índices de equipo seguidos; `SpawnTeamGroup` reparte las ratas A, B, A, B... (mín. una por jugador), cada una con el "Mi equipo" de su dueño; el equipo compartido se llama como el bando.
+- Turnos: `CurrentTurnClientId` = dueño de la RATA del turno (no del equipo). `Team.members` y `Team.ratOwner` (servidor).
+- Si se va alguien de un equipo compartido, `ShareOutRatsServer` da sus ratas a un compañero (aviso "¡X se ha ido! Sus ratas pasan a Y"); si era el último, reconexión/eliminación como antes.
+- Prueba: `tools\autotest-multi.ps1 -SkipBuild -Coop` (host y cliente en el mismo bando).
+
 ## Convenciones
 - Comentarios abundantes en español con `/// <summary>` explicando el *porqué* (el usuario aprende leyéndolos). Mantener ese estilo.
 - `[Header]` + `[Tooltip]` en español en todos los campos del Inspector.
@@ -158,7 +165,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilación rápida: `tools\compilar-rapido.ps1`. Compilación completa de Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.25 (modos de juego). Antes: 0.24 (ratas a montones y cuerpos con ventajas). Plan del usuario (15 nov 2026): 0.25 modos de juego, 0.26 equipos de varios jugadores online, 0.27 espectáculo (repetición a cámara lenta, burlas/voces, lápidas, clima), 0.28 muchas armas nuevas (hasta ~48 como Worms); al final, informe con mejoras. Antes: 0.23 (reconexión online). Bloque 6 completo: lobby con ¡Listo!, reglas del host, revancha a la sala (ya existían) y reconexión. Siguiente: bloque 7 (publicar en itch.io). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.26 (equipos de varios jugadores online). Antes: 0.25 (modos de juego). Antes: 0.24 (ratas a montones y cuerpos con ventajas). Plan del usuario (15 nov 2026): 0.25 modos de juego, 0.26 equipos de varios jugadores online, 0.27 espectáculo (repetición a cámara lenta, burlas/voces, lápidas, clima), 0.28 muchas armas nuevas (hasta ~48 como Worms); al final, informe con mejoras. Antes: 0.23 (reconexión online). Bloque 6 completo: lobby con ¡Listo!, reglas del host, revancha a la sala (ya existían) y reconexión. Siguiente: bloque 7 (publicar en itch.io). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)

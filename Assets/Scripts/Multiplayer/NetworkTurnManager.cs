@@ -111,6 +111,8 @@ namespace Ratms.Networking
             public int nextRat;
             public bool eliminated;
             public float awayUntil = -1f;             // 0.23: desconectado, esperando a que vuelva
+            public readonly HashSet<ulong> members = new();                 // 0.26: jugadores del equipo
+            public readonly Dictionary<ulong, ulong> ratOwner = new();      // 0.26: rata → jugador que la lleva
             public NetworkPlayerMovement forcedRat;   // elegida con "Cambiar rata" para su próximo turno
         }
 
@@ -206,6 +208,8 @@ namespace Ratms.Networking
 
         private void OnClientDisconnected(ulong clientId)
         {
+            // 0.26: si tenía compañeros de equipo, sus ratas pasan a ellos.
+            ShareOutRatsServer(clientId);
             // 0.23: online, primero se le espera un rato (reconexión).
             if (MarkAwayServer(clientId))
             {
@@ -238,6 +242,11 @@ namespace Ratms.Networking
                     teams.Add(team);
                     teams.Sort((a, b) => a.index.CompareTo(b.index));
                     if (currentTeamPos >= 0) currentTeamPos = Mathf.Min(currentTeamPos, teams.Count - 1);
+                }
+                if (!team.ratOwner.ContainsKey(m.NetworkObjectId))
+                {
+                    team.ratOwner[m.NetworkObjectId] = m.OwnerClientId;
+                    team.members.Add(m.OwnerClientId);
                 }
                 if (!team.rats.Contains(m))
                 {
@@ -361,7 +370,7 @@ namespace Ratms.Networking
                     currentTeamPos = pos;
                     team.nextRat = (ri + 1) % team.rats.Count;
                     CurrentTeam.Value = team.index;
-                    CurrentTurnClientId.Value = team.owner;
+                    CurrentTurnClientId.Value = rat.OwnerClientId;   // 0.26: en equipos compartidos, el dueño de ESA rata
                     CurrentRatId.Value = rat.NetworkObjectId;
                     TurnTimeRemaining.Value = TurnDuration;
                     Wind.Value = RollWind();

@@ -321,6 +321,7 @@ namespace Ratms.Testing
             if (finished) yield break;
             Log($"Cliente conectado ({nm.ConnectedClientsIds.Count} jugadores).");
             if (forcedBiome.HasValue) BiomeManager.SelectedBiomeType = forcedBiome.Value;   // -autoTestBiome (lo manda el host)
+            if (Coop) LobbySync.LocalSide = 0;   // 0.26: host y cliente en el mismo bando
             yield return WaitFor(() => LobbySync.Roster.Count >= 2 && LobbySync.AllReady, 20f, "que el cliente marque ¡Listo!", fatal: false);
             Log($"Sala de espera: {string.Join(", ", LobbySync.Roster.Select(e => $"{e.name}{(e.ready ? " (listo)" : "")}"))} · todos listos: {(LobbySync.AllReady ? "✓" : "⚠")}");
             if (!LobbySync.AllReady) Problem("Lobby: el cliente no aparece como listo");
@@ -341,6 +342,7 @@ namespace Ratms.Testing
                 float sep = Vector2.Distance(mine.transform.position, other.transform.position);
                 Log($"Separación entre ratas al aparecer: {sep:0.0} u {(sep >= 10f ? "✓" : "⚠ muy juntas")}");
             }
+            if (Coop) { yield return HostCoop(nm); yield break; }
             {
                 var all = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Where(m => !m.IsTestDummy).ToList();
                 int mineN = all.Count(m => m.IsOwner), theirsN = all.Count(m => !m.IsOwner);
@@ -445,6 +447,7 @@ namespace Ratms.Testing
             bool rulesSeen = !string.IsNullOrEmpty(LobbySync.RulesSummary);
             Log($"Lobby (cliente): {LobbySync.Roster.Count} jugadores · reglas del host: \"{LobbySync.RulesSummary}\" {(rulesSeen ? "✓" : "⚠")}");
             yield return Capture("C00_cliente_lobby");
+            if (Coop) LobbySync.LocalSide = 0;
             LobbySync.LocalReady = true;
 
             yield return WaitFor(() => SceneManager.GetActiveScene().name == gameScene && FindLocalRat() != null, 40f, "entrar en la partida");
@@ -453,6 +456,7 @@ namespace Ratms.Testing
             StartCoroutine(ClientWatcher());
             yield return new WaitForSeconds(1.5f);
             yield return Capture("C01_cliente_partida");
+            if (Coop) { yield return ClientCoop(nm); yield break; }
 
             int myTurns = 0;
             while (!finished)
@@ -1149,6 +1153,60 @@ namespace Ratms.Testing
             NetworkTurnManager.Instance != null && NetworkTurnManager.Instance.IsTurnOf(nm.LocalClientId);
 
         private bool reconnectedOnce, sawAway, sawReclaim;
+
+        // ---------------- 0.26: equipo compartido (autotest-multi -Coop) ----------------
+        private static bool Coop => System.Environment.GetCommandLineArgs().Contains("-autoTestCoop");
+
+        private IEnumerator HostCoop(NetworkManager nm)
+        {
+            var tm = NetworkTurnManager.Instance;
+            var all = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Where(m => !m.IsTestDummy && m.IsSpawned).ToList();
+            int teamsN = all.Select(m => m.TeamIndex.Value).Distinct().Count();
+            int ownersN = all.Select(m => m.OwnerClientId).Distinct().Count();
+            bool shared = teamsN == 1 && ownersN == 2;
+            Log($"Equipo compartido: {all.Count} ratas · equipos {teamsN} · jugadores {ownersN} · nombre \"{tm.TeamDisplayName(all[0].TeamIndex.Value)}\" {(shared ? "✓" : "⚠")}");
+            if (!shared) Problem("Equipos compartidos: host y cliente del mismo bando no comparten equipo");
+            yield return Capture("M01_host_equipo_compartido");
+            // Paso mis turnos hasta que le toque al compañero
+            bool clientTurn = false;
+            float t0 = Time.time;
+            while (Time.time - t0 < 60f && !finished)
+            {
+                if (!tm.InTransition.Value && tm.CurrentTurnClientId.Value != ulong.MaxValue)
+                {
+                    if (tm.CurrentTurnClientId.Value != nm.LocalClientId) { clientTurn = true; break; }
+                    if (tm.TurnTimeRemaining.Value > 1f) tm.TurnTimeRemaining.Value = 0.05f;
+                }
+                yield return null;
+            }
+            Log($"Al compañero (cliente) le toca turno con una rata del equipo compartido: {(clientTurn ? "✓" : "⚠")}");
+            if (!clientTurn) Problem("Equipos compartidos: al cliente nunca le toca turno");
+            // El cliente se va a propósito: sus ratas deben pasar al host
+            yield return WaitFor(() => nm.ConnectedClientsIds.Count == 1, 40f, "que se vaya el compañero", fatal: false);
+            yield return new WaitForSeconds(1.5f);
+            var rest = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Where(m => !m.IsTestDummy && m.IsSpawned).ToList();
+            bool inherited = rest.Count == all.Count && rest.All(m => m.OwnerClientId == nm.LocalClientId) && !tm.HasAwayTeamServer && !tm.GameEnded.Value;
+            Log($"Tras irse el compañero: {rest.Count} ratas, todas mías: {inherited} · aviso: \"{TurnHUD.LastAnnouncement}\" {(inherited ? "✓" : "⚠")}");
+            if (!inherited) Problem("Equipos compartidos: las ratas del que se fue no pasan al compañero");
+            yield return Capture("M02_host_hereda_ratas");
+            Finish(null);
+        }
+
+        private IEnumerator ClientCoop(NetworkManager nm)
+        {
+            yield return WaitFor(() => IsMyTurn(nm), 60f, "mi turno en el equipo compartido", fatal: false);
+            var mine = FindLocalRat();
+            bool ok = IsMyTurn(nm) && mine != null && mine.CanControlNow;
+            Log($"Cliente: me toca turno en el equipo compartido con '{(mine != null ? mine.RatName.Value.ToString() : "?")}' · puedo moverla: {(ok ? "✓" : "⚠")}");
+            if (!ok) Problem("Equipos compartidos: el cliente no controla su rata en su turno");
+            yield return Capture("C02_cliente_turno_compartido");
+            Log("Cliente: me voy a propósito (mis ratas deben pasar al host)");
+            LobbySync.SayGoodbye();
+            yield return new WaitForSeconds(0.2f);
+            nm.Shutdown();
+            yield return new WaitForSeconds(0.5f);
+            Finish(null);
+        }
 
         /// <summary>(Host) Mira si el equipo del cliente pasa a "ausente" y luego vuelve.</summary>
         private IEnumerator ReconnectWatcher()

@@ -17,7 +17,26 @@ namespace Ratms.Networking
     /// </summary>
     public class LobbySync : MonoBehaviour
     {
-        public struct Entry { public ulong id; public string name; public bool ready; }
+        public struct Entry { public ulong id; public string name; public bool ready; public sbyte side; }
+
+        /// <summary>
+        ///  0.26: BANDO elegido en la sala (-1 = automático: equipo propio;
+        ///  0-3 = Rojos/Azules/Verdes/Amarillos). Los del mismo bando comparten equipo.
+        /// </summary>
+        public static int LocalSide
+        {
+            get => instance != null ? instance.localSide : -1;
+            set { Ensure(); instance.localSide = Mathf.Clamp(value, -1, MatchRules.MaxTeams - 1); instance.SendHello(); }
+        }
+        private int localSide = -1;
+
+        /// <summary>(Servidor) Bando elegido por un jugador (-1 = automático).</summary>
+        public static int SideOf(ulong clientId)
+        {
+            if (instance == null) return -1;
+            foreach (var e in instance.roster) if (e.id == clientId) return e.side;
+            return instance.server.TryGetValue(clientId, out var s) ? s.side : -1;
+        }
 
         private static LobbySync instance;
         public static IReadOnlyList<Entry> Roster => instance != null ? instance.roster : (IReadOnlyList<Entry>)System.Array.Empty<Entry>();
@@ -174,7 +193,7 @@ namespace Ratms.Networking
             if (nm.IsServer)
             {
                 lastNameSent = PlayerNameRegistry.LocalName;
-                server[nm.LocalClientId] = new Entry { id = nm.LocalClientId, name = PlayerNameRegistry.LocalName, ready = true };
+                server[nm.LocalClientId] = new Entry { id = nm.LocalClientId, name = PlayerNameRegistry.LocalName, ready = true, side = (sbyte)localSide };
                 profiles[nm.LocalClientId] = TeamProfile.Local();
                 Broadcast();
                 return;
@@ -186,6 +205,7 @@ namespace Ratms.Networking
             w.WriteValueSafe(PlayerNameRegistry.LocalName ?? "Rata");
             w.WriteValueSafe(localReady);
             WriteProfile(w, TeamProfile.Local());
+            w.WriteValueSafe((sbyte)localSide);
             nm.CustomMessagingManager.SendNamedMessage("ratms_hello", NetworkManager.ServerClientId, w);
         }
 
@@ -196,7 +216,9 @@ namespace Ratms.Networking
             r.ReadValueSafe(out string name);
             r.ReadValueSafe(out bool ready);
             profiles[sender] = ReadProfile(r);
-            server[sender] = new Entry { id = sender, name = string.IsNullOrWhiteSpace(name) ? "Rata" : name, ready = ready };
+            sbyte side = -1;
+            if (r.TryBeginRead(1)) r.ReadValueSafe(out side);
+            server[sender] = new Entry { id = sender, name = string.IsNullOrWhiteSpace(name) ? "Rata" : name, ready = ready, side = side };
             PlayerNameRegistry.SetName(sender, server[sender].name);
             Broadcast();
         }
@@ -207,7 +229,7 @@ namespace Ratms.Networking
             if (nm == null || !nm.IsServer) return;
             lastRulesSent = Ratms.UI.RulesEditor.Summary();
             // El host también es jugador
-            server[nm.LocalClientId] = new Entry { id = nm.LocalClientId, name = PlayerNameRegistry.LocalName, ready = true };
+            server[nm.LocalClientId] = new Entry { id = nm.LocalClientId, name = PlayerNameRegistry.LocalName, ready = true, side = (sbyte)localSide };
             // Copia local para el host
             roster.Clear();
             foreach (var e in server.Values) roster.Add(e);
@@ -217,7 +239,7 @@ namespace Ratms.Networking
             using var w = new FastBufferWriter(4096, Allocator.Temp);
             w.WriteValueSafe(rules);
             w.WriteValueSafe(roster.Count);
-            foreach (var e in roster) { w.WriteValueSafe(e.id); w.WriteValueSafe(e.name); w.WriteValueSafe(e.ready); }
+            foreach (var e in roster) { w.WriteValueSafe(e.id); w.WriteValueSafe(e.name); w.WriteValueSafe(e.ready); w.WriteValueSafe(e.side); }
             foreach (var id in nm.ConnectedClientsIds)
                 if (id != nm.LocalClientId)
                     nm.CustomMessagingManager.SendNamedMessage("ratms_roster", id, w);
@@ -233,7 +255,8 @@ namespace Ratms.Networking
                 r.ReadValueSafe(out ulong id);
                 r.ReadValueSafe(out string name);
                 r.ReadValueSafe(out bool ready);
-                roster.Add(new Entry { id = id, name = name, ready = ready });
+                r.ReadValueSafe(out sbyte side);
+                roster.Add(new Entry { id = id, name = name, ready = ready, side = side });
                 PlayerNameRegistry.SetName(id, name);
             }
             rules = rulesText;

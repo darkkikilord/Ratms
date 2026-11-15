@@ -57,6 +57,8 @@ namespace Ratms.Networking
             if (!oldName.StartsWith("Rata #")) PlayerNameRegistry.SetName(clientId, oldName);
             t.awayUntil = -1f;
             t.owner = clientId;
+            t.members.Clear(); t.members.Add(clientId);
+            foreach (var rat in t.rats) if (rat != null) t.ratOwner[rat.NetworkObjectId] = clientId;
             resumeCheck = true;
             foreach (var rat in t.rats)
             {
@@ -66,6 +68,35 @@ namespace Ratms.Networking
             AnnounceClientRpc(Ratms.UI.Loc.Pack("¡{0} ha vuelto a la trinchera!", teamName),
                 new Color(0.55f, 1f, 0.5f));
             return true;
+        }
+
+        /// <summary>
+        ///  0.26 — (Servidor) Se va un jugador de un equipo COMPARTIDO: sus ratas
+        ///  pasan a un compañero que siga en la sala (y el equipo no queda ausente).
+        /// </summary>
+        private void ShareOutRatsServer(ulong clientId)
+        {
+            foreach (var t in teams)
+            {
+                if (t.eliminated || !t.members.Contains(clientId)) continue;
+                t.members.Remove(clientId);
+                if (t.members.Count == 0) { t.owner = clientId; continue; }   // era el último: lo decide MarkAwayServer
+                ulong heir = ulong.MaxValue;
+                foreach (var m in t.members) { heir = m; break; }
+                bool turnWasTheirs = false;
+                foreach (var rat in t.rats)
+                {
+                    if (rat == null || !rat.IsSpawned) continue;
+                    if (!t.ratOwner.TryGetValue(rat.NetworkObjectId, out var o) || o != clientId) continue;
+                    t.ratOwner[rat.NetworkObjectId] = heir;
+                    rat.NetworkObject.ChangeOwnership(heir);
+                    if (CurrentRatId.Value == rat.NetworkObjectId) turnWasTheirs = true;
+                }
+                if (t.owner == clientId) t.owner = heir;
+                AnnounceClientRpc(Ratms.UI.Loc.Pack("¡{0} se ha ido!\nSus ratas pasan a {1}", PlayerNameRegistry.GetName(clientId), PlayerNameRegistry.GetName(heir)),
+                    new Color(1f, 0.75f, 0.3f));
+                if (turnWasTheirs && !GameEnded.Value) AdvanceTurnServer();
+            }
         }
 
         /// <summary>(Servidor, cada frame) Equipos ausentes a los que se les acabó el tiempo.</summary>

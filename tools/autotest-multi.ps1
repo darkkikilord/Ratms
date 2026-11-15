@@ -15,6 +15,7 @@
 param(
     [switch]$SkipBuild,
     [string]$Biome = "",
+    [switch]$Coop,
     [string]$UnityExe = "B:\Juegos\6000.0.50f1\Editor\Unity.exe",
     [int]$TimeoutSeconds = 300
 )
@@ -46,7 +47,8 @@ function Start-Game($role, $dir, $x) {
     $a = @("-ratmsAutoTest", "-autoTestRole", $role, "-autoTestOut", "`"$dir`"",
         "-screen-fullscreen", "0", "-screen-width", "960", "-screen-height", "540",
         "-logFile", "`"$(Join-Path $dir 'player.log')`"")
-    if ($Biome -and $role -eq "host") { $a += @("-autoTestBiome", $Biome) }   # el cliente lo recibe por red
+    if ($Biome -and $role -eq "host") { $a += @("-autoTestBiome", $Biome) }
+    if ($Coop) { $a += @("-autoTestCoop") }   # 0.26: host y cliente en el mismo bando   # el cliente lo recibe por red
     Start-Process -FilePath $buildExe -PassThru -ArgumentList $a
 }
 

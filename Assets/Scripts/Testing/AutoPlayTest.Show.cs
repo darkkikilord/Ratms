@@ -166,6 +166,15 @@ namespace Ratms.Testing
                 yield return new WaitForSecondsRealtime(1.8f);
                 yield return Capture("S04c_repeticion_lenta");
                 Check($"Repetición → grabada: {pending} · se pone al acabar el turno: {playing}", pending && playing, "Repetición: no se reproduce al reventar una rata");
+                // 0.34: guardar como GIF (como si se pulsara G)
+                DeathReplay.SaveGifForTest();
+                t0 = Time.unscaledTime;
+                yield return null;
+                while (DeathReplay.SavingGif && Time.unscaledTime - t0 < 20f) yield return null;
+                string gif = DeathReplay.LastGifPath;
+                long size = gif != null && System.IO.File.Exists(gif) ? new System.IO.FileInfo(gif).Length : 0;
+                if (gif != null && size > 0) System.IO.File.Copy(gif, System.IO.Path.Combine(outDir, "S04d_repeticion.gif"), true);
+                Check($"Repetición → GIF guardado: {(gif ?? "no")} ({size / 1024} KB)", size > 20 * 1024, "Repetición: no se guarda el GIF");
                 t0 = Time.unscaledTime;
                 while (DeathReplay.Playing && Time.unscaledTime - t0 < 10f) yield return null;
             }

@@ -360,6 +360,9 @@ namespace Ratms.Networking
             int lost = CurrentHealth.Value - newHp;
             CurrentHealth.Value = newHp;
             OnDamagedServer?.Invoke(this, lost);
+            // 0.34: un golpazo también alarga la transición (hay repetición).
+            if (newHp > 0 && amount >= DeathReplay.BigHit && NetworkTurnManager.Instance != null)
+                NetworkTurnManager.Instance.NoteBigHitServer(GetComponent<NetworkPlayerMovement>());
 
             // Propagamos el popup a todos los clientes (incluido el dueño).
             // Mandamos el tipo como byte para minimizar el tamaño del paquete.
@@ -461,6 +464,11 @@ namespace Ratms.Networking
             if (look != null) look.HitFlash();
             // Golpe fuerte: salpica a las ratas que estén pegadas.
             if (amount >= 20) RatAppearance.SplatterAround(BodyCenter, amount >= 40 ? 1.8f : 1.3f, gameObject, 1);
+            // 0.34: GOLPAZO sin matar → también tiene repetición.
+            if (!lethal && amount >= DeathReplay.BigHit)
+            {
+                DeathReplay.NoteMoment(BodyCenter, Ratms.UI.Loc.F("¡Qué golpazo! {0} de daño", amount));
+            }
             if (!lethal)
             {
                 Sfx.Play(Sfx.Id.Ouch, 0.25f, 0.15f);   // golpe sordo; el quejido es la voz de la rata
@@ -533,6 +541,12 @@ namespace Ratms.Networking
                 Sfx.Play(Sfx.Id.Splat);
                 var mvD = GetComponent<NetworkPlayerMovement>();
                 Fx.Gravestone(b, mvD != null ? mvD.RatName.Value.ToString() : null, (int)(NetworkObjectId % 3));
+                // 0.34: rótulo de la repetición ("¡X revienta a Y!")
+                string victimName = mvD != null ? mvD.RatName.Value.ToString() : "";
+                var killer = CurrentTurnRat();
+                DeathReplay.SetNextCaption(killer != null && killer.gameObject != gameObject
+                    ? Ratms.UI.Loc.F("¡{0} revienta a {1}!", killer.RatName.Value.ToString(), victimName)
+                    : Ratms.UI.Loc.F("¡{0} revienta!", victimName));
                 SlowMotion.Trigger(b);   // 0.27: ¡cámara lenta!
                 if (PlayerPrefs.GetInt("opt_laughs", 1) == 1)
                     WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.3f, Pick(DeathQuips), new Color(0.95f, 0.25f, 0.2f));

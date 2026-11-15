@@ -336,8 +336,9 @@ namespace Ratms.Networking
             InTransition.Value = true;
             transitionTimer = transitionDelay;
             // 0.30: si ha reventado alguna rata, la transición dura lo que la REPETICIÓN
-            if (deathsThisTurn > 0 && SlowMotion.Enabled) transitionTimer += DeathReplay.Length;
+            if ((deathsThisTurn > 0 || bigHitsThisTurn > 0) && SlowMotion.Enabled) transitionTimer += DeathReplay.Length;
             deathsThisTurn = 0;
+            bigHitsThisTurn = 0;
             CurrentTurnClientId.Value = ulong.MaxValue;
             CurrentRatId.Value = ulong.MaxValue;
             CurrentTeam.Value = -1;
@@ -469,6 +470,13 @@ namespace Ratms.Networking
         private static readonly string[] FriendlyLines = { "¡FUEGO AMIGO!", "¡TRAICIÓN EN LA TRINCHERA!", "¡ERA DE LOS TUYOS!" };
 
         private int deathsThisTurn;
+        /// <summary>0.34: golpes de ≥ <see cref="DeathReplay.BigHit"/> que no mataron (también tienen repetición).</summary>
+        private int bigHitsThisTurn;
+
+        public void NoteBigHitServer(NetworkPlayerMovement rat)
+        {
+            if (IsServer && rat != null && !rat.IsTestDummy) bigHitsThisTurn++;
+        }
 
         public void OnRatDiedServer(NetworkPlayerMovement rat)
         {

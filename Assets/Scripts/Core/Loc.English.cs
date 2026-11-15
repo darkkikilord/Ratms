@@ -521,6 +521,14 @@ namespace Ratms.UI
             ("Modo {7} · mapa {9} · clima {8} · {0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
              "Mode {7} · map {9} · weather {8} · {0} rats · {1} health · {2} s turns · sudden death {3} · {4} barrels · crates {5} · mutilations {6}"),
             ("Voces de las ratas", "Rat voices"),
+            // 0.36: partida rápida
+            ("PARTIDA RÁPIDA", "QUICK MATCH"), ("Buscando partida...", "Looking for a match..."),
+            ("No hay partidas abiertas: creando una...", "No open matches: creating one..."),
+            ("❌ Error al unirse. Prueba otra vez.", "❌ Couldn't join. Try again."),
+            ("Partida rápida: cualquiera puede entrar sin código.", "Quick match: anyone can join without a code."),
+            ("Demasiados intentos: espera unos segundos.", "Too many attempts: wait a few seconds."),
+            ("Sin conexión con el servicio de partidas.", "No connection to the match service."),
+            ("El servicio de partida rápida no responde (¿Lobby activado en Unity Cloud?).", "The quick match service isn't answering (is Lobby enabled in Unity Cloud?)."),
             // 0.35: logros
             ("Logros", "Achievements"), ("HOJA DE SERVICIOS", "SERVICE RECORD"), ("Estadísticas", "Stats"), ("¡LOGRO!", "ACHIEVEMENT!"),
             ("Desbloqueas: {0}", "Unlocked: {0}"), ("Premio: {0}", "Reward: {0}"), ("Logros: {0} de {1}", "Achievements: {0} of {1}"),

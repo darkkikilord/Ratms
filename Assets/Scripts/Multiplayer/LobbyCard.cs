@@ -34,6 +34,15 @@ namespace Ratms.Networking
             float x = r.x + 30f, cw = w - 60f, y = r.y + 14f;
             TrenchGUI.Title(new Rect(r.x, y, w, 46f), "SALA DE ESPERA");
             y += 58f;
+            if (host && QuickMatch.Hosting)
+            {
+                // 0.36: la sala está anunciada en la partida rápida
+                var qc = GUI.color;
+                GUI.color = new Color(0.6f, 1f, 0.55f);
+                TrenchGUI.Small(new Rect(x, y - 14f, cw, 26f), "Partida rápida: cualquiera puede entrar sin código.");
+                GUI.color = qc;
+                y += 16f;
+            }
 
             // --- Jugadores ---
             var roster = LobbySync.Roster;

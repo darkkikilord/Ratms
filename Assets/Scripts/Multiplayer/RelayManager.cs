@@ -43,7 +43,19 @@ namespace Ratms.Networking
         {
             if (UnityServices.State != ServicesInitializationState.Initialized)
             {
-                await UnityServices.InitializeAsync();
+                // 0.36: "-ratmsProfile nombre" = otra cuenta anónima. Hace falta
+                // para probar dos copias del juego en el MISMO PC (si no, las dos
+                // son el mismo jugador y el Lobby no deja entrar en tu propia sala).
+                string profile = null;
+                var args = System.Environment.GetCommandLineArgs();
+                for (int i = 0; i < args.Length - 1; i++) if (args[i] == "-ratmsProfile") profile = args[i + 1];
+                if (!string.IsNullOrEmpty(profile))
+                {
+                    var options = new InitializationOptions();
+                    options.SetProfile(profile);
+                    await UnityServices.InitializeAsync(options);
+                }
+                else await UnityServices.InitializeAsync();
             }
 
             if (!AuthenticationService.Instance.IsSignedIn)

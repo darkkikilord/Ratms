@@ -330,6 +330,64 @@ namespace Ratms.Networking
         // ================================================================
         // ACCIONES (botones)
         // ================================================================
+        // ---- 0.36: PARTIDA RÁPIDA -------------------------------------------
+        private Button wiredQuickMatch;
+
+        /// <summary>El botón lo crea MainMenuLook por código: lo buscamos por nombre y lo enganchamos.</summary>
+        private void WireQuickMatch()
+        {
+            if (multiplayerPanel == null) return;
+            var t = multiplayerPanel.transform.Find("Btn_QuickMatch");
+            var b = t != null ? t.GetComponent<Button>() : null;
+            if (b == null || b == wiredQuickMatch) return;
+            b.onClick.AddListener(OnQuickMatchClicked);
+            wiredQuickMatch = b;
+        }
+
+        private void LateUpdate()
+        {
+            if (multiplayerPanel != null && multiplayerPanel.activeInHierarchy) WireQuickMatch();
+        }
+
+        /// <summary>
+        ///  Busca una sala abierta y entra; si no hay, crea una y la anuncia
+        ///  (<see cref="QuickMatch"/>). Luego es la sala de espera de siempre.
+        /// </summary>
+        public async void OnQuickMatchClicked()
+        {
+            if (isBusy || relayManager == null) return;
+            isBusy = true;
+            SetStatus("Buscando partida...");
+            string code = await QuickMatch.FindAsync(relayManager);
+            if (!string.IsNullOrEmpty(code))
+            {
+                SetStatus(Ratms.UI.Loc.F("Uniéndose a {0}...", code));
+                bool ok = await relayManager.JoinAsync(code);
+                isBusy = false;
+                if (ok) { ShowLobby(); return; }
+                SetStatus("❌ Error al unirse. Prueba otra vez.");
+                return;
+            }
+            if (QuickMatch.LastError != null)
+            {
+                isBusy = false;
+                SetStatus("❌ " + QuickMatch.LastError);
+                return;
+            }
+            SetStatus("No hay partidas abiertas: creando una...");
+            string mine = await relayManager.CreateHostAsync();
+            if (string.IsNullOrEmpty(mine))
+            {
+                isBusy = false;
+                SetStatus("❌ Error creando sala. Revisa la consola.");
+                return;
+            }
+            bool published = await QuickMatch.PublishAsync(mine, PlayerNameRegistry.LocalName);
+            isBusy = false;
+            ShowLobby();
+            if (!published) SetStatus("❌ " + QuickMatch.LastError);
+        }
+
         private async void OnCreateRoomClicked()
         {
             if (isBusy || relayManager == null) return;

@@ -214,16 +214,20 @@ namespace Ratms.UI
             var mp = canvas.Find("MultiplayerPanel") as RectTransform;
             if (mp != null)
             {
+                // 0.36: botón PARTIDA RÁPIDA (copia del de crear sala; lo engancha
+                // MultiplayerMenuController buscándolo por nombre).
+                EnsureQuickMatchButton(mp);
                 const float cx = -75f;
-                var box = CrateBehind(mp, new Vector2(cx, 18f), new Vector2(330f, 470f));
-                Title(box, "MULTIJUGADOR", 0f, 200f);
-                PlaceLabel(mp, "TuNombre", "Tu nombre", new Vector2(cx, 165f));
-                Place(mp, "Player name input", new Vector2(cx, 135f), new Vector2(240f, 34f));
-                Place(mp, "Btn_CreateRoom", new Vector2(cx, 88f), new Vector2(240f, 40f));
-                PlaceLabel(mp, "O", "— o —", new Vector2(cx, 52f));
+                var box = CrateBehind(mp, new Vector2(cx, 32f), new Vector2(330f, 540f));
+                Title(box, "MULTIJUGADOR", 0f, 235f);
+                PlaceLabel(mp, "TuNombre", "Tu nombre", new Vector2(cx, 214f));
+                Place(mp, "Player name input", new Vector2(cx, 184f), new Vector2(240f, 34f));
+                Place(mp, "Btn_QuickMatch", new Vector2(cx, 134f), new Vector2(260f, 46f));
+                Place(mp, "Btn_CreateRoom", new Vector2(cx, 84f), new Vector2(240f, 40f));
+                PlaceLabel(mp, "O", "— o —", new Vector2(cx, 50f));
                 Place(mp, "JoinCodeInput", new Vector2(cx, 18f), new Vector2(240f, 38f));
                 Place(mp, "Btn_JoinRoom", new Vector2(cx, -28f), new Vector2(240f, 40f));
-                Place(mp, "StatusText", new Vector2(cx, -78f), new Vector2(290f, 50f));
+                Place(mp, "StatusText", new Vector2(cx, -80f), new Vector2(290f, 54f));
                 Place(mp, "Btn_Back", new Vector2(cx, -150f), new Vector2(200f, 40f));
                 mp.localScale = Vector3.one * 1.7f;
             }
@@ -249,6 +253,24 @@ namespace Ratms.UI
                     t.color = new Color(0.95f, 0.9f, 0.78f);
                     if (t.GetComponent<OutlineWhenShown>() == null) t.gameObject.AddComponent<OutlineWhenShown>();
                 }
+            }
+        }
+
+        /// <summary>0.36: crea "Btn_QuickMatch" copiando "Btn_CreateRoom" (mismo aspecto).</summary>
+        private static void EnsureQuickMatchButton(RectTransform mp)
+        {
+            if (mp.Find("Btn_QuickMatch") != null) return;
+            var src = mp.Find("Btn_CreateRoom");
+            if (src == null) return;
+            var copy = Object.Instantiate(src.gameObject, mp);
+            copy.name = "Btn_QuickMatch";
+            var btn = copy.GetComponent<Button>();
+            if (btn != null) btn.onClick = new Button.ButtonClickedEvent();   // sin los clics de "crear sala"
+            var label = copy.GetComponentInChildren<TMP_Text>(true);
+            if (label != null)
+            {
+                label.text = "PARTIDA RÁPIDA";
+                if (label.GetComponent<LocText>() == null) label.gameObject.AddComponent<LocText>();
             }
         }
 

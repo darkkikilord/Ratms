@@ -206,7 +206,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 4. Menús ✅ (0.19). Queda: elegir sombrero/cola pieza a pieza en "Mi equipo".
 5. Presentación: **0.20** ✅ cámara inteligente + libre, música variada, animaciones, arsenal más claro y ayudas. El usuario NO quiere más biomas de momento.
 6. Online pulido ✅ (0.23): lobby con "listo", reglas del host, revancha a la sala y reconexión.
-7. Publicar: icono, pantalla de carga, itch.io.
+7. Publicar: icono y pantalla de carga ✅ (0.22). **itch.io**: `tools\publicar-itch.ps1` sube la build con butler (canal `windows`, versión = `MenuDressing.Version`; usuario y página en `tools\publicar-itch.config`). Los amigos usan la app de itch y se actualizan solos. La skill `/version` lo llama al cerrar cada versión.
 
 ## Estado y roadmap (nov 2026)
 Hecho: multijugador con Relay, bazooka, granada, dinamita, bate, trayectoria (se corta contra el terreno), viento, HUD con cuenta atrás, terreno destructible procedural, biomas, agua mortal, daño por caída, pantalla de victoria, nombres de jugador, un arma por turno.

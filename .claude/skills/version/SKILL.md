@@ -27,4 +27,6 @@ Argumentos: `$ARGUMENTS` (número y descripción). Si faltan, deduce el número 
 5. **Copia jugable**: copia TODO el contenido de `AutoTest\Build\` a
    `C:\Users\josem\Documents\Ratms Versiones\Ratms 0.X (descripción corta)\`
    (nombre sin tildes, como las anteriores: "Ratms 0.18 (arsenal y fuego)"). No borres ni toques nada de lo que ya hay en `Ratms Versiones`.
-6. **Resumen al usuario**: qué trae la versión, resultado de la prueba, la ruta del .exe y lo que conviene que pruebe a mano (sobre todo en multijugador real).
+6. **Publicar en itch.io** (desde 0.30): si existe `tools\publicar-itch.config`, ejecuta
+   `powershell -ExecutionPolicy Bypass -File tools\publicar-itch.ps1 -SkipBuild` (sube `AutoTest\Build` con la versión de `MenuDressing.Version`; los amigos con la app de itch se actualizan solos). Si no existe, recuérdale al usuario que haga el primer paso (crear la página e iniciar sesión).
+7. **Resumen al usuario**: qué trae la versión, resultado de la prueba, la ruta del .exe y lo que conviene que pruebe a mano (sobre todo en multijugador real).

@@ -86,11 +86,21 @@ namespace Ratms.UI
 
         private void OnEnable() => lastScreen = Vector2Int.zero;   // fuerza recálculo
 
+        private Vector2 lastArea;
+
         private void LateUpdate()
         {
+            // 0.36.1: también si cambia el tamaño del CANVAS, no solo el de la
+            // pantalla. Al volver de una partida (o al cambiar de resolución) el
+            // primer cálculo podía hacerse ANTES de que el CanvasScaler ajustase
+            // la escala: el fondo se quedaba enorme (título cortado arriba y la
+            // rata gigante abajo) y, como la pantalla ya no cambiaba, nunca se corregía.
             var screen = new Vector2Int(Screen.width, Screen.height);
-            if (screen == lastScreen) return;
+            var canvas = image != null && image.canvas != null ? image.canvas.rootCanvas : null;
+            Vector2 area = canvas != null ? ((RectTransform)canvas.transform).rect.size : Vector2.zero;
+            if (screen == lastScreen && (area - lastArea).sqrMagnitude < 1f) return;
             lastScreen = screen;
+            lastArea = area;
             Apply();
         }
 

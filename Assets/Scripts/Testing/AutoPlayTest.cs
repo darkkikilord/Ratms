@@ -167,6 +167,8 @@ namespace Ratms.Testing
             // Online de verdad con EQUIPOS: 2 ratas por jugador (lo decide el host).
             if (role == "host" || role == "client") MatchRules.OverrideRatsPerTeam = 2;
 
+            if (role == "rematchhost") { yield return RunRematchHost(); yield break; }
+            if (role == "rematchclient") { yield return RunRematchClient(); yield break; }
             if (role == "host") { yield return RunHostMulti(); yield break; }
             if (role == "client") { yield return RunClientMulti(); yield break; }
             if (role == "practice") { yield return RunPractice(); yield break; }

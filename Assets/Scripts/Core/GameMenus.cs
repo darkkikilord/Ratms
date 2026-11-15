@@ -15,7 +15,10 @@ namespace Ratms.UI
         {
             GUI.depth = -10;
             TrenchGUI.Begin();
-            var r = new Rect((TrenchGUI.VW - 800f) * 0.5f, (TrenchGUI.VH - 800f) * 0.5f, 800f, 800f);
+            // 0.36.1: el alto sale del bloque de opciones (antes 800 fijo y, al añadir
+            // "Voces de las ratas", el botón Volver pisaba la fila de Resolución).
+            float oh = TrenchGUI.OptionsBlockHeight + 180f;
+            var r = new Rect((TrenchGUI.VW - 860f) * 0.5f, (TrenchGUI.VH - oh) * 0.5f, 860f, oh);
             TrenchGUI.Panel(r);
             TrenchGUI.Title(new Rect(r.x, r.y + 18f, r.width, 50f), "OPCIONES");
             TrenchGUI.OptionsBlock(new Rect(r.x + 40f, r.y + 90f, r.width - 80f, TrenchGUI.OptionsBlockHeight));
@@ -71,7 +74,7 @@ namespace Ratms.UI
                 }
                 case Page.Options:
                 {
-                    var r = Centered(800f, 800f);
+                    var r = Centered(860f, TrenchGUI.OptionsBlockHeight + 180f);   // 0.36.1: crece con las opciones
                     TrenchGUI.Panel(r);
                     TrenchGUI.Title(new Rect(r.x, r.y + 18f, r.width, 50f), "OPCIONES");
                     TrenchGUI.OptionsBlock(new Rect(r.x + 40f, r.y + 90f, r.width - 80f, TrenchGUI.OptionsBlockHeight));

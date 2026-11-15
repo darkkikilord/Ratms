@@ -440,8 +440,13 @@ namespace Ratms.Networking
 
             // La primera rata de cada cliente es su "player object"; las demás
             // son suyas igualmente (ownership) pero sin ese papel.
-            if (asPlayerObject) no.SpawnAsPlayerObject(clientId, destroyWithScene: true);
-            else no.SpawnWithOwnership(clientId, destroyWithScene: true);
+            // 0.36.1: NINGUNA rata es el "PlayerObject" de Netcode. Al despawnear el
+            // PlayerObject de un jugador, Netcode le quita la vista de los PlayerObjects
+            // de los DEMÁS; al volver a la sala (revancha) el cliente ya no recibía el
+            // "borra la rata del anfitrión", la destruía por su cuenta y su red se
+            // rompía (se movía en su pantalla pero nadie lo veía ni podía disparar).
+            // Nada del juego usa PlayerObject: basta con dar la propiedad.
+            no.SpawnWithOwnership(clientId, destroyWithScene: true);
 
             spawnedRats.Add(no);
 

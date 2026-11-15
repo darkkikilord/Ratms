@@ -14,6 +14,7 @@
 #>
 param(
     [switch]$SkipBuild,
+    [switch]$Rematch,   # 0.36.1: prueba de la revancha online
     [string]$Biome = "",
     [switch]$Coop,
     [string]$UnityExe = "B:\Juegos\6000.0.50f1\Editor\Unity.exe",
@@ -53,9 +54,11 @@ function Start-Game($role, $dir, $x) {
 }
 
 Write-Host ">>> Lanzando HOST y CLIENTE..."
-$h = Start-Game "host" $hostDir
+$hostRole = if ($Rematch) { "rematchhost" } else { "host" }
+$clientRole = if ($Rematch) { "rematchclient" } else { "client" }
+$h = Start-Game $hostRole $hostDir
 Start-Sleep -Seconds 2
-$c = Start-Game "client" $clientDir
+$c = Start-Game $clientRole $clientDir
 
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 while ((-not $h.HasExited -or -not $c.HasExited) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }

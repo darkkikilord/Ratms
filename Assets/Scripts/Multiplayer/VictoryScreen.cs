@@ -207,9 +207,42 @@ namespace Ratms.Networking
 
             if (MatchRules.Mode != MatchMode.Online) { OnLeaveRoomClicked(); return; }
 
+            StartCoroutine(BackToLobbyClean(nm));
+        }
+
+        /// <summary>
+        ///  0.36.1 — Volver a la sala SIN dejar basura en los clientes.
+        ///  Antes se cambiaba de escena directamente: el cliente descargaba la
+        ///  escena de juego ANTES de recibir el "borra esta rata" del anfitrión,
+        ///  Unity la destruía por su cuenta ("Invalid Destroy") y Netcode se
+        ///  quedaba apuntando a un objeto destruido → un error en CADA fotograma
+        ///  y su bucle de red roto: en la revancha el cliente se movía en su
+        ///  pantalla pero nada llegaba a los demás (ni armas ni movimiento).
+        ///  Ahora el anfitrión retira de la red todo lo creado en la partida
+        ///  (ratas, granadas, misiles...), espera a que llegue y luego cambia.
+        /// </summary>
+        private System.Collections.IEnumerator BackToLobbyClean(NetworkManager nm)
+        {
+            int n = DespawnMatchObjects(nm);
+            Debug.Log($"[VictoryScreen] Revancha: retiro {n} objetos de red antes de volver a la sala.");
+            yield return null;
+            yield return new WaitForSecondsRealtime(0.4f);
+            if (nm == null || !nm.IsServer) yield break;
             // Usamos NGO SceneManager para que TODOS los clientes carguen la
             // escena a la vez, manteniendo la conexión y el estado de sala.
             nm.SceneManager.LoadScene(mainMenuSceneName, LoadSceneMode.Single);
+        }
+
+        /// <summary>(Servidor) Despawnea los objetos de red creados en partida (no los de la escena).</summary>
+        public static int DespawnMatchObjects(NetworkManager nm)
+        {
+            if (nm == null || !nm.IsServer || nm.SpawnManager == null) return 0;
+            var list = new System.Collections.Generic.List<NetworkObject>();
+            foreach (var no in nm.SpawnManager.SpawnedObjectsList)
+                if (no != null && no.IsSpawned && no.IsSceneObject != true) list.Add(no);
+            foreach (var no in list)
+                if (no != null && no.IsSpawned) no.Despawn(true);
+            return list.Count;
         }
 
         /// <summary>

@@ -172,6 +172,7 @@ namespace Ratms.Testing
             if (role == "trench" || role == "trench2") { yield return RunTrench(); yield break; }
             if (role == "modes") { yield return RunModes(); yield break; }
             if (role == "show") { yield return RunShow(); yield break; }
+            if (role == "promo") { yield return RunPromo(); yield break; }
 
             // --- 1) Menú principal ---------------------------------
             yield return new WaitForSeconds(2.5f);

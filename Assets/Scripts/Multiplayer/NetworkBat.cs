@@ -252,7 +252,7 @@ namespace Ratms.Networking
             {
                 var nh = col != null ? col.GetComponentInParent<NetworkHealth>() : null;
                 if (nh == null || nh == ownHealth || nh.IsDead.Value || !done.Add(nh)) continue;
-                nh.ApplyDamageServer(biteDamage, nh.BodyCenter, DamageType.Melee);
+                nh.ApplyDamageServer(Mathf.RoundToInt(biteDamage * (movement != null ? movement.Body.melee : 1f)), nh.BodyCenter, DamageType.Melee);
                 nh.ApplyKnockbackClientRpc((dir + Vector2.up * 0.3f).normalized * biteKnockback, 0.4f);
             }
             if (done.Count > 0) ownHealth.HealServer(biteHeal);
@@ -294,7 +294,7 @@ namespace Ratms.Networking
                 done.Add(nh);
                 victims++;
 
-                nh.ApplyDamageServer(damage, nh.BodyCenter, DamageType.Melee);
+                nh.ApplyDamageServer(Mathf.RoundToInt(damage * (movement != null ? movement.Body.melee : 1f)), nh.BodyCenter, DamageType.Melee);
 
                 // Empujón en la dirección del golpe, con algo de altura para
                 // que "salga volando" en parábola (si no, raspa por el suelo).

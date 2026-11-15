@@ -14,7 +14,7 @@ namespace Ratms.UI
     {
         public Action OnClose;
         private static readonly System.Random rng = new();
-        private static readonly uint[] previewCache = new uint[TeamProfile.Slots];
+        private static readonly ulong[] previewCache = new ulong[TeamProfile.Slots];
 
 
         private static string PartLabel(RatLook l, int part) => part switch
@@ -22,10 +22,14 @@ namespace Ratms.UI
             0 => RatLook.BodyName(l.body),
             1 => RatLook.FurName(l.fur),
             2 => RatLook.HatName(l.hat),
-            3 => l.tail switch { RatLook.TailType.Larga => "cola larga", RatLook.TailType.Munon => "muñón de cola", RatLook.TailType.SinCola => "sin cola", _ => "cola normal" },
-            4 => l.eye switch { RatLook.EyeType.Parche => "parche", RatLook.EyeType.Loco => "ojo loco", RatLook.EyeType.Monoculo => "monóculo", _ => "ojos normales" },
-            _ => l.mouth switch { RatLook.MouthType.Cigarro => "cigarro", RatLook.MouthType.Puro => "puro", RatLook.MouthType.Mellada => "mellada", _ => "boca normal" },
+            3 => RatLook.TailName(l.tail),
+            4 => RatLook.EyeName(l.eye),
+            5 => RatLook.MouthName(l.mouth),
+            6 => RatLook.EarName(l.ear),
+            7 => RatLook.MarkName(l.mark),
+            _ => RatLook.AccName(l.acc),
         };
+        private const int Parts = 9;
 
         private static GUIStyle partStyle;
 
@@ -35,12 +39,15 @@ namespace Ratms.UI
         {
             switch (part)
             {
-                case 0: l.body = (RatLook.BodyType)Wrap((int)l.body, dir, 5); break;
-                case 1: l.fur = (RatLook.FurType)Wrap((int)l.fur, dir, 6); break;
-                case 2: l.hat = (RatLook.HatType)Wrap((int)l.hat, dir, 6); break;
-                case 3: l.tail = (RatLook.TailType)Wrap((int)l.tail, dir, 4); break;
-                case 4: l.eye = (RatLook.EyeType)Wrap((int)l.eye, dir, 4); break;
-                default: l.mouth = (RatLook.MouthType)Wrap((int)l.mouth, dir, 4); break;
+                case 0: l.body = (RatLook.BodyType)Wrap((int)l.body, dir, RatLook.Bodies); break;
+                case 1: l.fur = (RatLook.FurType)Wrap((int)l.fur, dir, RatLook.Furs); break;
+                case 2: l.hat = (RatLook.HatType)Wrap((int)l.hat, dir, RatLook.Hats); break;
+                case 3: l.tail = (RatLook.TailType)Wrap((int)l.tail, dir, RatLook.Tails); break;
+                case 4: l.eye = (RatLook.EyeType)Wrap((int)l.eye, dir, RatLook.Eyes); break;
+                case 5: l.mouth = (RatLook.MouthType)Wrap((int)l.mouth, dir, RatLook.Mouths); break;
+                case 6: l.ear = (RatLook.EarType)Wrap((int)l.ear, dir, RatLook.Ears); break;
+                case 7: l.mark = (RatLook.MarkType)Wrap((int)l.mark, dir, RatLook.Marks); break;
+                default: l.acc = (RatLook.AccessoryType)Wrap((int)l.acc, dir, RatLook.Accessories); break;
             }
             return l;
         }
@@ -48,7 +55,7 @@ namespace Ratms.UI
         private void OnGUI()
         {
             TrenchGUI.Begin();
-            var r = new Rect((TrenchGUI.VW - 1000f) * 0.5f, (TrenchGUI.VH - 820f) * 0.5f, 1000f, 820f);
+            var r = new Rect((TrenchGUI.VW - 1000f) * 0.5f, (TrenchGUI.VH - 960f) * 0.5f, 1000f, 960f);
             TrenchGUI.Panel(r);
             TrenchGUI.Title(new Rect(r.x, r.y + 16f, r.width, 50f), "MI EQUIPO");
             TrenchGUI.Small(new Rect(r.x + 40f, r.y + 66f, r.width - 80f, 40f),
@@ -61,11 +68,11 @@ namespace Ratms.UI
 
             for (int i = 0; i < TeamProfile.Slots; i++)
             {
-                var row = new Rect(x, y, w, 120f);
+                var row = new Rect(x, y, w, 156f);
                 GUI.DrawTexture(new Rect(row.x - 6f, row.y - 4f, row.width + 12f, row.height + 8f), Texture2D.blackTexture);
 
                 // Retrato (ampliado ×3)
-                uint look = TeamProfile.Look(i);
+                ulong look = TeamProfile.Look(i);
                 if (look == 0)
                 {
                     if (previewCache[i] == 0) previewCache[i] = RatLook.Random(rng).Pack();
@@ -89,10 +96,18 @@ namespace Ratms.UI
                 // Si estaba "al azar", se fija la rata que se ve y se cambia esa pieza.
                 {
                     var l = RatLook.Unpack(look);
-                    float bw = (row.xMax - fx) / 6f;
-                    for (int p = 0; p < 6; p++)
+                    // 0.24: 9 piezas en dos filas (5 + 4) y la ventaja del cuerpo arriba.
+                    var stats = l.Stats;
+                    if (!string.IsNullOrEmpty(stats.summary))
                     {
-                        var br = new Rect(fx + p * bw, row.y + 80f, bw - 6f, 34f);
+                        var c0 = GUI.color; GUI.color = new Color(1f, 0.85f, 0.45f);
+                        TrenchGUI.Small(new Rect(fx + 90f, row.y + 2f, 560f, 26f), Loc.T(stats.summary));
+                        GUI.color = c0;
+                    }
+                    float bw = (row.xMax - fx) / 5f;
+                    for (int p = 0; p < Parts; p++)
+                    {
+                        var br = new Rect(fx + (p % 5) * bw, row.y + 80f + (p / 5) * 38f, bw - 6f, 34f);
                         bool hit = TrenchGUI.Button(br, "");
                         if (partStyle == null)
                             partStyle = new GUIStyle(GUI.skin.label)
@@ -117,7 +132,7 @@ namespace Ratms.UI
                     TeamProfile.SetLook(i, 0);
                     previewCache[i] = RatLook.Random(rng).Pack();
                 }
-                y += 136f;
+                y += 172f;
             }
 
             if (TrenchGUI.Button(new Rect(r.x + r.width * 0.3f, r.yMax - 76f, r.width * 0.4f, 54f), "Listo", big: true) ||

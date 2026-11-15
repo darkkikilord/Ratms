@@ -38,7 +38,7 @@ namespace Ratms.Networking
         private const float PivotY = 1f;       // fila de los pies (debajo queda el contorno)
 
         private enum Frame { Idle0, Idle1, Blink, Walk0, Walk1, Walk2, Walk3, Air, Hurt, Count }
-        private static readonly Dictionary<(uint, int, int), Sprite[]> cache = new();
+        private static readonly Dictionary<(ulong, int, int), Sprite[]> cache = new();
 
         private NetworkPlayerMovement movement;
         private SpriteRenderer originalBody;
@@ -155,7 +155,7 @@ namespace Ratms.Networking
         /// <summary>Color de un equipo (0-3).</summary>
         public static Color32 ColorForTeam(int teamIndex) => TeamColors[Mathf.Abs(teamIndex) % TeamColors.Length];
 
-        public void Init(NetworkPlayerMovement m, int teamIndex, bool isDummy, uint lookCode)
+        public void Init(NetworkPlayerMovement m, int teamIndex, bool isDummy, ulong lookCode)
         {
             movement = m;
             col = m.GetComponent<Collider2D>();
@@ -182,21 +182,21 @@ namespace Ratms.Networking
         }
 
         /// <summary>Los 4 fotogramas de andar de un aspecto (desfile del menú principal).</summary>
-        public static Sprite[] WalkFrames(uint lookCode, Color32 team)
+        public static Sprite[] WalkFrames(ulong lookCode, Color32 team)
         {
             var f = GetFrames(lookCode, team);
             return new[] { f[(int)Frame.Walk0], f[(int)Frame.Walk1], f[(int)Frame.Walk2], f[(int)Frame.Walk3] };
         }
 
         /// <summary>Muestra con LESIONES (galería de la prueba). <paramref name="walkFrame"/> 0-3 = andando, -1 = quieta.</summary>
-        public static Sprite PreviewInjured(uint lookCode, Color32 team, byte injuries, int walkFrame = -1)
+        public static Sprite PreviewInjured(ulong lookCode, Color32 team, byte injuries, int walkFrame = -1)
         {
             var f = GetFrames(lookCode, team, 0, 0, injuries);
             return f[walkFrame >= 0 ? (int)Frame.Walk0 + (walkFrame % 4) : (int)Frame.Idle0];
         }
 
         /// <summary>Sprite de muestra (quieta) de un aspecto: para menús y pruebas.</summary>
-        public static Sprite Preview(uint lookCode, Color32 team) => GetFrames(lookCode, team)[(int)Frame.Idle0];
+        public static Sprite Preview(ulong lookCode, Color32 team) => GetFrames(lookCode, team)[(int)Frame.Idle0];
 
         private void LateUpdate()
         {
@@ -419,6 +419,41 @@ namespace Ratms.Networking
                 legH = 2, backLegX = 9, frontLegX = 17, armX = 19.6f, armY = 5.6f, armR = 1.7f,
                 tailX = 6.4f, tailY = 5f, tailLen = 0.45f, naked = true,
             },
+            RatLook.BodyType.Gigante => new Anat   // 0.24: mastodonte de cloaca
+            {
+                bx = 13.4f, by = 10.4f, brx = 7.4f, bry = 8.0f, bdx = 2.8f, bdy = -1.2f, belRx = 3.6f, belRy = 5.2f,
+                hx = 18.4f, hy = 20.4f, hrx = 5.8f, hry = 4.6f, snoutLen = 4.0f, snoutRy = 2.5f,
+                legH = 3, backLegX = 9, frontLegX = 16, armX = 20.6f, armY = 11.4f, armR = 2.7f,
+                tailX = 7.5f, tailY = 4.5f, tailLen = 0.85f,
+            },
+            RatLook.BodyType.Enana => new Anat   // ratoncillo: cuerpo chico, cabeza grande
+            {
+                bx = 14.2f, by = 6.6f, brx = 4.0f, bry = 4.4f, bdx = 1.6f, bdy = -0.8f, belRx = 2.0f, belRy = 2.8f,
+                hx = 17.2f, hy = 12.6f, hrx = 4.6f, hry = 3.9f, snoutLen = 2.8f, snoutRy = 1.8f,
+                legH = 2, backLegX = 11, frontLegX = 15, armX = 18f, armY = 7.2f, armR = 1.6f,
+                tailX = 10.5f, tailY = 3.6f, tailLen = 0.85f,
+            },
+            RatLook.BodyType.Salchicha => new Anat   // larguísima y bajita
+            {
+                bx = 12.6f, by = 7.0f, brx = 8.2f, bry = 4.2f, bdx = 1.2f, bdy = -1.2f, belRx = 6.0f, belRy = 2.2f,
+                hx = 21.6f, hy = 11.2f, hrx = 4.2f, hry = 3.5f, snoutLen = 3.2f, snoutRy = 1.9f,
+                legH = 2, backLegX = 6, frontLegX = 18, armX = 21f, armY = 6.4f, armR = 1.8f,
+                tailX = 5f, tailY = 5.5f, tailLen = 0.55f,
+            },
+            RatLook.BodyType.Cabezona => new Anat   // cabeza enorme, cuerpo chico
+            {
+                bx = 13.4f, by = 7.6f, brx = 4.8f, bry = 5.2f, bdx = 2f, bdy = -0.9f, belRx = 2.4f, belRy = 3.2f,
+                hx = 17.4f, hy = 16.6f, hrx = 6.6f, hry = 5.4f, snoutLen = 3.4f, snoutRy = 2.4f,
+                legH = 2, backLegX = 10, frontLegX = 15, armX = 18.6f, armY = 8.2f, armR = 1.9f,
+                tailX = 9f, tailY = 4f, tailLen = 0.9f,
+            },
+            RatLook.BodyType.Erguida => new Anat   // de pie como un suricato
+            {
+                bx = 14.4f, by = 11.6f, brx = 4.2f, bry = 7.4f, bdx = 1.6f, bdy = 0f, belRx = 2.2f, belRy = 5.4f,
+                hx = 16.6f, hy = 22.0f, hrx = 4.4f, hry = 3.6f, snoutLen = 3.6f, snoutRy = 1.9f,
+                legH = 4, backLegX = 12, frontLegX = 15, armX = 18.2f, armY = 14.2f, armR = 1.9f,
+                tailX = 11f, tailY = 5f, tailLen = 1.05f,
+            },
             _ => new Anat   // GORDA (la de siempre)
             {
                 bx = 13.8f, by = 9.3f, brx = 5.8f, bry = 6.8f, bdx = 2.4f, bdy = -1.1f, belRx = 2.8f, belRy = 4.4f,
@@ -428,7 +463,7 @@ namespace Ratms.Networking
             },
         };
 
-        private struct Palette { public Color32 fur, furL, furD, belly, bellyD, pink, pinkD; }
+        private struct Palette { public Color32 fur, furL, furD, belly, bellyD, pink, pinkD, spot; }
 
         private static Palette PaletteOf(RatLook look)
         {
@@ -440,6 +475,7 @@ namespace Ratms.Networking
                     pink = new Color32(214, 120, 120, 255), pinkD = new Color32(166, 86, 88, 255),
                 };
             var p = new Palette { pink = new Color32(190, 124, 116, 255), pinkD = new Color32(146, 88, 84, 255) };
+            p.spot = new Color32(60, 50, 46, 255);
             switch (look.fur)
             {
                 case RatLook.FurType.Gris:
@@ -455,6 +491,31 @@ namespace Ratms.Networking
                     p.fur = new Color32(214, 206, 196, 255); p.furL = new Color32(238, 234, 226, 255); p.furD = new Color32(168, 158, 150, 255);
                     p.belly = new Color32(234, 226, 216, 255); p.bellyD = new Color32(200, 190, 180, 255);
                     p.pink = new Color32(230, 140, 146, 255); p.pinkD = new Color32(186, 100, 110, 255); break;
+                case RatLook.FurType.Atigrada:
+                    p.fur = new Color32(138, 112, 80, 255); p.furL = new Color32(170, 142, 104, 255); p.furD = new Color32(92, 72, 50, 255);
+                    p.belly = new Color32(190, 168, 130, 255); p.bellyD = new Color32(156, 136, 102, 255); p.spot = new Color32(60, 46, 34, 255); break;
+                case RatLook.FurType.Manchada:
+                    p.fur = new Color32(218, 212, 202, 255); p.furL = new Color32(240, 236, 228, 255); p.furD = new Color32(176, 168, 158, 255);
+                    p.belly = new Color32(236, 230, 220, 255); p.bellyD = new Color32(202, 194, 184, 255); p.spot = new Color32(44, 38, 40, 255); break;
+                case RatLook.FurType.Zombi:
+                    p.fur = new Color32(110, 128, 92, 255); p.furL = new Color32(138, 158, 116, 255); p.furD = new Color32(74, 90, 62, 255);
+                    p.belly = new Color32(150, 160, 118, 255); p.bellyD = new Color32(118, 128, 92, 255); p.spot = new Color32(132, 40, 44, 255);
+                    p.pink = new Color32(150, 120, 118, 255); p.pinkD = new Color32(110, 86, 86, 255); break;
+                case RatLook.FurType.Chamuscada:
+                    p.fur = new Color32(48, 40, 38, 255); p.furL = new Color32(74, 62, 56, 255); p.furD = new Color32(28, 22, 22, 255);
+                    p.belly = new Color32(84, 70, 62, 255); p.bellyD = new Color32(60, 50, 46, 255); p.spot = new Color32(240, 120, 40, 255); break;
+                case RatLook.FurType.Dorada:
+                    p.fur = new Color32(196, 150, 70, 255); p.furL = new Color32(230, 190, 104, 255); p.furD = new Color32(146, 104, 44, 255);
+                    p.belly = new Color32(236, 206, 148, 255); p.bellyD = new Color32(204, 170, 112, 255); break;
+                case RatLook.FurType.Azulada:
+                    p.fur = new Color32(96, 112, 140, 255); p.furL = new Color32(126, 144, 172, 255); p.furD = new Color32(64, 76, 100, 255);
+                    p.belly = new Color32(160, 170, 186, 255); p.bellyD = new Color32(126, 136, 154, 255); break;
+                case RatLook.FurType.Rosa:
+                    p.fur = new Color32(206, 112, 150, 255); p.furL = new Color32(232, 146, 180, 255); p.furD = new Color32(156, 74, 110, 255);
+                    p.belly = new Color32(236, 182, 198, 255); p.bellyD = new Color32(204, 146, 166, 255); break;
+                case RatLook.FurType.Canosa:
+                    p.fur = new Color32(168, 166, 162, 255); p.furL = new Color32(204, 202, 198, 255); p.furD = new Color32(122, 120, 118, 255);
+                    p.belly = new Color32(206, 202, 196, 255); p.bellyD = new Color32(172, 168, 162, 255); break;
                 default:   // Parda y Sarnosa
                     p.fur = new Color32(112, 100, 88, 255); p.furL = new Color32(142, 128, 110, 255); p.furD = new Color32(76, 66, 58, 255);
                     p.belly = new Color32(158, 142, 118, 255); p.bellyD = new Color32(126, 112, 92, 255); break;
@@ -465,7 +526,7 @@ namespace Ratms.Networking
         // ============================================================
         //  DIBUJO
         // ============================================================
-        private static Sprite[] GetFrames(uint lookCode, Color32 team, int wound = 0, int splat = 0, byte inj = 0)
+        private static Sprite[] GetFrames(ulong lookCode, Color32 team, int wound = 0, int splat = 0, byte inj = 0)
         {
             var key = (lookCode, (team.r << 16) | (team.g << 8) | team.b, wound + splat * 4 + inj * 16);
             if (cache.TryGetValue(key, out var cached)) return cached;
@@ -480,7 +541,9 @@ namespace Ratms.Networking
         private const byte Empty = 0, Fur = 1, Belly = 2, Pink = 3, Eye = 4, Pupil = 5, Helmet = 6, Whisker = 7,
                            Band = 8, Teeth = 9, Scar = 10, Mange = 11, Bandage = 12, Blood = 13, Cig = 14, Ember = 15,
                            Brow = 16, Claw = 17, Wood = 18, Brass = 19, Leather = 20, Rubber = 21, Glass = 22, Gold = 23,
-                           Wrinkle = 24, Cigar = 25, Patch = 26, BandD = 27;
+                           Wrinkle = 24, Cigar = 25, Patch = 26, BandD = 27,
+                           // 0.24
+                           Spot = 28, Bone = 29, Lamp = 30, Red = 31, Hide = 32, Felt = 33, Metal = 34;
 
         private static Sprite Draw(Frame frame, RatLook look, Color32 team, int wound = 0, int splat = 0, byte inj = 0)
         {
@@ -542,6 +605,36 @@ namespace Ratms.Networking
                 }
             }
             else Dot(mat, shade, a.tailX - 0.5f, a.tailY + bob, 0.8f, Scar);   // sin cola: cicatriz
+            if (tailLen > 0f && (look.tail == RatLook.TailType.Rizada || look.tail == RatLook.TailType.Bifurcada))
+            {
+                float tex2 = a.tailX - 9f * tailLen, tey = a.tailY + bob + (4f + 5f * tailUp) * tailLen + (tailLen > 0.6f ? 1.2f : 0f);
+                if (look.tail == RatLook.TailType.Rizada)   // tirabuzón en la punta
+                    for (float t = 0f; t < 5.6f; t += 0.35f)
+                    {
+                        float r = 2.2f - t * 0.3f;
+                        Dot(mat, shade, tex2 - 0.5f + Mathf.Cos(t) * r, tey + 1.2f + Mathf.Sin(t) * r, 0.5f, Pink);
+                    }
+                else   // bífida: dos puntas
+                    for (int k = 1; k <= 3; k++)
+                    {
+                        Set(mat, shade, Mathf.RoundToInt(tex2) - k, Mathf.RoundToInt(tey) + k, Pink, 0);
+                        Set(mat, shade, Mathf.RoundToInt(tex2) - k, Mathf.RoundToInt(tey) - k + 1, Pink, -1);
+                    }
+            }
+
+            // --- 0.24: CAPA del color del equipo, ondeando por detrás ---
+            if (look.acc == RatLook.AccessoryType.Capa)
+            {
+                float neckY = hy - a.hry * 0.6f;
+                float wave = air ? 2f : tailSway * 0.8f;
+                for (int y = 3 + bob; y <= Mathf.RoundToInt(neckY); y++)
+                {
+                    float k = (neckY - y) / Mathf.Max(1f, neckY - 3f);
+                    int x0 = Mathf.RoundToInt(a.bx - a.brx - 1.5f - k * 2.5f + wave * k);
+                    int x1 = Mathf.RoundToInt(hx - a.hrx * 0.4f);
+                    for (int x = x0; x <= x1; x++) Set(mat, shade, x, y, x == x0 ? BandD : Band, (sbyte)(x == x0 ? -1 : 0), onlyEmpty: true);
+                }
+            }
 
             // --- Pata de atrás ---
             if (backLegGone) LegStump(mat, shade, a.backLegX, a.legH, footLift);
@@ -667,14 +760,28 @@ namespace Ratms.Networking
                 Set(mat, shade, scx, scy, BandD, 0); Set(mat, shade, scx - 1, scy - 1 + (tailSway > 0 ? 1 : 0), BandD, 0);
                 Set(mat, shade, scx - 2, scy - 1 + (air ? 1 : 0), Band, 0);
             }
+            DrawAccessory(mat, shade, look, a, hx, hy, bob);
 
             // --- Oreja de atrás ---
             if (look.ear != RatLook.EarType.Arrancada && !a.naked)
             {
                 float er = a.hrx * 0.57f * (look.ear == RatLook.EarType.Grande ? 1.4f : 1f);
                 float earX = hx - a.hrx * 0.87f, earY = hy + a.hry * 0.9f;
-                Ellipse(mat, shade, earX, earY, er, er, Fur);
-                Ellipse(mat, shade, earX + 0.1f, earY - 0.1f, er * 0.52f, er * 0.52f, Pink);
+                if (look.ear == RatLook.EarType.Puntiaguda)   // orejas de punta (de murciélago)
+                {
+                    Ellipse(mat, shade, earX, earY + er * 0.5f, er * 0.62f, er * 1.45f, Fur);
+                    Ellipse(mat, shade, earX + 0.1f, earY + er * 0.4f, er * 0.3f, er * 0.9f, Pink);
+                }
+                else
+                {
+                    Ellipse(mat, shade, earX, earY, er, er, Fur);
+                    Ellipse(mat, shade, earX + 0.1f, earY - 0.1f, er * 0.52f, er * 0.52f, Pink);
+                }
+                if (look.ear == RatLook.EarType.Pendiente)   // aro de oro
+                {
+                    int ex0 = Mathf.RoundToInt(earX + er * 0.3f), ey0 = Mathf.RoundToInt(earY - er * 0.9f);
+                    Set(mat, shade, ex0, ey0, Gold, 0); Set(mat, shade, ex0, ey0 - 1, Gold, 0); Set(mat, shade, ex0 + 1, ey0 - 1, Gold, 1);
+                }
                 if (look.ear == RatLook.EarType.Rota)
                 {
                     Set(mat, shade, Mathf.RoundToInt(earX + er * 0.5f), Mathf.RoundToInt(earY + er * 0.8f), Empty, 0);
@@ -732,6 +839,16 @@ namespace Ratms.Networking
             {
                 Set(mat, shade, cheekX, sy + 1, Scar, 0); Set(mat, shade, cheekX + 1, sy, Scar, 0); Set(mat, shade, cheekX + 2, sy - 1, Scar, 0);
             }
+            else if (look.mark == RatLook.MarkType.PinturaGuerra)   // dos rayas del color del equipo
+            {
+                for (int k = 0; k < 3; k++) { Set(mat, shade, cheekX + k, sy, Band, 0, onlyIfSolid: true); Set(mat, shade, cheekX + k, sy - 2, Band, 0, onlyIfSolid: true); }
+            }
+            else if (look.mark == RatLook.MarkType.Quemadura)
+            {
+                Set(mat, shade, cheekX - 1, sy, Spot, 0, onlyIfSolid: true); Set(mat, shade, cheekX, sy, Scar, 0, onlyIfSolid: true);
+                Set(mat, shade, cheekX, sy + 1, Spot, 0, onlyIfSolid: true); Set(mat, shade, cheekX - 1, sy - 1, Scar, 0, onlyIfSolid: true);
+                Set(mat, shade, cheekX + 1, sy - 1, Spot, 0, onlyIfSolid: true);
+            }
             else if (look.mark == RatLook.MarkType.Puntos)   // costura de Frankenstein
             {
                 for (int k = 0; k < 4; k++)
@@ -757,6 +874,27 @@ namespace Ratms.Networking
                     for (int k = 0; k < 4; k++) { Set(mat, shade, cx + k, cy, Cigar, 0); Set(mat, shade, cx + k, cy - 1, Cigar, -1); }
                     Set(mat, shade, cx + 4, cy, Ember, 0); Set(mat, shade, cx + 4, cy - 1, Ember, 0);
                     Set(mat, shade, cx + 1, cy, Band, 0);   // anilla del puro (color de equipo)
+                }
+                else if (look.mouth == RatLook.MouthType.Pipa)
+                {
+                    for (int k = 0; k < 3; k++) Set(mat, shade, cx + k, cy, Wood, 0);
+                    Rect(mat, shade, cx + 3, cy, 2, 3, Wood, -1);
+                    Set(mat, shade, cx + 3, cy + 3, Ember, 0); Set(mat, shade, cx + 4, cy + 3, Brow, 0);
+                }
+                else if (look.mouth == RatLook.MouthType.Espiga)   // brizna de trigo
+                {
+                    for (int k = 0; k < 5; k++) Set(mat, shade, cx + k, cy - 1 + k / 2, Brass, 0);
+                    Set(mat, shade, cx + 5, cy + 2, Brass, 1); Set(mat, shade, cx + 5, cy + 1, Brass, 1);
+                }
+                else if (look.mouth == RatLook.MouthType.Lengua)   // lengua fuera
+                {
+                    Set(mat, shade, cx, cy - 1, Red, 0); Set(mat, shade, cx, cy - 2, Red, -1); Set(mat, shade, cx + 1, cy - 1, Red, 0);
+                }
+                else if (look.mouth == RatLook.MouthType.Mostacho)   // mostacho de general
+                {
+                    int my0 = Mathf.RoundToInt(hy - 1.4f);
+                    for (int k = -2; k <= 2; k++) Set(mat, shade, Mathf.RoundToInt(noseX) - 1 + k, my0 - (Mathf.Abs(k) == 2 ? 1 : 0), Brow, 0);
+                    Set(mat, shade, Mathf.RoundToInt(noseX) - 4, my0 - 2, Brow, 0); Set(mat, shade, Mathf.RoundToInt(noseX) + 2, my0 - 2, Brow, 0);
                 }
             }
 
@@ -792,6 +930,11 @@ namespace Ratms.Networking
                     Set(mat, shade, exx, ey, Brow, 0); Set(mat, shade, exx + 1, ey, Brow, 0);
                     if (hurt) Set(mat, shade, exx + 1, ey + 1, Brow, 0);
                 }
+                else if (look.eye == RatLook.EyeType.Demonio)   // ojos rojos que brillan
+                {
+                    Set(mat, shade, exx, ey, Red, 1); Set(mat, shade, exx + 1, ey, Red, 1); Set(mat, shade, exx, ey + 1, Red, 0);
+                    Set(mat, shade, exx + 1, ey + 2, Brow, 0); Set(mat, shade, exx + 2, ey + 2, Brow, 0);
+                }
                 else if (look.eye == RatLook.EyeType.Loco)   // ojo saltón de loco
                 {
                     Dot(mat, shade, exx + 0.5f, ey + 0.5f, 1.3f, Eye);
@@ -809,6 +952,23 @@ namespace Ratms.Networking
                     }
                 }
             }
+
+            // --- 0.24: más ojos (sobre lo anterior) ---
+            if (!masked && !a.naked)
+            {
+                if (look.eye == RatLook.EyeType.Cejijunta)   // ceja gorda y enfadada
+                    for (int k = -2; k <= 2; k++) { Set(mat, shade, exx + k, ey + 2 + (k < 0 ? 1 : 0), Brow, 0); Set(mat, shade, exx + k, ey + 3 + (k < 0 ? 1 : 0), Brow, 0, onlyIfSolid: true); }
+                else if (look.eye == RatLook.EyeType.Gafas)   // gafas de aviador
+                {
+                    for (int dx = -1; dx <= 2; dx++) { Set(mat, shade, exx + dx, ey + 2, Brass, 0); Set(mat, shade, exx + dx, ey - 1, Brass, -1); }
+                    Set(mat, shade, exx - 1, ey, Brass, 0); Set(mat, shade, exx - 1, ey + 1, Brass, 0); Set(mat, shade, exx + 2, ey, Brass, 0); Set(mat, shade, exx + 2, ey + 1, Brass, 0);
+                    Set(mat, shade, exx, ey, Glass, 1); Set(mat, shade, exx + 1, ey, Glass, 0); Set(mat, shade, exx, ey + 1, Glass, 0); Set(mat, shade, exx + 1, ey + 1, Glass, 0);
+                    for (int x = Mathf.RoundToInt(hx - a.hrx); x < exx - 1; x++) Set(mat, shade, x, ey + 1, Leather, 0, onlyIfSolid: true);
+                }
+            }
+
+            // --- 0.24: estampados del pelaje ---
+            FurPattern(mat, shade, look, rng);
 
             // --- Casco / gorro ---
             DrawHat(mat, shade, look, a, hx, hy);
@@ -898,6 +1058,105 @@ namespace Ratms.Networking
             return ToSprite(mat, shade, look, team);
         }
 
+        /// <summary>0.24: rayas, manchas, carne de zombi o brasas sobre el pelaje.</summary>
+        private static void FurPattern(byte[] mat, sbyte[] shade, RatLook look, System.Random rng)
+        {
+            if (look.body == RatLook.BodyType.Topo) return;
+            switch (look.fur)
+            {
+                case RatLook.FurType.Atigrada:
+                    for (int y = 0; y < S; y++)
+                        for (int x = 0; x < S; x++)
+                            if (mat[y * S + x] == Fur && ((x * 2 + y) % 7 == 0 || (x * 2 + y) % 7 == 1)) Set(mat, shade, x, y, Spot, 0);
+                    break;
+                case RatLook.FurType.Manchada:
+                    for (int k = 0; k < 5; k++)
+                    {
+                        int cx = 6 + rng.Next(20), cy = 4 + rng.Next(20);
+                        float r = 1.4f + (float)rng.NextDouble() * 1.8f;
+                        for (int y = cy - 3; y <= cy + 3; y++)
+                            for (int x = cx - 3; x <= cx + 3; x++)
+                                if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r) Set(mat, shade, x, y, Spot, 0, onlyIf: Fur);
+                    }
+                    break;
+                case RatLook.FurType.Zombi:   // carne al aire y algún hueso
+                    for (int k = 0, tries = 0; k < 6 && tries < 300; tries++)
+                    {
+                        int x = rng.Next(S), y = rng.Next(3, S);
+                        if (mat[y * S + x] != Fur) continue;
+                        Set(mat, shade, x, y, k % 3 == 0 ? Bone : Spot, 0);
+                        if (k % 2 == 0) Set(mat, shade, x + 1, y, Spot, -1, onlyIf: Fur);
+                        k++;
+                    }
+                    break;
+                case RatLook.FurType.Chamuscada:   // brasas que aún brillan
+                    for (int k = 0, tries = 0; k < 4 && tries < 300; tries++)
+                    {
+                        int x = rng.Next(S), y = rng.Next(3, S);
+                        if (mat[y * S + x] != Fur) continue;
+                        Set(mat, shade, x, y, Spot, 0);
+                        k++;
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>0.24: medalla, cartuchera, mochila, collar, pajarita o cantimplora.</summary>
+        private static void DrawAccessory(byte[] mat, sbyte[] shade, RatLook look, Anat a, float hx, float hy, int bob)
+        {
+            float cxB = a.bx + a.bdx, cyB = a.by + bob;
+            float nx = hx - a.hrx * 0.55f, ny = hy - a.hry * 0.8f;
+            switch (look.acc)
+            {
+                case RatLook.AccessoryType.Medalla:
+                    {
+                        int mx = Mathf.RoundToInt(cxB + 0.5f), my = Mathf.RoundToInt(cyB + a.bry * 0.35f);
+                        Set(mat, shade, mx, my + 1, Band, 0); Set(mat, shade, mx + 1, my + 1, BandD, 0);
+                        Set(mat, shade, mx, my, Gold, 1); Set(mat, shade, mx + 1, my, Gold, 0); Set(mat, shade, mx, my - 1, Gold, -1);
+                    }
+                    break;
+                case RatLook.AccessoryType.Cartuchera:   // bandolera cruzada con balas
+                    for (float t = 0f; t <= 1f; t += 0.06f)
+                    {
+                        float x = Mathf.Lerp(a.bx + a.brx * 0.55f, a.bx - a.brx * 0.65f, t);
+                        float y = Mathf.Lerp(cyB + a.bry * 0.75f, cyB - a.bry * 0.55f, t);
+                        int ix = Mathf.RoundToInt(x), iy = Mathf.RoundToInt(y);
+                        Set(mat, shade, ix, iy, Leather, 0, onlyIfSolid: true);
+                        if (Mathf.RoundToInt(t * 16) % 3 == 0) Set(mat, shade, ix, iy + 1, Brass, 1, onlyIfSolid: true);
+                    }
+                    break;
+                case RatLook.AccessoryType.Mochila:
+                    {
+                        int x0 = Mathf.RoundToInt(a.bx - a.brx - 1.5f), y0 = Mathf.RoundToInt(cyB - 1f);
+                        Rect(mat, shade, x0, y0, 4, 5, Hide, 0);
+                        for (int y = y0; y < y0 + 5; y++) Set(mat, shade, x0, y, Hide, -1);
+                        for (int x = x0; x < x0 + 4; x++) Set(mat, shade, x, y0 + 3, Leather, 0);
+                        Set(mat, shade, x0 + 2, y0 + 2, Brass, 0);
+                    }
+                    break;
+                case RatLook.AccessoryType.Collar:   // collar de pinchos
+                    for (int k = -2; k <= 2; k++)
+                    {
+                        int x = Mathf.RoundToInt(nx + k), y = Mathf.RoundToInt(ny + 0.4f);
+                        Set(mat, shade, x, y, Leather, 0);
+                        if (k % 2 == 0) Set(mat, shade, x, y - 1, Metal, 1);
+                    }
+                    break;
+                case RatLook.AccessoryType.Pajarita:
+                    {
+                        int px = Mathf.RoundToInt(nx + 2.2f), py = Mathf.RoundToInt(ny - 0.6f);
+                        Set(mat, shade, px, py, BandD, 0);
+                        Set(mat, shade, px - 1, py, Band, 0); Set(mat, shade, px - 2, py + 1, Band, 0); Set(mat, shade, px - 2, py - 1, Band, 0); Set(mat, shade, px - 2, py, Band, 0);
+                        Set(mat, shade, px + 1, py, Band, 0); Set(mat, shade, px + 2, py + 1, Band, 0); Set(mat, shade, px + 2, py - 1, Band, 0); Set(mat, shade, px + 2, py, Band, 0);
+                    }
+                    break;
+                case RatLook.AccessoryType.Cantimplora:
+                    Dot(mat, shade, a.bx - a.brx * 0.3f, cyB - a.bry * 0.55f, 1.6f, Metal);
+                    Set(mat, shade, Mathf.RoundToInt(a.bx - a.brx * 0.3f), Mathf.RoundToInt(cyB - a.bry * 0.55f + 1.6f), Leather, 0);
+                    break;
+            }
+        }
+
         /// <summary>Muñón de pata: un trocito de muslo con venda empapada.</summary>
         private static void LegStump(byte[] mat, sbyte[] shade, int x, int legH, int footLift)
         {
@@ -960,6 +1219,90 @@ namespace Ratms.Networking
                         for (int k = 0; k < 3; k++) Set(mat, shade, Mathf.RoundToInt(domeX - 1 + k * 2), ky + 1, BandD, 0);   // lunares
                     }
                     break;
+                case RatLook.HatType.Ninguno: break;
+                case RatLook.HatType.Boina:   // boina del color del equipo, ladeada
+                    Dome(mat, shade, domeX - 0.6f, domeY - 0.2f, rx * 1.05f, 2.2f, Band);
+                    Set(mat, shade, Mathf.RoundToInt(domeX - 0.6f), Mathf.RoundToInt(domeY + 2.2f), BandD, 0);   // rabito
+                    for (int x = Mathf.RoundToInt(domeX - rx * 1.1f); x <= Mathf.RoundToInt(domeX + rx * 0.6f); x++) Set(mat, shade, x, Mathf.RoundToInt(domeY - 0.2f), BandD, -1);
+                    break;
+                case RatLook.HatType.Chistera:   // sombrero de copa
+                    {
+                        int by = Mathf.RoundToInt(domeY);
+                        int x0 = Mathf.RoundToInt(domeX - rx * 0.62f), x1 = Mathf.RoundToInt(domeX + rx * 0.62f);
+                        for (int x = Mathf.RoundToInt(domeX - rx * 1.05f); x <= Mathf.RoundToInt(domeX + rx * 1.05f); x++) Set(mat, shade, x, by, Felt, -1);
+                        for (int y = by + 1; y <= by + 6; y++)
+                            for (int x = x0; x <= x1; x++) Set(mat, shade, x, y, y == by + 1 ? Band : Felt, (sbyte)(x == x0 ? 1 : x == x1 ? -1 : 0));
+                    }
+                    break;
+                case RatLook.HatType.Bicornio:   // de Napoleón
+                    Dome(mat, shade, domeX, domeY, rx * 1.45f, 3.0f, Felt);
+                    for (int x = Mathf.RoundToInt(domeX - rx * 1.4f); x <= Mathf.RoundToInt(domeX + rx * 1.4f); x++) Set(mat, shade, x, Mathf.RoundToInt(domeY), Gold, 0);
+                    Set(mat, shade, Mathf.RoundToInt(domeX), Mathf.RoundToInt(domeY + 1.5f), Band, 0);   // escarapela
+                    break;
+                case RatLook.HatType.Minero:   // casco de minero con lámpara
+                    Dome(mat, shade, domeX, domeY, rx * 0.95f, 3.2f, Helmet);
+                    for (int x = Mathf.RoundToInt(domeX - rx - 1); x <= Mathf.RoundToInt(domeX + rx + 1); x++) Set(mat, shade, x, Mathf.RoundToInt(domeY), Helmet, -1);
+                    {
+                        int lx = Mathf.RoundToInt(domeX + rx * 0.7f), ly = Mathf.RoundToInt(domeY + 1.4f);
+                        Set(mat, shade, lx, ly, Metal, 0); Set(mat, shade, lx + 1, ly, Lamp, 1); Set(mat, shade, lx + 1, ly + 1, Lamp, 0);
+                    }
+                    break;
+                case RatLook.HatType.Corona:   // corona de oro con rubí
+                    {
+                        int by = Mathf.RoundToInt(domeY);
+                        int x0 = Mathf.RoundToInt(domeX - rx * 0.75f), x1 = Mathf.RoundToInt(domeX + rx * 0.75f);
+                        for (int x = x0; x <= x1; x++)
+                        {
+                            Set(mat, shade, x, by, Gold, -1); Set(mat, shade, x, by + 1, Gold, 0);
+                            if ((x - x0) % 2 == 0) { Set(mat, shade, x, by + 2, Gold, 1); Set(mat, shade, x, by + 3, Gold, 1); }
+                        }
+                        Set(mat, shade, Mathf.RoundToInt(domeX), by + 1, Red, 1);
+                    }
+                    break;
+                case RatLook.HatType.Vaquero:   // sombrero vaquero
+                    Dome(mat, shade, domeX, domeY + 0.4f, rx * 0.8f, 3.4f, Hide);
+                    Set(mat, shade, Mathf.RoundToInt(domeX), Mathf.RoundToInt(domeY + 3.6f), Empty, 0);   // hundido
+                    for (int x = Mathf.RoundToInt(domeX - rx * 1.7f); x <= Mathf.RoundToInt(domeX + rx * 1.7f); x++)
+                    {
+                        float dx = Mathf.Abs(x - domeX) / (rx * 1.7f);
+                        Set(mat, shade, x, Mathf.RoundToInt(domeY + (dx > 0.8f ? 1 : 0)), Hide, -1);
+                    }
+                    for (int x = Mathf.RoundToInt(domeX - rx * 0.75f); x <= Mathf.RoundToInt(domeX + rx * 0.75f); x++) Set(mat, shade, x, Mathf.RoundToInt(domeY) + 1, Band, 0);
+                    break;
+                case RatLook.HatType.Fez:   // fez rojo con borla
+                    {
+                        int by = Mathf.RoundToInt(domeY);
+                        for (int y = 0; y < 4; y++)
+                        {
+                            int half = Mathf.RoundToInt(rx * 0.6f) - y / 2;
+                            for (int x = -half; x <= half; x++) Set(mat, shade, Mathf.RoundToInt(domeX) + x, by + y, Red, (sbyte)(x < 0 ? 1 : x == half ? -1 : 0));
+                        }
+                        Set(mat, shade, Mathf.RoundToInt(domeX), by + 4, Felt, 0);
+                        Set(mat, shade, Mathf.RoundToInt(domeX) - 1, by + 4, Felt, 0); Set(mat, shade, Mathf.RoundToInt(domeX) - 2, by + 3, Felt, 0); Set(mat, shade, Mathf.RoundToInt(domeX) - 2, by + 2, Felt, 0);
+                    }
+                    break;
+                case RatLook.HatType.Vikingo:   // casco con cuernos
+                    Dome(mat, shade, domeX, domeY, rx * 0.95f, 3.2f, Helmet);
+                    {
+                        int by = Mathf.RoundToInt(domeY + 1.5f);
+                        int lx = Mathf.RoundToInt(domeX - rx * 0.95f), rxx = Mathf.RoundToInt(domeX + rx * 0.95f);
+                        for (int k = 0; k < 4; k++)
+                        {
+                            Set(mat, shade, lx - 1 - (k > 1 ? 1 : 0), by + k, Bone, (sbyte)(k == 3 ? 1 : 0));
+                            Set(mat, shade, rxx + 1 + (k > 1 ? 1 : 0), by + k, Bone, (sbyte)(k == 3 ? 1 : -1));
+                        }
+                        for (int x = lx; x <= rxx; x++) Set(mat, shade, x, Mathf.RoundToInt(domeY), Brass, 0);
+                    }
+                    break;
+                case RatLook.HatType.Lana:   // gorro de lana a rayas con pompón
+                    Dome(mat, shade, domeX, domeY - 0.3f, rx * 0.95f, 3.4f, Band);
+                    for (int x = Mathf.RoundToInt(domeX - rx); x <= Mathf.RoundToInt(domeX + rx); x++)
+                    {
+                        Set(mat, shade, x, Mathf.RoundToInt(domeY - 0.3f), Bandage, 0, onlyIf: Band);
+                        Set(mat, shade, x, Mathf.RoundToInt(domeY + 1.7f), BandD, 0, onlyIf: Band);
+                    }
+                    Dot(mat, shade, domeX, domeY + 3.8f, 1.3f, Bandage);
+                    break;
                 default:   // BRODIE inglés (y el que lleva la máscara de gas): ala muy ancha
                     Dome(mat, shade, domeX + 0.2f, domeY, rx, 3.0f, Helmet);
                     {
@@ -996,6 +1339,8 @@ namespace Ratms.Networking
             Color32 whisker = new Color32(176, 166, 150, 190);
             Color32 helmet, helmetL, helmetD;
             if (look.hat == RatLook.HatType.Adrian) { helmet = new Color32(98, 110, 130, 255); helmetL = new Color32(130, 142, 162, 255); helmetD = new Color32(66, 76, 94, 255); }
+            else if (look.hat == RatLook.HatType.Minero) { helmet = new Color32(206, 170, 58, 255); helmetL = new Color32(236, 204, 92, 255); helmetD = new Color32(156, 122, 36, 255); }
+            else if (look.hat == RatLook.HatType.Vikingo) { helmet = new Color32(130, 132, 138, 255); helmetL = new Color32(168, 170, 176, 255); helmetD = new Color32(90, 92, 98, 255); }
             else if (look.hat == RatLook.HatType.Gorra) { helmet = new Color32(104, 92, 64, 255); helmetL = new Color32(134, 120, 86, 255); helmetD = new Color32(72, 62, 42, 255); }
             else { helmet = new Color32(96, 96, 62, 255); helmetL = new Color32(126, 126, 84, 255); helmetD = new Color32(66, 66, 44, 255); }
             Color32 teeth = new Color32(226, 200, 96, 255), scar = new Color32(112, 42, 40, 255), mange = new Color32(176, 126, 116, 255);
@@ -1042,6 +1387,13 @@ namespace Ratms.Networking
                     Wrinkle => wrinkle,
                     Cigar => s < 0 ? cigarD : cigar,
                     Patch => patch,
+                    Spot => s < 0 ? Darken(p.spot, 0.2f) : p.spot,
+                    Bone => s > 0 ? new Color32(246, 240, 222, 255) : new Color32(222, 212, 186, 255),
+                    Lamp => s > 0 ? new Color32(255, 250, 190, 255) : new Color32(255, 220, 110, 255),
+                    Red => s > 0 ? new Color32(236, 54, 48, 255) : s < 0 ? new Color32(132, 24, 26, 255) : new Color32(186, 34, 34, 255),
+                    Hide => s > 0 ? new Color32(176, 132, 82, 255) : s < 0 ? new Color32(112, 80, 48, 255) : new Color32(146, 106, 64, 255),
+                    Felt => s > 0 ? new Color32(64, 58, 62, 255) : s < 0 ? new Color32(20, 18, 20, 255) : new Color32(38, 34, 38, 255),
+                    Metal => s > 0 ? new Color32(196, 198, 204, 255) : new Color32(140, 142, 150, 255),
                     _ => new Color32(0, 0, 0, 0),
                 };
             }

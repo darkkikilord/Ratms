@@ -320,7 +320,7 @@ namespace Ratms.Networking
                 {
                     string ratName = profile != null && r < TeamProfile.Slots && !string.IsNullOrWhiteSpace(profile.names[r])
                         ? profile.names[r] : NextRatName();
-                    uint chosen = profile != null && r < TeamProfile.Slots ? profile.looks[r] : 0u;
+                    ulong chosen = profile != null && r < TeamProfile.Slots ? profile.looks[r] : 0u;
                     NetworkPlayerMovement.SpawnNextLook = chosen != 0 ? chosen : RatLook.Random(nameRng, bodies[r % bodies.Count]).Pack();
                     SpawnRat(clientId, team, ratName, asPlayerObject: !playerObjectGiven);
                     playerObjectGiven = true;
@@ -381,7 +381,9 @@ namespace Ratms.Networking
             // Equipo, nombre y vida: los lee la rata en su OnNetworkSpawn (servidor).
             NetworkPlayerMovement.SpawnNextTeam = team;
             NetworkPlayerMovement.SpawnNextName = ratName;
-            NetworkHealth.SpawnNextMaxHealth = MatchRules.StartHealth;
+            // 0.24: cada cuerpo con su vida (la diferencia escala con la vida inicial).
+            int bodyHp = NetworkPlayerMovement.SpawnNextLook != 0 ? RatLook.Unpack(NetworkPlayerMovement.SpawnNextLook).Stats.hp : 0;
+            NetworkHealth.SpawnNextMaxHealth = Mathf.Max(10, MatchRules.StartHealth + Mathf.RoundToInt(bodyHp * MatchRules.StartHealth / 100f));
 
             // La primera rata de cada cliente es su "player object"; las demás
             // son suyas igualmente (ownership) pero sin ese papel.

@@ -131,6 +131,11 @@ Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMe
 - Cliente: `ConnectionLostOverlay` ("¡SE CORTÓ LA CONEXIÓN!", cuenta atrás) con "Volver a la partida": vuelve al menú y `MultiplayerMenuController.AutoRejoin` entra solo con `RelayManager.LastJoinedCode`.
 - Prueba: `autotest-multi.ps1` — el cliente simula un corte, reconecta, juega otro turno y se va a propósito (el host debe ganar al momento). OJO: con Unity abierto, compila antes con `autotest.ps1` y usa `autotest-multi.ps1 -SkipBuild`.
 
+## Ratas a montones y cuerpos con ventajas (0.24)
+- `RatLook` pasa a 64 bits (`ulong`; `LookCode` en red, `TeamProfile` lo guarda como texto en `team_look64_i`; los códigos viejos de 32 bits se leen con `UnpackV1`). Piezas: 10 cuerpos (+Gigante, Enana, Salchicha, Cabezona, Erguida), 14 pelajes (+Atigrada, Manchada, Zombi, Chamuscada, Dorada, Azulada, Rosa, Canosa), 6 colas (+Rizada, Bífida), 6 orejas (+Puntiaguda, Pendiente), 7 ojos (+Gafas, Demonio, Cejijunta), 16 sombreros (+Boina, Chistera, Bicornio, Minero, Corona, Vaquero, Fez, Vikingo, Lana, Ninguno), 8 bocas (+Pipa, Mostacho, Lengua, Espiga), 6 marcas (+Pintura de guerra, Quemadura) y 8 accesorios nuevos (Medalla, Cartuchera, Mochila, Capa, Collar, Pajarita, Cantimplora).
+- Dibujo en `RatAppearance` (materiales nuevos Spot/Bone/Lamp/Red/Hide/Felt/Metal; `FurPattern`, `DrawAccessory`, casos nuevos en `DrawHat`). El colisionador es el mismo para todos los cuerpos.
+- **Ventajas del cuerpo**: `RatLook.StatsOf` (vida extra escalada con la vida inicial en `GameSceneSpawnManager.SpawnRat`, velocidad y salto en `NetworkPlayerMovement` vía `Body`, daño cuerpo a cuerpo en `NetworkBat`/bayoneta, daño por caída, empujón recibido en `NetworkHealth.ApplyKnockbackClientRpc`). "Mi equipo" enseña la ventaja y deja elegir 9 piezas.
+
 ## Convenciones
 - Comentarios abundantes en español con `/// <summary>` explicando el *porqué* (el usuario aprende leyéndolos). Mantener ese estilo.
 - `[Header]` + `[Tooltip]` en español en todos los campos del Inspector.
@@ -148,7 +153,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilación rápida: `tools\compilar-rapido.ps1`. Compilación completa de Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.23 (reconexión online). Bloque 6 completo: lobby con ¡Listo!, reglas del host, revancha a la sala (ya existían) y reconexión. Siguiente: bloque 7 (publicar en itch.io). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.24 (ratas a montones y cuerpos con ventajas). Plan del usuario (15 nov 2026): 0.25 modos de juego, 0.26 equipos de varios jugadores online, 0.27 espectáculo (repetición a cámara lenta, burlas/voces, lápidas, clima), 0.28 muchas armas nuevas (hasta ~48 como Worms); al final, informe con mejoras. Antes: 0.23 (reconexión online). Bloque 6 completo: lobby con ¡Listo!, reglas del host, revancha a la sala (ya existían) y reconexión. Siguiente: bloque 7 (publicar en itch.io). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)

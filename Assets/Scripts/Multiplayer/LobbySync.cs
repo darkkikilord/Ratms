@@ -67,7 +67,7 @@ namespace Ratms.Networking
             for (int i = 0; i < TeamProfile.Slots; i++)
             {
                 r.ReadValueSafe(out string n);
-                r.ReadValueSafe(out uint l);
+                r.ReadValueSafe(out ulong l);
                 d.names[i] = n; d.looks[i] = l;
             }
             return d;

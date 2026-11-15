@@ -440,6 +440,33 @@ namespace Ratms.UI
 
             // ---------------- Pantalla de carga (0.22) ----------------
             ("(¡copiado!)", "(copied!)"),
+            // ---------------- Ratas nuevas (0.24) ----------------
+            ("gigante", "giant"), ("enana", "tiny"), ("salchicha", "sausage"), ("cabezona", "bighead"), ("erguida", "upright"),
+            ("atigrada", "tabby"), ("manchada", "spotted"), ("zombi", "zombie"), ("chamuscada", "scorched"),
+            ("dorada", "golden"), ("azulada", "bluish"), ("rosa", "pink"), ("canosa", "grizzled"),
+            ("cola rizada", "curly tail"), ("cola bífida", "forked tail"),
+            ("oreja rota", "torn ear"), ("orejona", "big ears"), ("sin oreja", "no ear"), ("orejas de punta", "pointy ears"),
+            ("pendiente", "earring"), ("orejas normales", "normal ears"),
+            ("gafas de aviador", "aviator goggles"), ("ojos de demonio", "demon eyes"), ("cejijunta", "unibrow"),
+            ("boina", "beret"), ("chistera", "top hat"), ("bicornio", "bicorne"), ("casco de minero", "miner helmet"),
+            ("corona", "crown"), ("sombrero vaquero", "cowboy hat"), ("fez", "fez"), ("casco vikingo", "viking helmet"),
+            ("gorro de lana", "beanie"), ("sin sombrero", "no hat"),
+            ("pipa", "pipe"), ("mostacho", "moustache"), ("lengua fuera", "tongue out"), ("espiga", "wheat straw"),
+            ("cicatriz", "scar"), ("puntos", "stitches"), ("venda", "bandage"), ("sin marcas", "no marks"),
+            ("pintura de guerra", "war paint"), ("quemadura", "burn"),
+            ("medalla", "medal"), ("cartuchera", "bandolier"), ("mochila", "backpack"), ("capa", "cape"),
+            ("collar de pinchos", "spiked collar"), ("pajarita", "bow tie"), ("cantimplora", "canteen"), ("sin accesorio", "no accessory"),
+            ("+15 vida · lenta · cuesta empujarla", "+15 health · slow · hard to push"),
+            ("-10 vida · rápida y saltarina", "-10 health · fast and jumpy"),
+            ("+5 vida · casi no se hace daño al caer", "+5 health · barely hurt by falls"),
+            ("+5 vida · golpes cuerpo a cuerpo ×1,5", "+5 health · melee hits ×1.5"),
+            ("mordisco fuerte · pequeña y difícil de acertar", "strong bite · small and hard to hit"),
+            ("+30 vida · muy lenta · enorme blanco", "+30 health · very slow · huge target"),
+            ("-20 vida · rapidísima · cae de pie", "-20 health · super fast · lands on its feet"),
+            ("+5 vida · corre mucho, salta poco", "+5 health · runs a lot, jumps little"),
+            ("+10 vida · golpes ×1,25", "+10 health · hits ×1.25"),
+            ("-5 vida · salta muchísimo", "-5 health · jumps really high"),
+
             // ---------------- Reconexión (0.23) ----------------
             ("¡{0} se ha desconectado!\nTiene {1} s para volver", "{0} got disconnected!\nThey have {1} s to come back"),
             ("¡{0} ha vuelto a la trinchera!", "{0} is back in the trench!"),

@@ -2396,6 +2396,10 @@ namespace Ratms.Testing
                 (escaped ? $"✓ fuera en {t:0.0}s" : $"⚠ NO sale en 5s (se quedó en {end.x - blast.x:+0.00;-0.00},{end.y - surfaceY:+0.00;-0.00} respecto al borde)"));
             yield return null;
             rat.TestInputX = null;
+            // Al salir con impulso a veces seguía rodando hasta el agua y la
+            // partida de prueba se acababa: la dejamos quieta en suelo firme.
+            rb.linearVelocity = Vector2.zero;
+            yield return PlaceOnFlatSpot(rat, 0.3f, 0.7f, "tras salir del agujero");
         }
 
         /// <summary>

@@ -25,8 +25,19 @@ namespace Ratms.Networking
         public static void SetRatName(int i, string v) => PlayerPrefs.SetString($"team_rat{i}", Clean(v, 16));
 
         /// <summary>Aspecto fijo de la rata i (0 = al azar).</summary>
-        public static uint Look(int i) => (uint)PlayerPrefs.GetInt($"team_look{i}", 0);
-        public static void SetLook(int i, uint code) => PlayerPrefs.SetInt($"team_look{i}", (int)code);
+        public static ulong Look(int i)
+        {
+            // 0.24: se guarda como texto (64 bits). Los equipos de antes (int de
+            // 32 bits) se siguen leyendo: RatLook.Unpack entiende el formato viejo.
+            string s = PlayerPrefs.GetString($"team_look64_{i}", "");
+            if (s.Length > 0 && ulong.TryParse(s, out var v)) return v;
+            return (uint)PlayerPrefs.GetInt($"team_look{i}", 0);
+        }
+        public static void SetLook(int i, ulong code)
+        {
+            PlayerPrefs.SetString($"team_look64_{i}", code.ToString());
+            PlayerPrefs.DeleteKey($"team_look{i}");
+        }
 
         public static bool HasAnything()
         {
@@ -46,7 +57,7 @@ namespace Ratms.Networking
         {
             public string team = "";
             public readonly string[] names = new string[Slots];
-            public readonly uint[] looks = new uint[Slots];
+            public readonly ulong[] looks = new ulong[Slots];
         }
 
         public static Data Local()

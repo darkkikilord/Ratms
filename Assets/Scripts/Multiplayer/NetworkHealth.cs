@@ -413,6 +413,9 @@ namespace Ratms.Networking
             v.y = 0f;
             rb.linearVelocity = v;
 
+            // 0.24: las ratas pesadas vuelan menos, las enanas más.
+            var mv = GetComponent<NetworkPlayerMovement>();
+            if (mv != null) force *= mv.Body.knock;
             rb.AddForce(force, ForceMode2D.Impulse);
 
             // Pedimos al script de movimiento que desactive fricción y tope de

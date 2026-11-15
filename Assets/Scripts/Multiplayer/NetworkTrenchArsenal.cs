@@ -469,7 +469,8 @@ namespace Ratms.Networking
                 var nh = c != null ? c.GetComponentInParent<NetworkHealth>() : null;
                 if (nh == null || nh == ownHealth || nh.IsDead.Value || done.Contains(nh)) continue;
                 done.Add(nh);
-                nh.ApplyDamageServer(bayonetDamage, nh.BodyCenter, DamageType.Melee, body);
+                var meMv = GetComponent<NetworkPlayerMovement>();
+                nh.ApplyDamageServer(Mathf.RoundToInt(bayonetDamage * (meMv != null ? meMv.Body.melee : 1f)), nh.BodyCenter, DamageType.Melee, body);
                 // La bayoneta SIEMPRE arranca algo (si las mutilaciones están activadas).
                 if (!nh.IsDead.Value && MatchRules.EffectiveMutilations)
                 {

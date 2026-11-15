@@ -443,12 +443,30 @@ namespace Ratms.Networking
         public readonly NetworkVariable<FixedString32Bytes> RatName = new(default);
 
         /// <summary>Aspecto de la rata (ver <see cref="RatLook"/>): anatomía, pelaje, casco... 0 = al azar.</summary>
-        public readonly NetworkVariable<uint> LookCode = new(0);
+        public readonly NetworkVariable<ulong> LookCode = new(0);
+
+        /// <summary>0.24: ventajas del cuerpo de esta rata (vida, velocidad, salto, golpe, caída, empujón).</summary>
+        public RatLook.BodyStats Body
+        {
+            get
+            {
+                if (bodyCode != LookCode.Value || !bodyKnown)
+                {
+                    bodyCode = LookCode.Value;
+                    bodyKnown = true;
+                    bodyStats = bodyCode != 0 ? RatLook.Unpack(bodyCode).Stats : RatLook.StatsOf((RatLook.BodyType)255);
+                }
+                return bodyStats;
+            }
+        }
+        private RatLook.BodyStats bodyStats;
+        private ulong bodyCode;
+        private bool bodyKnown;
 
         /// <summary>Equipo, nombre y aspecto para la PRÓXIMA rata que se spawnee (servidor). Ver GameSceneSpawnManager.</summary>
         public static int SpawnNextTeam = -1;
         public static string SpawnNextName;
-        public static uint SpawnNextLook;
+        public static ulong SpawnNextLook;
 
         /// <summary>¿Es esta la rata que tiene el turno ahora?</summary>
         public bool IsActiveTurnRat =>
@@ -797,6 +815,7 @@ namespace Ratms.Networking
 
             // SIN PATAS no se salta (a rastras). Coja: salta menos.
             float jumpMul = health != null ? health.JumpFactor : 1f;
+            if (jumpMul > 0f) jumpMul *= Body.jump;   // 0.24: cada cuerpo salta distinto
             if (jumpMul <= 0f && jumpKeyDown && canCoyoteJump && health != null)
             {
                 WorldDamagePopup.SpawnImpact(health.BodyCenter + Vector2.up * 0.9f, "¡No tengo patas!", new Color(1f, 0.6f, 0.4f));
@@ -1170,7 +1189,7 @@ namespace Ratms.Networking
                     if (fallHeight > fallDamageThreshold)
                     {
                         float rawDmg = (fallHeight - fallDamageThreshold) * fallDamagePerUnit;
-                        int dmg = Mathf.Clamp(Mathf.RoundToInt(rawDmg), 1, fallDamageMax);
+                        int dmg = Mathf.Clamp(Mathf.RoundToInt(rawDmg * Body.fall), 1, fallDamageMax);
                         RequestFallDamageServerRpc(dmg);
                     }
                 }
@@ -1320,7 +1339,7 @@ namespace Ratms.Networking
             // siente mucho más "jugoso" que el impulso+drag.
             // ----------------------------------------------------------------
             // Mutilaciones: coja va más lenta y sin patas, a rastras.
-            float targetVx = inputX * maxSpeed * (health != null ? health.SpeedFactor : 1f);
+            float targetVx = inputX * maxSpeed * Body.speed * (health != null ? health.SpeedFactor : 1f);
             float accel = Mathf.Abs(targetVx) > 0.01f ? moveAcceleration : moveDeceleration;
             float newVx = Mathf.MoveTowards(rb.linearVelocity.x, targetVx, accel * Time.fixedDeltaTime);
             Vector2 walkVel = new Vector2(newVx, rb.linearVelocity.y);
@@ -1336,7 +1355,7 @@ namespace Ratms.Networking
                 Vector2 tangent = new Vector2(groundN.y, -groundN.x);   // a lo largo del suelo, hacia +x
                 float along = Mathf.Abs(newVx) * Mathf.Sign(inputX);
                 walkVel = tangent * along / Mathf.Max(0.5f, tangent.x);  // misma velocidad horizontal que en llano
-                walkVel = Vector2.ClampMagnitude(walkVel, maxSpeed * 1.35f);
+                walkVel = Vector2.ClampMagnitude(walkVel, maxSpeed * Body.speed * 1.35f);
             }
             // EN EL AIRE CONTRA UNA PARED: no empujamos hacia ella. Si lo
             // hacemos, el ROZAMIENTO con la pared frena la subida y el salto

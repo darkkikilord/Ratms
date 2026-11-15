@@ -29,7 +29,31 @@ namespace Ratms.Networking
     [RequireComponent(typeof(Rigidbody2D))]
     public class NetworkGadget : NetworkBehaviour
     {
-        public enum Kind : byte { None = 0, RatBomb = 1, Mine = 2, Pigeon = 3, MortarShell = 4, Shrapnel = 5, Arrow = 6, GasCan = 7, Cheese = 8, HolyCheese = 9 }
+        public enum Kind : byte
+        {
+            None = 0, RatBomb = 1, Mine = 2, Pigeon = 3, MortarShell = 4, Shrapnel = 5, Arrow = 6, GasCan = 7, Cheese = 8, HolyCheese = 9,
+            // 0.28
+            Banana = 10, BananaShard = 11, Molotov = 12, Fireball = 13, Homing = 14, Anvil = 15, Meteor = 16,
+            RabidRat = 17, GrannyRat = 18, StinkRat = 19, Mole = 20,
+        }
+
+        /// <summary>¿Es una rata que anda sola?</summary>
+        public static bool IsWalker(Kind k) => k == Kind.RatBomb || k == Kind.RabidRat || k == Kind.GrannyRat || k == Kind.StinkRat;
+
+        /// <summary>0.28: aspecto de las ratas-arma (rabiosa, abuela, apestosa, topo).</summary>
+        public static RatLook WalkerLook(Kind k)
+        {
+            var l = RatLook.Random(new System.Random((int)k * 97));
+            switch (k)
+            {
+                case Kind.RabidRat: l.body = RatLook.BodyType.Flaca; l.fur = RatLook.FurType.Negra; l.eye = RatLook.EyeType.Demonio; l.hat = RatLook.HatType.Ninguno; l.mouth = RatLook.MouthType.Lengua; l.acc = RatLook.AccessoryType.Collar; break;
+                case Kind.GrannyRat: l.body = RatLook.BodyType.Enana; l.fur = RatLook.FurType.Canosa; l.hat = RatLook.HatType.Lana; l.eye = RatLook.EyeType.Monoculo; l.acc = RatLook.AccessoryType.Mochila; l.mouth = RatLook.MouthType.Nada; break;
+                case Kind.StinkRat: l.body = RatLook.BodyType.Gorda; l.fur = RatLook.FurType.Zombi; l.hat = RatLook.HatType.MascaraGas; l.acc = RatLook.AccessoryType.Ninguno; break;
+                case Kind.Mole: l.body = RatLook.BodyType.Topo; l.hat = RatLook.HatType.Minero; l.acc = RatLook.AccessoryType.Ninguno; break;
+            }
+            l.oneArm = false; l.pegLeg = false;
+            return l;
+        }
 
         public readonly NetworkVariable<byte> KindNet = new(0);
         /// <summary>Equipo del que lo lanzó (para el color de la rata-bomba).</summary>
@@ -42,6 +66,10 @@ namespace Ratms.Networking
 
         // ---------- Servidor ----------
         private Kind pendingKind;
+        /// <summary>(Servidor) no mover la cámara al nacer (estampida, lluvias).</summary>
+        public bool quietSpawn;
+        private int anvilHits;
+        private float nextAnvilHit, nextDig;
         private NetworkObject ownerRat;
         private Vector2 target;
         private int walkDir = 1;
@@ -69,7 +97,7 @@ namespace Ratms.Networking
         public static NetworkGadget ActiveRatBombOf(ulong ownerRatId)
         {
             foreach (var g in live)
-                if (g != null && g.IsSpawned && g.Type == Kind.RatBomb && g.ownerRatIdNet.Value == ownerRatId) return g;
+                if (g != null && g.IsSpawned && (g.Type == Kind.RatBomb || g.Type == Kind.RabidRat) && g.ownerRatIdNet.Value == ownerRatId) return g;
             return null;
         }
         private readonly NetworkVariable<ulong> ownerRatIdNet = new(ulong.MaxValue);
@@ -101,8 +129,8 @@ namespace Ratms.Networking
                 fuseNet.Value = FuseOf(pendingKind);
                 SetupPhysics(pendingKind);
                 IgnoreOwner(true);
-                if (pendingKind != Kind.Shrapnel && pendingKind != Kind.Mine)
-                    FollowWithCameraClientRpc(pendingKind == Kind.RatBomb ? 10f : 8f);
+                if (pendingKind != Kind.Shrapnel && pendingKind != Kind.Mine && pendingKind != Kind.BananaShard && pendingKind != Kind.Meteor && !quietSpawn)
+                    FollowWithCameraClientRpc(IsWalker(pendingKind) ? 10f : 8f);
             }
             else if (rb != null) rb.simulated = false;
             KindNet.OnValueChanged += (_, __) => BuildLook();
@@ -123,6 +151,17 @@ namespace Ratms.Networking
             Kind.Pigeon => 9f,
             Kind.MortarShell => 8f,
             Kind.Arrow => 8f,
+            Kind.Banana => 3.5f,
+            Kind.BananaShard => 1.4f,
+            Kind.Molotov => 8f,
+            Kind.Fireball => 6f,
+            Kind.Homing => 9f,
+            Kind.Anvil => 7f,
+            Kind.Meteor => 9f,
+            Kind.RabidRat => 8f,
+            Kind.GrannyRat => 7f,
+            Kind.StinkRat => 6f,
+            Kind.Mole => 3.2f,
             _ => 0f,   // mina: sin mecha
         };
 
@@ -136,7 +175,34 @@ namespace Ratms.Networking
             switch (k)
             {
                 case Kind.RatBomb:
+                case Kind.RabidRat:
+                case Kind.GrannyRat:
+                case Kind.StinkRat:
                     mat = new PhysicsMaterial2D("RataBomba") { friction = 0f, bounciness = 0f };
+                    rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+                    break;
+                case Kind.Banana:
+                case Kind.BananaShard:
+                    mat = new PhysicsMaterial2D("Platano") { friction = 0.4f, bounciness = 0.55f };
+                    break;
+                case Kind.Fireball:
+                case Kind.Homing:
+                    mat = new PhysicsMaterial2D("Vuela") { friction = 0f, bounciness = 0f };
+                    rb.gravityScale = 0f;
+                    rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+                    break;
+                case Kind.Anvil:
+                    mat = new PhysicsMaterial2D("Yunque") { friction = 1f, bounciness = 0.2f };
+                    rb.mass = 3f; rb.gravityScale = 2.2f;
+                    rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+                    break;
+                case Kind.Meteor:
+                    mat = new PhysicsMaterial2D("Meteorito") { friction = 0f, bounciness = 0f };
+                    rb.gravityScale = 1.4f;
+                    break;
+                case Kind.Mole:
+                    mat = new PhysicsMaterial2D("Topo") { friction = 0f, bounciness = 0f };
+                    rb.bodyType = RigidbodyType2D.Kinematic;
                     rb.constraints = RigidbodyConstraints2D.FreezeRotation;
                     break;
                 case Kind.Mine:
@@ -188,7 +254,7 @@ namespace Ratms.Networking
         {
             if (!IsServer || exploded || rb == null) return;
             float age = Time.time - spawnTime;
-            if (ownerIgnored && age > 0.4f && Type != Kind.RatBomb) IgnoreOwner(false);
+            if (ownerIgnored && age > 0.4f && !IsWalker(Type)) IgnoreOwner(false);
 
             // Al agua: se pierde ("glub")
             var water = FindFirstObjectByType<WaterDeathZone>();
@@ -203,7 +269,15 @@ namespace Ratms.Networking
             switch (Type)
             {
                 case Kind.RatBomb: WalkTick(); break;
+                case Kind.RabidRat: WalkTick(4.4f, 9f); break;
+                case Kind.GrannyRat: WalkTick(1.1f, 5.5f); break;
+                case Kind.StinkRat: WalkTick(2.2f, 7f); break;
                 case Kind.Pigeon: FlyTick(); break;
+                case Kind.Homing: HomeTick(); break;
+                case Kind.Mole: MoleTick(); break;
+                case Kind.Meteor: case Kind.Banana: case Kind.Molotov:
+                    rb.AddForce(new Vector2(NetworkTurnManager.WindAcceleration * 0.25f, 0f));
+                    break;
                 case Kind.GasCan: case Kind.MortarShell: case Kind.Shrapnel: case Kind.HolyCheese: case Kind.Cheese:
                     rb.AddForce(new Vector2(NetworkTurnManager.WindAcceleration * (Type == Kind.MortarShell ? 0f : 0.2f), 0f));
                     break;
@@ -243,6 +317,8 @@ namespace Ratms.Networking
                     break;
             }
 
+            // 0.28: la abuela y la apestosa revientan solas al llegar junto a una rata enemiga
+            if ((Type == Kind.GrannyRat || Type == Kind.StinkRat) && age > 1f && EnemyNear(0.9f)) { OnFuseEnd(); return; }
             if (fuse > 0f && age >= fuse) OnFuseEnd();
         }
 
@@ -252,6 +328,21 @@ namespace Ratms.Networking
             switch (Type)
             {
                 case Kind.RatBomb: Explode(at, 2.6f, 50, 10f); break;
+                case Kind.RabidRat: Explode(at, 3.0f, 60, 12f); break;
+                case Kind.GrannyRat: Explode(at, 3.2f, 60, 13f, big: true); break;
+                case Kind.StinkRat:
+                    GasSystem.ServerRelease(at + Vector2.up * 0.1f, 26);
+                    Explode(at, 1.4f, 15, 5f);
+                    break;
+                case Kind.Mole: Explode(at, 2.4f, 50, 10f); break;
+                case Kind.Banana:
+                    SpawnChildren(Kind.BananaShard, at, 5, 5.5f);
+                    Explode(at, 2.2f, 40, 9f);
+                    break;
+                case Kind.BananaShard: Explode(at, 1.5f, 25, 6f); break;
+                case Kind.Molotov: MolotovBurst(at); break;
+                case Kind.Fireball: Explode(at, 1.5f, 30, 7f); break;
+                case Kind.Anvil: Shorten(1f); Despawn(); break;
                 case Kind.GasCan:
                     GasSystem.ServerRelease(at + Vector2.up * 0.3f, 12);
                     Explode(at, 1.2f, 10, 4f);
@@ -264,11 +355,11 @@ namespace Ratms.Networking
         }
 
         /// <summary>RATA-BOMBA: corre en su dirección; si se atasca, salta; si no puede, da la vuelta.</summary>
-        private void WalkTick()
+        private void WalkTick(float speed = 2.6f, float jump = 7f)
         {
             bool grounded = Physics2D.Raycast(rb.position + Vector2.down * 0.05f, Vector2.down, 0.3f, ~0).collider != null;
             Vector2 v = rb.linearVelocity;
-            if (grounded) v.x = walkDir * 2.6f;
+            if (grounded) v.x = walkDir * speed;
             rb.linearVelocity = v;
             if (Mathf.Abs(rb.position.x - lastX) < 0.01f) stuckTime += Time.fixedDeltaTime; else stuckTime = 0f;
             lastX = rb.position.x;
@@ -277,7 +368,7 @@ namespace Ratms.Networking
                 nextHop = Time.time + 0.5f;
                 hops++;
                 if (hops > 3) { walkDir = -walkDir; hops = 0; }   // una pared imposible: media vuelta
-                rb.linearVelocity = new Vector2(walkDir * 2.6f, 7f);
+                rb.linearVelocity = new Vector2(walkDir * speed, jump);
                 HopClientRpc();
             }
             else if (grounded && stuckTime == 0f) hops = 0;   // ya avanza: se olvidan los saltos fallidos
@@ -294,6 +385,65 @@ namespace Ratms.Networking
                 dir = (dir + Vector2.up * 2.2f).normalized;
             Vector2 wanted = dir * 6.5f;
             rb.linearVelocity = Vector2.Lerp(rb.linearVelocity, wanted, 1f - Mathf.Exp(-4f * Time.fixedDeltaTime));
+        }
+
+        /// <summary>0.28 MISIL TELEDIRIGIDO: gira hacia el objetivo (no esquiva el terreno).</summary>
+        private void HomeTick()
+        {
+            float age = Time.time - spawnTime;
+            Vector2 to = target - rb.position;
+            if (to.magnitude < 0.4f) { Explode(rb.position, 2.0f, 45, 9f); return; }
+            Vector2 cur = rb.linearVelocity.sqrMagnitude > 0.01f ? rb.linearVelocity.normalized : Vector2.up;
+            float turn = age < 0.4f ? 0f : 5f;   // primero sube un poco
+            Vector2 dir = Vector2.Lerp(cur, to.normalized, 1f - Mathf.Exp(-turn * Time.fixedDeltaTime)).normalized;
+            rb.linearVelocity = dir * Mathf.Min(10f, 4f + age * 6f);
+        }
+
+        /// <summary>0.28 TOPO: avanza por DENTRO del terreno cavando, hacia abajo y adelante.</summary>
+        private void MoleTick()
+        {
+            Vector2 step = new Vector2(walkDir * 1.5f, -1.1f) * Time.fixedDeltaTime;
+            rb.MovePosition(rb.position + step);
+            if (Time.time >= nextDig)
+            {
+                nextDig = Time.time + 0.12f;
+                NetworkDestructibleTerrain.Instance?.ServerDig(rb.position, 0.42f);
+            }
+        }
+
+        /// <summary>0.28 MOLOTOV: al romperse, lo llena todo de fuego.</summary>
+        private void MolotovBurst(Vector2 at)
+        {
+            if (exploded) return;
+            FireSystem.ServerIgnite(at + Vector2.up * 0.2f, Vector2.up * 1.8f, 3.2f, 16, 3.5f, 6.5f);
+            Explode(at, 0.9f, 8, 3f, quiet: true);
+        }
+
+        private void SpawnChildren(Kind kind, Vector2 at, int n, float speed)
+        {
+            if (gadgetPrefab == null) return;
+            for (int i = 0; i < n; i++)
+            {
+                float a = Mathf.Lerp(-70f, 70f, n > 1 ? i / (float)(n - 1) : 0.5f) + Random.Range(-8f, 8f);
+                Vector2 v = (Vector2)(Quaternion.Euler(0f, 0f, a) * Vector2.up) * speed * Random.Range(0.8f, 1.1f);
+                var go = Instantiate(gadgetPrefab, (Vector3)(at + Vector2.up * 0.4f), Quaternion.identity);
+                var g = go.GetComponent<NetworkGadget>();
+                var no = go.GetComponent<NetworkObject>();
+                if (g == null || no == null) { Destroy(go); continue; }
+                g.Prepare(kind, ownerRat, gadgetPrefab);
+                g.quietSpawn = true;
+                no.Spawn(destroyWithScene: true);
+                g.ServerInit(v);
+            }
+        }
+
+        private bool EnemyNear(float r)
+        {
+            var ownH = ownerRat != null ? ownerRat.GetComponent<NetworkHealth>() : null;
+            foreach (var h in FindObjectsByType<NetworkHealth>(FindObjectsSortMode.None))
+                if (h != null && h != ownH && h.IsSpawned && !h.IsDead.Value && Vector2.Distance(h.BodyCenter, transform.position) < r)
+                    return true;
+            return false;
         }
 
         private bool RatNear(float r)
@@ -323,6 +473,40 @@ namespace Ratms.Networking
                     break;
                 case Kind.Pigeon:
                     Explode(at, 2.2f, 40, 9f);
+                    break;
+                // 0.28
+                case Kind.Molotov:
+                    if (Time.time - spawnTime > 0.1f) MolotovBurst(at);
+                    break;
+                case Kind.Fireball:
+                    FireSystem.ServerIgnite(at, Vector2.up * 1.2f, 1f, 6, 3f, 5f);
+                    Explode(at, 1.5f, 30, 7f);
+                    break;
+                case Kind.Homing:
+                    Explode(at, 2.0f, 45, 9f);
+                    break;
+                case Kind.Meteor:
+                    Explode(at, 1.6f, 25, 6f);
+                    break;
+                case Kind.Banana:
+                case Kind.BananaShard:
+                    BounceClientRpc();
+                    break;
+                case Kind.Anvil:
+                    if (Time.time < nextAnvilHit) break;
+                    nextAnvilHit = Time.time + 0.25f;
+                    anvilHits++;
+                    // Aplasta: daño a quien esté debajo y hunde el suelo (rebota y vuelve a caer)
+                    foreach (var col in Physics2D.OverlapCircleAll(at, 1.2f))
+                    {
+                        var h = col != null ? col.GetComponentInParent<NetworkHealth>() : null;
+                        if (h == null || h.IsDead.Value) continue;
+                        h.ApplyDamageServer(anvilHits == 1 ? 40 : 20, h.BodyCenter, DamageType.Explosion, at + Vector2.up);
+                        h.ApplyKnockbackClientRpc(new Vector2(Mathf.Sign(h.BodyCenter.x - at.x) * 2f, 1.5f), 0.2f);
+                    }
+                    NetworkDestructibleTerrain.Instance?.ServerCarveAt(at, 0.9f);
+                    AnvilClientRpc(at);
+                    if (anvilHits >= 4) { Shorten(1.2f); Despawn(); }
                     break;
                 case Kind.Arrow:
                     if (nh != null && !nh.IsDead.Value) ArrowHit(nh, at);
@@ -403,9 +587,10 @@ namespace Ratms.Networking
         [ServerRpc(RequireOwnership = false)]
         public void DetonateServerRpc(ServerRpcParams rpc = default)
         {
-            if (exploded || Type != Kind.RatBomb || ownerRat == null) return;
+            if (exploded || (Type != Kind.RatBomb && Type != Kind.RabidRat) || ownerRat == null) return;
             if (ownerRat.OwnerClientId != rpc.Receive.SenderClientId) return;
-            Explode(transform.position, 2.6f, 50, 10f);
+            if (Type == Kind.RabidRat) Explode(transform.position, 3.0f, 60, 12f);
+            else Explode(transform.position, 2.6f, 50, 10f);
         }
 
         private void OnEnable() => NetworkDestructibleTerrain.OnServerExplosion += OnOtherExplosion;
@@ -483,6 +668,14 @@ namespace Ratms.Networking
         }
 
         [ClientRpc] private void BeepClientRpc() => Sfx.Play(Sfx.Id.Beep, 0.6f, 0f);
+        [ClientRpc]
+        private void AnvilClientRpc(Vector2 at)
+        {
+            Sfx.Play(Sfx.Id.Whack, 1f, 0.05f);
+            Fx.Dust(at, Vector2.up, 10);
+            WorldDamagePopup.SpawnImpact(at + Vector2.up * 0.6f, "¡CLONK!", new Color(0.85f, 0.85f, 0.95f));
+            CameraFollow.Instance?.Shake(0.3f, 0.3f);
+        }
         [ClientRpc] private void BounceClientRpc() => Sfx.Play(Sfx.Id.Whack, 0.25f, 0.2f);
         [ClientRpc] private void HopClientRpc() => Sfx.Play(Sfx.Id.Squeak, 0.35f, 0.25f);
         [ClientRpc] private void ThudClientRpc() => Sfx.Play(Sfx.Id.Whack, 0.4f, 0.1f);
@@ -539,13 +732,25 @@ namespace Ratms.Networking
                 case Kind.GasCan: s = WeaponArt.GasCan(); spin = 120f; break;
                 case Kind.Cheese: s = WeaponArt.Cheese(); spin = 140f; break;
                 case Kind.HolyCheese: s = WeaponArt.HolyCheese(); size = 1f; spin = 90f; break;
+                // 0.28
+                case Kind.RabidRat: case Kind.GrannyRat: case Kind.StinkRat: case Kind.Mole:
+                    walkFrames = RatAppearance.WalkFrames(WalkerLook(Type).Pack(), RatAppearance.ColorForTeam(TeamNet.Value));
+                    s = walkFrames[0]; size = Type == Kind.GrannyRat ? 0.9f : 1f;
+                    break;
+                case Kind.Banana: s = WeaponArt.Banana(); size = 0.9f; spin = 300f; break;
+                case Kind.BananaShard: s = WeaponArt.Banana(); size = 0.6f; spin = 420f; break;
+                case Kind.Molotov: s = WeaponArt.Molotov(); size = 0.8f; spin = 260f; break;
+                case Kind.Fireball: s = WeaponArt.Fireball(); size = 0.9f; spin = 200f; break;
+                case Kind.Homing: s = WeaponArt.Missile(); size = 0.8f; face = true; break;
+                case Kind.Anvil: s = WeaponArt.Anvil(); size = 1.1f; break;
+                case Kind.Meteor: s = WeaponArt.Meteor(); size = 1f; spin = 90f; break;
                 default: return;
             }
             ProjectileSkin.Apply(gameObject, s, size, face, spin);
             foreach (var sr in GetComponentsInChildren<SpriteRenderer>(true))
                 if (sr.gameObject.name == "Arte" && sr.sprite == s) art = sr;
 
-            if (Type == Kind.RatBomb && art != null)
+            if ((Type == Kind.RatBomb || Type == Kind.RabidRat) && art != null)
             {
                 // Dinamita a la espalda
                 var go = new GameObject("Dinamita");
@@ -567,7 +772,23 @@ namespace Ratms.Networking
             animT += Time.deltaTime;
             switch (Type)
             {
+                case Kind.GrannyRat: case Kind.StinkRat: case Kind.Mole:
+                    if (walkFrames != null && walkFrames.Length > 0)
+                    {
+                        art.sprite = walkFrames[(int)(animT * (Type == Kind.GrannyRat ? 5f : 10f)) % walkFrames.Length];
+                        if (Mathf.Abs(d.x) > 0.0005f) art.flipX = d.x < 0f;
+                    }
+                    if (Type == Kind.StinkRat && Time.time >= nextSpark) { nextSpark = Time.time + 0.15f; Fx.Sparks(art.transform.position + Vector3.up * 0.4f, 1, new Color(0.6f, 0.85f, 0.3f, 0.8f), 0.3f, 0.8f); }
+                    if (Type == Kind.Mole && Time.time >= nextSpark) { nextSpark = Time.time + 0.1f; Fx.Dust(art.transform.position, Vector2.up, 2); }
+                    break;
+                case Kind.Fireball: case Kind.Meteor:
+                    if (Time.time >= nextSpark) { nextSpark = Time.time + 0.04f; Fx.Sparks(art.transform.position, 2, new Color(1f, 0.6f, 0.15f, 1f), 0.4f, 1.4f); }
+                    break;
+                case Kind.Homing:
+                    if (Time.time >= nextSpark) { nextSpark = Time.time + 0.05f; Fx.Sparks(art.transform.position, 1, new Color(0.75f, 0.75f, 0.75f, 0.8f), 0.2f, 0.8f); }
+                    break;
                 case Kind.RatBomb:
+                case Kind.RabidRat:
                     if (walkFrames != null && walkFrames.Length > 0)
                     {
                         art.sprite = walkFrames[(int)(animT * 10f) % walkFrames.Length];
@@ -595,7 +816,7 @@ namespace Ratms.Networking
         private void OnGUI()
         {
             if (exploded || Camera.main == null || Event.current.type != EventType.Repaint) return;
-            if (Type != Kind.RatBomb && Type != Kind.GasCan && Type != Kind.Cheese && Type != Kind.HolyCheese) return;
+            if (!IsWalker(Type) && Type != Kind.GasCan && Type != Kind.Cheese && Type != Kind.HolyCheese && Type != Kind.Banana && Type != Kind.Mole) return;
             float left = fuseNet.Value - (Time.time - spawnTime);
             if (left < 0f) return;
             Vector3 sp = Camera.main.WorldToScreenPoint(transform.position + Vector3.up * 0.7f);

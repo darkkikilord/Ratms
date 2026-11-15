@@ -48,7 +48,7 @@ namespace Ratms.Testing
             if (trench == null) { Finish("La rata no tiene NetworkTrenchArsenal (falta RatmsPrefabSetup)"); yield break; }
             int team = rat.TeamIndex.Value;
             // Munición de sobra para todo (la bomba bíblica empieza a 0)
-            for (int w = (int)WeaponsMenuUI.WeaponId.RatBomb; w <= (int)WeaponsMenuUI.WeaponId.Bow; w++)
+            for (int w = (int)WeaponsMenuUI.WeaponId.RatBomb; w <= (int)WeaponsMenuUI.WeaponId.Girder; w++)
                 tm.TestGiveAmmo(team, (WeaponsMenuUI.WeaponId)w, 5);
 
             NetworkHealth dh = null;
@@ -77,6 +77,15 @@ namespace Ratms.Testing
             }
             void Select(WeaponsMenuUI.WeaponId w) => weapons.SelectedIndexNet.Value = (int)w;
             int Hp() => dh != null ? dh.CurrentHealth.Value : 0;
+
+            // 0.28: "-Role trench2" prueba SOLO las armas nuevas
+            if (GetArg("-autoTestRole") == "trench2")
+            {
+                yield return RunTrench2(rat, tm, weapons, trench, (l, d) => Prepare(l, d), () => dh, Select, nm);
+                Log("Arsenal completo (0.28): fin ✓");
+                Finish(null);
+                yield break;
+            }
 
             // ---- T00: armas en la mano ----
             yield return PlaceOnFlatSpot(rat, 0.3f, 0.7f, "mano");

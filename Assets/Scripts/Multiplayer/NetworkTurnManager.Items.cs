@@ -146,6 +146,15 @@ namespace Ratms.Networking
             (WeaponsMenuUI.WeaponId.Napalm, 1, "+1 Napalm aéreo"),
             // 0.21 — arsenal de trinchera
             (WeaponsMenuUI.WeaponId.RatBomb, 1, "+1 Rata-bomba"),
+            // 0.28
+            (WeaponsMenuUI.WeaponId.Meteors, 1, "+1 Lluvia de meteoritos"),
+            (WeaponsMenuUI.WeaponId.Stampede, 1, "+1 Estampida"),
+            (WeaponsMenuUI.WeaponId.Scales, 1, "+1 Balanza de la justicia"),
+            (WeaponsMenuUI.WeaponId.Banana, 1, "+1 Plátano bomba"),
+            (WeaponsMenuUI.WeaponId.Homing, 1, "+1 Misil teledirigido"),
+            (WeaponsMenuUI.WeaponId.Medkit, 1, "+1 Botiquín"),
+            (WeaponsMenuUI.WeaponId.GrannyRat, 1, "+1 Abuela rata"),
+            (WeaponsMenuUI.WeaponId.Anvil, 1, "+1 Yunque"),
             (WeaponsMenuUI.WeaponId.Mine, 2, "+2 Minas"),
             (WeaponsMenuUI.WeaponId.Pigeon, 1, "+1 Paloma bomba"),
             (WeaponsMenuUI.WeaponId.Mortar, 1, "+1 Mortero"),

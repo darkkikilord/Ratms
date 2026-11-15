@@ -168,7 +168,7 @@ namespace Ratms.Testing
             if (role == "client") { yield return RunClientMulti(); yield break; }
             if (role == "practice") { yield return RunPractice(); yield break; }
             if (role == "arsenal") { yield return RunArsenal(); yield break; }
-            if (role == "trench") { yield return RunTrench(); yield break; }
+            if (role == "trench" || role == "trench2") { yield return RunTrench(); yield break; }
             if (role == "modes") { yield return RunModes(); yield break; }
             if (role == "show") { yield return RunShow(); yield break; }
 

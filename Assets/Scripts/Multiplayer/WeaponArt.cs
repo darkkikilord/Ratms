@@ -456,6 +456,161 @@ namespace Ratms.Networking
         };
 
         // ============================================================
+        // ==================================================================
+        //  0.28 — ARSENAL COMPLETO
+        // ==================================================================
+        public static Sprite Banana() => Make("banana", new Vector2(6f, 4f), 32f,
+            "........oo..",
+            ".......oXxo.",
+            "......oXXxo.",
+            ".....oXXXxo.",
+            "oo..oXXXXxo.",
+            "oXooXXXXXxo.",
+            ".oXXXXXXxxo.",
+            "..oxxxxxxo..",
+            "...ooooooo..");
+
+        public static Sprite Molotov() => Make("molotov", new Vector2(4f, 3f), 32f,
+            "...QO...",
+            "...OQ...",
+            "...oCo..",
+            "...oCo..",
+            "..ooGoo.",
+            ".oGHGGGo",
+            ".oGHGGGo",
+            ".oGHGGgo",
+            ".oGGGggo",
+            "..oooooo");
+
+        public static Sprite Fireball() => Make("fireball", new Vector2(5f, 5f), 32f,
+            "...OOOO...",
+            ".OOQQQQOO.",
+            "OOQQCCQQOO",
+            "OQQCCCCQQO",
+            "OQQCCCCQQO",
+            "OOQQCCQQOO",
+            ".OOQQQQOO.",
+            "...OOOO...");
+
+        public static Sprite Anvil() => Make("anvil", new Vector2(7f, 1f), 32f,
+            "oooooooooooooo",
+            "oMMMMMMMMMMMMo",
+            "ommmmmmmmmmmmo",
+            ".oooomMMmoooo.",
+            "....omMMmo....",
+            "...oommMMmoo..",
+            "..ommmmmmmmmo.",
+            "..oooooooooooo");
+
+        public static Sprite Meteor() => Make("meteor", new Vector2(5f, 4f), 32f,
+            "..QO......",
+            ".QOO.oooo.",
+            "QOOOoSSmmo",
+            ".OOoSSSmmo",
+            "..oSSmSmmo",
+            "..oSmmmmmo",
+            "...ommmmo.",
+            "....oooo..");
+
+        public static Sprite Quake() => Make("quake", new Vector2(6f, 1f), 32f,
+            "....o.......",
+            "...oRo......",
+            "....oRo.....",
+            "...oRo...o..",
+            "..oRo...oRo.",
+            "...oRRooRo..",
+            "....oRRRo...",
+            "wwwwwoRowwww",
+            "WWWWWWoWWWWW");
+
+        public static Sprite Pistol() => Make("pistol", new Vector2(3f, 2f), 32f,
+            "oooooooooo",
+            "oMMMMMMMMo",
+            "ommmmmmmmo",
+            "oWWoo.....",
+            "oWwo......",
+            "oWwo......",
+            "oooo......");
+
+        public static Sprite Fist() => Make("fist", new Vector2(2f, 3f), 32f,
+            "..ooooo.QO",
+            ".oRRRRRoOQ",
+            "oRRRRRRRoO",
+            "oRrRrRrRo.",
+            "oRRRRRRRo.",
+            ".orrrrro..",
+            "..ooooo...");
+
+        public static Sprite Prod() => Make("prod", new Vector2(1f, 1f), 32f,
+            "..............oo",
+            "oooooooooooooooC",
+            "oWWWWWWWWWWWWWWo",
+            "oooooooooooooooo");
+
+        public static Sprite Kamikaze() => Make("kamikaze", new Vector2(6f, 3f), 32f,
+            "...oooooo...",
+            "..oCCCCCCo..",
+            ".oCCCRRCCCo.",
+            "oCCCRRRRCCCo",
+            ".oCCCRRCCCoo",
+            "..oCCCCCCoCo",
+            "...oooooo.oo");
+
+        public static Sprite Spring() => Make("spring", new Vector2(4f, 1f), 32f,
+            "oooooooo",
+            "oMMMMMMo",
+            ".omMMmo.",
+            "oMMmmMMo",
+            ".omMMmo.",
+            "oMMmmMMo",
+            ".omMMmo.",
+            "oooooooo",
+            "oWWWWWWo",
+            "oooooooo");
+
+        public static Sprite ParachuteIcon() => Make("parachute_icon", new Vector2(6f, 1f), 32f,
+            "...oooooo...",
+            ".ooCCRRCCoo.",
+            "oCCRRCCRRCCo",
+            "oooooooooooo",
+            ".o...oo...o.",
+            "..o..oo..o..",
+            "...o.oo.o...",
+            "....oWWo....",
+            "....oWWo....",
+            ".....oo.....");
+
+        public static Sprite Scales() => Make("scales", new Vector2(6f, 1f), 32f,
+            ".....oo.....",
+            "oooooboooooo",
+            "obo..bo...bo",
+            "oboo.bo..oob",
+            "obbo.bo..obb",
+            "oooo.bo..ooo",
+            ".....bo.....",
+            "...oobboo...",
+            "..oooooooo..");
+
+        public static Sprite Blowtorch() => Make("blowtorch", new Vector2(3f, 3f), 32f,
+            "..........QO.",
+            "oooo......OQO",
+            "oKKKoooooo.QO",
+            "oKKKMMMMMMoO.",
+            "okkkoooooo...",
+            "oKKKo........",
+            "oooo.........");
+
+        public static Sprite Drill() => Make("drill", new Vector2(4f, 1f), 32f,
+            "oooooooo",
+            "oKKKKKKo",
+            "okkkkkko",
+            "oooMMooo",
+            "..oMMo..",
+            "..oMmo..",
+            "..omMo..",
+            "..oMmo..",
+            "...oo...");
+
         private static Sprite Make(string key, Vector2 pivotPx, float ppu, params string[] rows)
         {
             if (cache.TryGetValue(key, out var s)) return s;

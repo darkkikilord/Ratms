@@ -36,6 +36,9 @@ namespace Ratms.Networking
             WeaponsMenuUI.WeaponId.Sniper, WeaponsMenuUI.WeaponId.Bow, WeaponsMenuUI.WeaponId.Mortar,
             WeaponsMenuUI.WeaponId.Pigeon, WeaponsMenuUI.WeaponId.RatBomb, WeaponsMenuUI.WeaponId.Bat,
             WeaponsMenuUI.WeaponId.Bayonet, WeaponsMenuUI.WeaponId.GasCan, WeaponsMenuUI.WeaponId.HolyCheese,
+            WeaponsMenuUI.WeaponId.Banana, WeaponsMenuUI.WeaponId.Molotov, WeaponsMenuUI.WeaponId.Fireball, WeaponsMenuUI.WeaponId.Homing,
+            WeaponsMenuUI.WeaponId.Anvil, WeaponsMenuUI.WeaponId.RabidRat, WeaponsMenuUI.WeaponId.GrannyRat, WeaponsMenuUI.WeaponId.Pistol,
+            WeaponsMenuUI.WeaponId.FirePunch, WeaponsMenuUI.WeaponId.Mole,
         };
 
         partial void ModesAwake() => HillScore = new NetworkList<int>();

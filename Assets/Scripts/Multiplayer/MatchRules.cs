@@ -193,6 +193,29 @@ namespace Ratms.Networking
                 WeaponsMenuUI.WeaponId.HolyCheese => 0,   // solo en cajas
                 WeaponsMenuUI.WeaponId.Sniper => 2,
                 WeaponsMenuUI.WeaponId.Bow => 3,
+                // 0.28 — arsenal completo
+                WeaponsMenuUI.WeaponId.Banana => 1,
+                WeaponsMenuUI.WeaponId.Molotov => 2,
+                WeaponsMenuUI.WeaponId.Fireball => 2,
+                WeaponsMenuUI.WeaponId.Homing => 1,
+                WeaponsMenuUI.WeaponId.Anvil => 1,
+                WeaponsMenuUI.WeaponId.MineStrike => 1,
+                WeaponsMenuUI.WeaponId.Meteors => 0,      // solo en cajas
+                WeaponsMenuUI.WeaponId.Earthquake => 1,
+                WeaponsMenuUI.WeaponId.RabidRat => 1,
+                WeaponsMenuUI.WeaponId.GrannyRat => 1,
+                WeaponsMenuUI.WeaponId.StinkRat => 1,
+                WeaponsMenuUI.WeaponId.Mole => 1,
+                WeaponsMenuUI.WeaponId.Stampede => 0,     // solo en cajas
+                WeaponsMenuUI.WeaponId.Pistol => 3,
+                WeaponsMenuUI.WeaponId.Kamikaze => 1,
+                WeaponsMenuUI.WeaponId.Medkit => 1,
+                WeaponsMenuUI.WeaponId.SuperJump => 2,
+                WeaponsMenuUI.WeaponId.Parachute => 2,
+                WeaponsMenuUI.WeaponId.Scales => 0,       // solo en cajas
+                WeaponsMenuUI.WeaponId.Blowtorch => 1,
+                WeaponsMenuUI.WeaponId.Drill => 1,
+                WeaponsMenuUI.WeaponId.Girder => 2,
                 _ => -1,   // bayoneta infinita, como el bate   // bazuca, escopeta, bate, cuerda y metralleta: infinitas
             };
         }

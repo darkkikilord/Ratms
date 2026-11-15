@@ -60,7 +60,7 @@ namespace Ratms.Networking
             for (int i = 0; i < count; i++)
             {
                 pos[i] = at + Random.insideUnitCircle * 0.5f;
-                vel[i] = Random.insideUnitCircle * 1.6f + Vector2.up * 0.6f;
+                vel[i] = Random.insideUnitCircle * 1.8f + Vector2.up * 0.15f;   // 0.28: la nube se queda a la altura de las ratas
             }
             tm.GasClientRpc(pos, vel);
         }
@@ -79,7 +79,7 @@ namespace Ratms.Networking
                     puffs.RemoveAt(i);
                     continue;
                 }
-                p.vel += new Vector2(wind * 0.35f, 0.12f) * dt;   // el viento lo arrastra, sube despacio
+                p.vel += new Vector2(wind * 0.35f, 0.04f) * dt;   // el viento lo arrastra, sube despacio
                 p.vel *= Mathf.Exp(-1.2f * dt);
                 p.pos += p.vel * dt;
                 float age = 1f - p.life / p.maxLife;

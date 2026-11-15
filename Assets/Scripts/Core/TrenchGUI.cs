@@ -438,7 +438,7 @@ namespace Ratms.UI
         public static event Action OnVolumesChanged;
 
         /// <summary>Altura que ocupa <see cref="OptionsBlock"/> (para dimensionar la ventana).</summary>
-        public const float OptionsBlockHeight = 11 * 52f + 12f;
+        public const float OptionsBlockHeight = 12 * 52f + 12f;   // 0.33: +"Voces de las ratas"
 
         /// <summary>Dibuja el bloque de opciones en <paramref name="area"/>. Devuelve la altura usada.</summary>
         public static float OptionsBlock(Rect area)
@@ -450,6 +450,8 @@ namespace Ratms.UI
             float m = Slider(new Rect(area.x, y, area.width, h), "Volumen general", PlayerPrefs.GetFloat("opt_master", 0.8f)); y += gap;
             float mu = Slider(new Rect(area.x, y, area.width, h), "Música", PlayerPrefs.GetFloat("opt_music", 0.8f)); y += gap;
             float sf = Slider(new Rect(area.x, y, area.width, h), "Efectos", PlayerPrefs.GetFloat("opt_sfx", 0.8f)); y += gap;
+            // 0.33: cada rata tiene su voz (RatVoice); se ajusta aparte de los efectos.
+            Ratms.Networking.RatVoice.Volume = Slider(new Rect(area.x, y, area.width, h), "Voces de las ratas", Ratms.Networking.RatVoice.Volume); y += gap;
             if (!Mathf.Approximately(m, PlayerPrefs.GetFloat("opt_master", 0.8f)) ||
                 !Mathf.Approximately(mu, PlayerPrefs.GetFloat("opt_music", 0.8f)) ||
                 !Mathf.Approximately(sf, PlayerPrefs.GetFloat("opt_sfx", 0.8f)))

@@ -520,6 +520,7 @@ namespace Ratms.UI
              "Mode {7} · weather {8} · {0} rats · {1} health · {2} s turns · sudden death {3} · {4} barrels · crates {5} · mutilations {6}"),
             ("Modo {7} · mapa {9} · clima {8} · {0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
              "Mode {7} · map {9} · weather {8} · {0} rats · {1} health · {2} s turns · sudden death {3} · {4} barrels · crates {5} · mutilations {6}"),
+            ("Voces de las ratas", "Rat voices"),
             // 0.32: formas de mapa
             ("Mapa", "Map"), ("Isla", "Island"), ("Archipiélago", "Archipelago"), ("Montaña", "Mountain"), ("Cañón", "Canyon"), ("Cavernas", "Caverns"), ("Cielo", "Sky"),
             ("isla", "island"), ("archipiélago", "archipelago"), ("montaña", "mountain"), ("cañón", "canyon"), ("cavernas", "caverns"), ("cielo", "sky"),

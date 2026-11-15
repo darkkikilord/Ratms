@@ -33,18 +33,8 @@ namespace Ratms.Networking
         {
             var nm = NetworkManager.Singleton;
             if (nm == null || nm.SpawnManager == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(ratId, out var no)) return;
-            var look = no.GetComponent<RatAppearance>();
-            // Cada rata con su tono: las pequeñas, agudas; las gordas, graves.
-            float pitch = 1f;
-            if (look != null)
-            {
-                pitch = look.Look.body switch
-                {
-                    RatLook.BodyType.Enana => 1.45f, RatLook.BodyType.Flaca => 1.2f, RatLook.BodyType.Gigante => 0.7f,
-                    RatLook.BodyType.Gorda => 0.85f, RatLook.BodyType.Musculosa => 0.8f, _ => 1f,
-                } + (look.Look.variant % 7 - 3) * 0.03f;
-            }
-            Sfx.PlayPitched(Sfx.Id.Voice, 0.7f, pitch);
+            // 0.33: cada rata con SU voz (RatVoice: tono, garganta, aspereza... según su aspecto).
+            RatVoice.Say(no, RatVoice.Kind.Talk, 0.95f);
             if (PlayerPrefs.GetInt("opt_laughs", 1) == 1)
                 SpeechBubbles.Say(no.transform, Ratms.UI.Loc.T(code >= 100 ? RatLines.TurnStart[(code - 100) % RatLines.TurnStart.Length] : RatLines.Taunts[code % RatLines.Taunts.Length]));
             if (hop && no.IsOwner)

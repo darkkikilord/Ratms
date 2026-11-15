@@ -103,7 +103,32 @@ namespace Ratms.Networking
         {
             if (SceneManager.GetActiveScene().name == "MainMenu") return Mood.Menu;
             var tm = NetworkTurnManager.Instance;
-            return tm != null && tm.SuddenDeath.Value ? Mood.SuddenDeath : Mood.Battle;
+            if (tm != null && tm.SuddenDeath.Value) return Mood.SuddenDeath;
+            // 0.33: EL FINAL — quedan dos equipos y entre los dos 3 ratas o menos:
+            // la música se pone tensa (la misma lista que la muerte súbita).
+            if (tm != null && tm.IsSpawned && !tm.GameEnded.Value && IsFinalShowdown()) return Mood.SuddenDeath;
+            return Mood.Battle;
+        }
+
+        private float finalCheckedAt = -10f;
+        private bool finalCached;
+        private bool IsFinalShowdown()
+        {
+            if (Time.unscaledTime - finalCheckedAt < 1.5f) return finalCached;
+            finalCheckedAt = Time.unscaledTime;
+            var aliveByTeam = new System.Collections.Generic.Dictionary<int, int>();
+            int total = 0;
+            foreach (var m in FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None))
+            {
+                if (m == null || !m.IsSpawned || m.IsTestDummy || m.TeamIndex.Value < 0) continue;
+                var h = m.GetComponent<NetworkHealth>();
+                if (h == null || h.IsDead.Value) continue;
+                aliveByTeam.TryGetValue(m.TeamIndex.Value, out int n);
+                aliveByTeam[m.TeamIndex.Value] = n + 1;
+                total++;
+            }
+            finalCached = aliveByTeam.Count == 2 && total <= 3;
+            return finalCached;
         }
 
         private void CheckMood(bool force)

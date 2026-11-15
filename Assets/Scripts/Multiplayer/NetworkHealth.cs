@@ -222,7 +222,7 @@ namespace Ratms.Networking
             Vector2 at = zone == ZoneLegs ? b + Vector2.down * 0.2f : zone == ZoneHead ? b + Vector2.up * 0.25f : b;
             Fx.LimbOff(at, zone);
             Sfx.Play(Sfx.Id.Splat, 0.9f);
-            Sfx.Play(Sfx.Id.Ouch, 1f, 0.1f);
+            RatVoice.Say(this, RatVoice.Kind.Hurt);   // 0.33: su propia voz
             if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.15f, 0.25f);
             string t = zone == ZoneLegs ? (LegsLost >= 2 ? "¡MIS PATAS!" : "¡MI PATA!")
                      : zone == ZoneArms ? (ArmsLost >= 2 ? "¡MIS BRAZOS!" : "¡MI BRAZO!")
@@ -451,7 +451,7 @@ namespace Ratms.Networking
             DamageType type = (DamageType)typeByte;
             lastDamageType = type;
             WorldDamagePopup.Spawn(hitPoint, amount, type);
-            if (type == DamageType.Water) { Fx.Splash(hitPoint); Sfx.Play(Sfx.Id.Splash); return; }
+            if (type == DamageType.Water) { Fx.Splash(hitPoint); Sfx.Play(Sfx.Id.Splash); RatVoice.Say(this, RatVoice.Kind.Splash); return; }
             bool laughs = PlayerPrefs.GetInt("opt_laughs", 1) == 1;
 
             // GORE: salpicón de sangre hacia fuera del golpe (mancha el suelo).
@@ -463,7 +463,8 @@ namespace Ratms.Networking
             if (amount >= 20) RatAppearance.SplatterAround(BodyCenter, amount >= 40 ? 1.8f : 1.3f, gameObject, 1);
             if (!lethal)
             {
-                Sfx.Play(Sfx.Id.Ouch, 0.7f, 0.15f);
+                Sfx.Play(Sfx.Id.Ouch, 0.25f, 0.15f);   // golpe sordo; el quejido es la voz de la rata
+                RatVoice.Say(this, amount >= 25 ? RatVoice.Kind.Hurt : RatVoice.Kind.Ouch);
                 if (laughs && Random.value < 0.35f)
                     WorldDamagePopup.SpawnImpact(BodyCenter + Vector2.up * 0.9f, Pick(HurtQuips), new Color(1f, 0.75f, 0.6f));
             }
@@ -476,7 +477,7 @@ namespace Ratms.Networking
                 var ah = attacker.GetComponent<NetworkHealth>();
                 Vector2 at = (ah != null ? ah.BodyCenter : (Vector2)attacker.transform.position) + Vector2.up * 0.95f;
                 WorldDamagePopup.SpawnImpact(at, Pick(Laughs), new Color(1f, 0.9f, 0.35f));
-                Sfx.Play(Sfx.Id.Laugh, lethal ? 1f : 0.75f, 0.1f);
+                RatVoice.Say(attacker, RatVoice.Kind.Laugh, lethal ? 1f : 0.8f);   // 0.33: se ríe con SU voz
             }
         }
 
@@ -536,7 +537,8 @@ namespace Ratms.Networking
                 if (PlayerPrefs.GetInt("opt_laughs", 1) == 1)
                     WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.3f, Pick(DeathQuips), new Color(0.95f, 0.25f, 0.2f));
             }
-            Sfx.Play(Sfx.Id.Squeak, 0.8f);
+            Sfx.Play(Sfx.Id.Squeak, 0.35f);
+            RatVoice.Say(this, RatVoice.Kind.Death);   // 0.33: su último grito
             ApplyDeathVisual();
         }
 

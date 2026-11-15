@@ -839,6 +839,7 @@ namespace Ratms.Networking
                 Sfx.Play(Sfx.Id.Swish, 0.6f);
                 var lookFlip = GetComponent<RatAppearance>();
                 if (lookFlip != null) lookFlip.Backflip();
+                RatVoice.Say(this, RatVoice.Kind.Hup, 0.7f);   // 0.33
                 // El giro es solo DIBUJO (la posición ya viaja por el
                 // NetworkTransform): hay que avisar a los demás PCs o solo lo
                 // ve quien lo hace.
@@ -1240,6 +1241,7 @@ namespace Ratms.Networking
             var look = GetComponent<RatAppearance>();
             if (look != null) look.Backflip();
             Sfx.Play(Sfx.Id.Swish, 0.5f);
+            RatVoice.Say(this, RatVoice.Kind.Hup, 0.7f);   // 0.33
         }
 
         [ServerRpc]

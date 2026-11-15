@@ -89,7 +89,11 @@ namespace Ratms.Networking
                 arrow.sprite = Badge.Arrow();
                 arrow.sortingOrder = 960;
             }
-            if (rat.NetworkObjectId != lastRat) { lastRat = rat.NetworkObjectId; shownAt = Time.time; }
+            if (rat.NetworkObjectId != lastRat)
+            {
+                lastRat = rat.NetworkObjectId; shownAt = Time.time;
+                RatVoice.Say(rat, RatVoice.Kind.Hey, 0.6f);   // 0.33: "¡eh!" al empezar su turno
+            }
             float t = Time.time - shownAt;
             bool big = t < 3f;
             float bounce = Mathf.Abs(Mathf.Sin(Time.time * (big ? 7f : 3f))) * (big ? 0.35f : 0.12f);

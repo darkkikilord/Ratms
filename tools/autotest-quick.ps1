@@ -1,6 +1,6 @@
 # 0.36 — Prueba REAL de la partida rápida (internet + Lobby de Unity): dos copias con perfiles distintos.
 # La A crea y anuncia la sala; la B (14 s después) la encuentra y entra sin código. Usa la build de AutoTest\Build.
-$repo = "C:\Users\josem\Documents\GitHub\Ratms"
+$repo = Split-Path -Parent $PSScriptRoot
 $exe = Join-Path $repo "AutoTest\Build\Ratms.exe"
 $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $dirs = @((Join-Path $repo "AutoTest\Quick_${stamp}_a"), (Join-Path $repo "AutoTest\Quick_${stamp}_b"))

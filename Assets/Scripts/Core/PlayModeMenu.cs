@@ -78,8 +78,16 @@ namespace Ratms.UI
             MatchRules.CrateChance = Crates[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Cajas", new[] { "Nunca", "Pocas", "Normal", "Muchas" }, Idx(Crates, MatchRules.CrateChance, 2))]; y += gap;
             MatchRules.Mutilations = TrenchGUI.Toggle(new Rect(r.x, y, r.width, rowH), "Mutilaciones", MatchRules.Mutilations, 230f); y += gap;
             {
-                int ws = TrenchGUI.Stepper(new Rect(r.x, y, r.width, rowH), "Clima", Loc.T(MatchRules.WeatherName(MatchRules.WeatherSetting)));
-                if (ws != 0) MatchRules.WeatherSetting = (MatchRules.WeatherSetting + ws + MatchRules.WeatherChoices) % MatchRules.WeatherChoices;
+                // 0.30.2: a la derecha, "Niebla: sí/no" (apagada por defecto)
+                float fw = 190f;
+                int ws = TrenchGUI.Stepper(new Rect(r.x, y, r.width - fw - 10f, rowH), "Clima", Loc.T(MatchRules.WeatherName(MatchRules.EffectiveWeatherSetting)));
+                if (ws != 0) MatchRules.WeatherSetting = MatchRules.NextWeatherSetting(ws);
+                bool fog = MatchRules.FogAllowed;
+                if (TrenchGUI.Button(new Rect(r.xMax - fw, y, fw, rowH), fog ? "Niebla: sí" : "Niebla: no", selected: fog))
+                {
+                    MatchRules.FogAllowed = !fog;
+                    if (fog && MatchRules.WeatherSetting == 2) MatchRules.WeatherSetting = 0;
+                }
                 y += gap;
             }
             return y - r.y;
@@ -96,7 +104,7 @@ namespace Ratms.UI
             MatchRules.CrateChance <= 0f ? "nunca" : MatchRules.CrateChance < 0.3f ? "pocas" : MatchRules.CrateChance < 0.5f ? "normal" : "muchas",
             MatchRules.Mutilations ? "sí" : "no",
             MatchRules.GameName(MatchRules.Game),
-            MatchRules.WeatherName(MatchRules.WeatherSetting).ToLower());
+            MatchRules.WeatherName(MatchRules.EffectiveWeatherSetting).ToLower());
 
         private static int Idx(int[] arr, int v, int def) { int i = Array.IndexOf(arr, v); return i < 0 ? def : i; }
         private static int Idx(float[] arr, float v, int def)

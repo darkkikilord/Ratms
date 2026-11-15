@@ -513,7 +513,7 @@ namespace Ratms.UI
 
             // ---------------- Espectáculo (0.27) ----------------
             ("¡CÁMARA LENTA!", "SLOW MOTION!"), ("Cámara lenta al reventar una rata", "Slow motion when a rat bursts"),
-            ("Clima", "Weather"), ("Despejado", "Clear"), ("Lluvia", "Rain"), ("Niebla", "Fog"), ("Tormenta", "Storm"), ("Nieve", "Snow"), ("Al azar", "Random"),
+            ("Clima", "Weather"), ("Niebla: sí", "Fog: on"), ("Niebla: no", "Fog: off"), ("Despejado", "Clear"), ("Lluvia", "Rain"), ("Niebla", "Fog"), ("Tormenta", "Storm"), ("Nieve", "Snow"), ("Al azar", "Random"),
             ("despejado", "clear"), ("lluvia", "rain"), ("niebla", "fog"), ("tormenta", "storm"), ("nieve", "snow"), ("al azar", "random"),
             ("Modo {7} · clima {8} · {0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
              "Mode {7} · weather {8} · {0} rats · {1} health · {2} s turns · sudden death {3} · {4} barrels · crates {5} · mutilations {6}"),

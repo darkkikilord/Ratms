@@ -72,14 +72,39 @@ namespace Ratms.Networking
         {
             0 => "Despejado", 1 => "Lluvia", 2 => "Niebla", 3 => "Tormenta", 4 => "Nieve", _ => "Al azar",
         };
+        /// <summary>
+        ///  0.30.2: la NIEBLA está apagada por defecto (no sale ni al azar ni se
+        ///  puede elegir). Se activa en las reglas con "Niebla: sí" (<c>rule_fog</c>).
+        /// </summary>
+        public static bool FogAllowed
+        {
+            get => PlayerPrefs.GetInt("rule_fog", 0) == 1;
+            set => PlayerPrefs.SetInt("rule_fog", value ? 1 : 0);
+        }
+
+        /// <summary>Clima elegido teniendo en cuenta si la niebla está permitida.</summary>
+        public static int EffectiveWeatherSetting => WeatherSetting == 2 && !FogAllowed ? 0 : WeatherSetting;
+
+        /// <summary>Siguiente opción del selector "Clima" (se salta la niebla si no está permitida).</summary>
+        public static int NextWeatherSetting(int step)
+        {
+            int s = EffectiveWeatherSetting;
+            do s = (s + step + WeatherChoices) % WeatherChoices;
+            while (s == 2 && !FogAllowed);
+            return s;
+        }
+
         /// <summary>(Servidor) Clima que se juega: el elegido o uno al azar (más veces despejado).</summary>
         public static Weather PickWeather()
         {
             if (OverrideWeather.HasValue) return OverrideWeather.Value;
-            int s = WeatherSetting;
+            int s = EffectiveWeatherSetting;
             if (s < 5) return (Weather)s;
             float r = Random.value;
-            return r < 0.4f ? Weather.Despejado : r < 0.58f ? Weather.Lluvia : r < 0.72f ? Weather.Niebla : r < 0.86f ? Weather.Tormenta : Weather.Nieve;
+            bool fog = FogAllowed;
+            return r < 0.4f ? Weather.Despejado : r < 0.58f ? Weather.Lluvia
+                 : r < 0.72f ? (fog ? Weather.Niebla : Weather.Despejado)
+                 : r < 0.86f ? Weather.Tormenta : Weather.Nieve;
         }
 
         /// <summary>El editor de reglas: cambia el modo y lo recuerda.</summary>

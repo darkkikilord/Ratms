@@ -176,6 +176,7 @@ Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMe
 - **Opciones → Controles y accesibilidad…** (`ControlsOverlay`): reasignar teclas (ESC cancela, RETROCESO borra; si la tecla la usaba otra acción se le quita), favoritas con ◀ ▶, barra rápida, **colores para daltónicos** (Okabe-Ito, `Accessibility.ColorBlind`, se aplica a las ratas nuevas), **tamaño de los textos** 80-130 % (`TrenchGUI.Scale` × `Accessibility.UiScale`) y **cargar sin mantener** (`TapToCharge`: pulsar empieza, pulsar suelta).
 - Prueba: `tools\autotest.ps1 -Role show -Slowmo` (S01b-c tamaños, S01d barra, S01e arsenal, S01f controles, S04b-c repetición).
 - 0.30.1: menú sin recortar el título en pantallas más anchas que la imagen (`UIImageCover`: ajusta por alto y prolonga la columna del borde a los lados), resoluciones solo de la misma forma que el monitor (`DisplaySettings`; una guardada con otra forma vuelve a la nativa → sin franjas negras) y niebla más suave POR DETRÁS de los menús (`GUI.depth = 50`). Fotos para itch: `tools\autotest.ps1 -Role promo -Slowmo -Width 1920 -Height 1080`.
+- 0.30.2: la NIEBLA está apagada por defecto: no sale al azar ni se puede elegir salvo que en las reglas se pulse "Niebla: sí" (`MatchRules.FogAllowed`, `rule_fog`; `EffectiveWeatherSetting`, `NextWeatherSetting`).
 
 ## Convenciones
 - Comentarios abundantes en español con `/// <summary>` explicando el *porqué* (el usuario aprende leyéndolos). Mantener ese estilo.

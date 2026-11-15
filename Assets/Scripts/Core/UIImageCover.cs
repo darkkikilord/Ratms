@@ -22,25 +22,60 @@ namespace Ratms.UI
         private Image image;
         private RectTransform rect;
         private Vector2Int lastScreen;
-        private Image fill;
+        private GameObject fill;
+        private RawImage fillL, fillR;
 
-        private void EnsureFill(Vector2 size, RectTransform canvasRect)
+        /// <summary>
+        ///  0.30.1 — RELLENO DE LOS LADOS en pantallas más anchas que la imagen:
+        ///  dos tiras que prolongan la última columna de píxeles de cada borde
+        ///  (cielo con cielo, hierba con hierba). Antes era la imagen entera
+        ///  estirada y se veía un trozo del título repetido.
+        /// </summary>
+        private void EnsureFill(Vector2 imageSize, RectTransform canvasRect, Vector2 area)
         {
             if (fill == null)
             {
-                var go = new GameObject("FondoRelleno", typeof(RectTransform), typeof(Image));
-                go.transform.SetParent(transform.parent, false);
-                fill = go.GetComponent<Image>();
-                fill.sprite = image.sprite;
-                fill.raycastTarget = false;
-                fill.color = new Color(0.82f, 0.82f, 0.82f, 1f);   // un pelín más oscuro: el ojo va al centro
+                fill = new GameObject("FondoRelleno", typeof(RectTransform));
+                fill.transform.SetParent(transform.parent, false);
+                fillL = MakeStrip("Izq");
+                fillR = MakeStrip("Der");
             }
-            fill.gameObject.SetActive(true);
+            fill.SetActive(true);
             fill.transform.SetSiblingIndex(transform.GetSiblingIndex());   // justo detrás
-            var r = (RectTransform)fill.transform;
-            r.anchorMin = r.anchorMax = r.pivot = new Vector2(0.5f, 0.5f);
-            r.sizeDelta = size;
-            r.position = canvasRect.position;
+            var fr = (RectTransform)fill.transform;
+            fr.anchorMin = fr.anchorMax = fr.pivot = new Vector2(0.5f, 0.5f);
+            fr.sizeDelta = area;
+            fr.position = canvasRect.position;
+
+            var sp = image.sprite;
+            var tex = sp.texture;
+            Rect tr = sp.textureRect;
+            float u0 = tr.xMin / tex.width, u1 = tr.xMax / tex.width, v0 = tr.yMin / tex.height, v1 = tr.yMax / tex.height;
+            float px = 1f / tex.width;   // una columna de píxeles
+            float side = Mathf.Max(0f, (area.x - imageSize.x) * 0.5f) + 2f;
+            Place(fillL, -1f, side, imageSize.y, new Rect(u0 + px * 0.5f, v0, px * 0.01f, v1 - v0), tex);
+            Place(fillR, 1f, side, imageSize.y, new Rect(u1 - px * 0.5f, v0, px * 0.01f, v1 - v0), tex);
+        }
+
+        private RawImage MakeStrip(string n)
+        {
+            var go = new GameObject(n, typeof(RectTransform), typeof(RawImage));
+            go.transform.SetParent(fill.transform, false);
+            var ri = go.GetComponent<RawImage>();
+            ri.raycastTarget = false;
+            ri.color = new Color(0.85f, 0.85f, 0.85f, 1f);   // un pelín más oscuro: el ojo va al centro
+            return ri;
+        }
+
+        private static void Place(RawImage ri, float dir, float width, float height, Rect uv, Texture tex)
+        {
+            ri.texture = tex;
+            ri.uvRect = uv;
+            var r = ri.rectTransform;
+            r.anchorMin = r.anchorMax = new Vector2(dir < 0f ? 0f : 1f, 0.5f);
+            r.pivot = new Vector2(dir < 0f ? 0f : 1f, 0.5f);
+            r.anchoredPosition = Vector2.zero;
+            r.sizeDelta = new Vector2(width, height);
         }
 
         private void Awake()
@@ -84,14 +119,15 @@ namespace Ratms.UI
             // de arriba/abajo se comía el título RATMS (está dibujado en el fondo).
             // Ahora la imagen se recorta como en 16:9 y los lados se rellenan con
             // una copia estirada por detrás (cielo con cielo, suelo con suelo).
-            const float maxAspect = 16f / 9f;
-            if (areaAspect > maxAspect && spriteAspect < maxAspect)
+            // 0.30.1: SIEMPRE que la pantalla sea más ancha que la imagen (aunque sea
+            // un poco), se ajusta por ALTO: nunca se corta el título de arriba ni
+            // el suelo de abajo. Los lados se rellenan con la copia estirada.
+            if (areaAspect > spriteAspect + 0.01f)
             {
-                float h = area.y * maxAspect / spriteAspect;
-                size = new Vector2(h * spriteAspect, h);
-                EnsureFill(new Vector2(area.x, h), canvasRect);
+                size = new Vector2(area.y * spriteAspect, area.y);
+                EnsureFill(size, canvasRect, area);
             }
-            else if (fill != null) fill.gameObject.SetActive(false);
+            else if (fill != null) fill.SetActive(false);
 
             image.preserveAspect = false;   // ya la proporción la llevamos nosotros
 

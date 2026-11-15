@@ -410,11 +410,12 @@ namespace Ratms.Networking
         private void OnGUI()
         {
             if (Current == Weather.Despejado && flash <= 0f) return;
+            GUI.depth = 50;   // 0.30.1: POR DETRÁS de menús, arsenal y marcadores (antes los tapaba)
             var c = GUI.color;
             if (Current == Weather.Niebla)
             {
                 if (fogTex == null) fogTex = FogTexture();
-                GUI.color = new Color(0.82f, 0.84f, 0.86f, 0.78f);
+                GUI.color = new Color(0.8f, 0.83f, 0.86f, 0.55f);   // más suave
                 GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), fogTex);
             }
             else if (Current == Weather.Tormenta)
@@ -440,7 +441,7 @@ namespace Ratms.Networking
                 {
                     float dx = (x - S * 0.5f) / (S * 0.5f), dy = (y - S * 0.5f) / (S * 0.5f);
                     float d = Mathf.Sqrt(dx * dx * 0.8f + dy * dy);
-                    float a = Mathf.Clamp01((d - 0.35f) / 0.65f);
+                    float a = Mathf.Clamp01((d - 0.5f) / 0.6f);   // centro despejado más grande
                     a = a * a * (3f - 2f * a) * (0.85f + 0.15f * Mathf.PerlinNoise(x * 0.15f, y * 0.15f));
                     t.SetPixel(x, y, new Color(1f, 1f, 1f, a));
                 }

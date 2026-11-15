@@ -31,13 +31,17 @@ namespace Ratms.UI
         public static List<Vector2Int> Available()
         {
             var list = new List<Vector2Int>();
+            var n = Native;
+            float nativeAspect = (float)n.x / Mathf.Max(1, n.y);
             foreach (var r in Screen.resolutions)
             {
                 var v = new Vector2Int(r.width, r.height);
                 if (v.y < 720 || list.Contains(v)) continue;
+                // 0.30.1: solo las de la MISMA forma que el monitor (si no, en
+                // pantalla completa salían franjas negras y el menú se deformaba).
+                if (Mathf.Abs((float)v.x / v.y - nativeAspect) > 0.03f) continue;
                 list.Add(v);
             }
-            var n = Native;
             if (!list.Contains(n)) list.Add(n);
             list.Sort((a, b) => (b.x * b.y).CompareTo(a.x * a.y));
             return list;
@@ -86,6 +90,16 @@ namespace Ratms.UI
             if (Application.isEditor || Application.isBatchMode) return;
             foreach (var a in System.Environment.GetCommandLineArgs())
                 if (a == "-ratmsAutoTest" || a.StartsWith("-screen-")) return;   // la prueba elige su ventana
+            // 0.30.1: una resolución guardada con otra forma que el monitor (de
+            // versiones viejas o de otro monitor) → volver a la nativa.
+            {
+                var c = Chosen; var n = Native;
+                if (Mathf.Abs((float)c.x / Mathf.Max(1, c.y) - (float)n.x / Mathf.Max(1, n.y)) > 0.03f || c.x > n.x || c.y > n.y)
+                {
+                    PlayerPrefs.SetInt("opt_res_w", 0);
+                    PlayerPrefs.SetInt("opt_res_h", 0);
+                }
+            }
             if (!PlayerPrefs.HasKey("opt_win"))
             {
                 // Primera vez: si arranca en pantalla completa, que sea a la resolución nativa.

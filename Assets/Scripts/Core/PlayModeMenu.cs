@@ -77,6 +77,11 @@ namespace Ratms.UI
             MatchRules.Barrels = Barrels[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Barriles", new[] { "Ninguno", "Pocos", "Normal", "Muchos" }, Idx(Barrels, MatchRules.Barrels, 2))]; y += gap;
             MatchRules.CrateChance = Crates[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Cajas", new[] { "Nunca", "Pocas", "Normal", "Muchas" }, Idx(Crates, MatchRules.CrateChance, 2))]; y += gap;
             MatchRules.Mutilations = TrenchGUI.Toggle(new Rect(r.x, y, r.width, rowH), "Mutilaciones", MatchRules.Mutilations, 230f); y += gap;
+            {
+                int ws = TrenchGUI.Stepper(new Rect(r.x, y, r.width, rowH), "Clima", Loc.T(MatchRules.WeatherName(MatchRules.WeatherSetting)));
+                if (ws != 0) MatchRules.WeatherSetting = (MatchRules.WeatherSetting + ws + MatchRules.WeatherChoices) % MatchRules.WeatherChoices;
+                y += gap;
+            }
             return y - r.y;
         }
 
@@ -84,13 +89,14 @@ namespace Ratms.UI
         /// <remarks>Viaja por red EMPAQUETADO (<see cref="Loc.Pack"/>): cada cliente
         /// lo lee en su idioma con <see cref="Loc.Show"/>.</remarks>
         public static string Summary() => Loc.Pack(
-            "Modo {7} · {0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
+            "Modo {7} · clima {8} · {0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
             MatchRules.Game == GameMode.Duelo ? 1 : MatchRules.RatsPerTeam, MatchRules.StartHealth, MatchRules.TurnSeconds,
             MatchRules.SuddenDeathMinutes > 0 ? MatchRules.SuddenDeathMinutes + " min" : "nunca",
             MatchRules.Barrels,
             MatchRules.CrateChance <= 0f ? "nunca" : MatchRules.CrateChance < 0.3f ? "pocas" : MatchRules.CrateChance < 0.5f ? "normal" : "muchas",
             MatchRules.Mutilations ? "sí" : "no",
-            MatchRules.GameName(MatchRules.Game));
+            MatchRules.GameName(MatchRules.Game),
+            MatchRules.WeatherName(MatchRules.WeatherSetting).ToLower());
 
         private static int Idx(int[] arr, int v, int def) { int i = Array.IndexOf(arr, v); return i < 0 ? def : i; }
         private static int Idx(float[] arr, float v, int def)

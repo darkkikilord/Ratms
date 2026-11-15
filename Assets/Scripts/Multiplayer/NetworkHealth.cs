@@ -517,7 +517,9 @@ namespace Ratms.Networking
                 RatAppearance.SplatterAround(b, 3f, gameObject, 2);
                 if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.25f, 0.35f);
                 Sfx.Play(Sfx.Id.Splat);
-                Fx.Gravestone(b);
+                var mvD = GetComponent<NetworkPlayerMovement>();
+                Fx.Gravestone(b, mvD != null ? mvD.RatName.Value.ToString() : null, (int)(NetworkObjectId % 3));
+                SlowMotion.Trigger(b);   // 0.27: ¡cámara lenta!
                 if (PlayerPrefs.GetInt("opt_laughs", 1) == 1)
                     WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.3f, Pick(DeathQuips), new Color(0.95f, 0.25f, 0.2f));
             }

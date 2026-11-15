@@ -24,6 +24,7 @@ param(
     [string]$Role = "",
     [string]$Lang = "",
     [string]$Mode = "",
+    [switch]$Slowmo,
     [string]$UnityExe = "B:\Juegos\6000.0.50f1\Editor\Unity.exe",
     [int]$TimeoutSeconds = 320,
     [int]$Width = 1280,
@@ -83,7 +84,8 @@ $gameArgs = @(
     "-logFile", "`"$(Join-Path $runDir 'player.log')`""
 )
 if ($Biome) { $gameArgs += @("-autoTestBiome", $Biome) }
-if ($Mode) { $gameArgs += @("-autoTestMode", $Mode) }   # 0.25: Fuertes, Colina, Duelo, Minas, BarraLibre
+if ($Mode) { $gameArgs += @("-autoTestMode", $Mode) }
+if ($Slowmo) { $gameArgs += @("-autoTestSlowmo") }   # 0.27: deja la cámara lenta encendida en la prueba   # 0.25: Fuertes, Colina, Duelo, Minas, BarraLibre
 if ($Lang) { $gameArgs += @("-autoTestLang", $Lang) }   # en = capturas en inglés
 if ($Role)  { $gameArgs += @("-autoTestRole", $Role) }   # local, practice (host/client: usa autotest-multi.ps1)
 

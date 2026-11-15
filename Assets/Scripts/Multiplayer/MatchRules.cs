@@ -57,6 +57,28 @@ namespace Ratms.Networking
             get => game ??= (GameMode)Mathf.Clamp(PlayerPrefs.GetInt("rule_mode", 0), 0, GameModeCount - 1);
             set => game = value;
         }
+        // ------------------------------------------------------------
+        //  CLIMA (0.27): 0-4 = Weather, 5 = al azar
+        // ------------------------------------------------------------
+        public const int WeatherChoices = 6;
+        public static int WeatherSetting
+        {
+            get => Mathf.Clamp(PlayerPrefs.GetInt("rule_weather", 5), 0, WeatherChoices - 1);
+            set => PlayerPrefs.SetInt("rule_weather", Mathf.Clamp(value, 0, WeatherChoices - 1));
+        }
+        public static string WeatherName(int setting) => setting switch
+        {
+            0 => "Despejado", 1 => "Lluvia", 2 => "Niebla", 3 => "Tormenta", 4 => "Nieve", _ => "Al azar",
+        };
+        /// <summary>(Servidor) Clima que se juega: el elegido o uno al azar (más veces despejado).</summary>
+        public static Weather PickWeather()
+        {
+            int s = WeatherSetting;
+            if (s < 5) return (Weather)s;
+            float r = Random.value;
+            return r < 0.4f ? Weather.Despejado : r < 0.58f ? Weather.Lluvia : r < 0.72f ? Weather.Niebla : r < 0.86f ? Weather.Tormenta : Weather.Nieve;
+        }
+
         /// <summary>El editor de reglas: cambia el modo y lo recuerda.</summary>
         public static void SaveGame(GameMode g) { game = g; PlayerPrefs.SetInt("rule_mode", (int)g); }
         public const int GameModeCount = 6;

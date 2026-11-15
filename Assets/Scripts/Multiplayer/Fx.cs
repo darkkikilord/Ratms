@@ -519,15 +519,72 @@ namespace Ratms.Networking
         }
 
         /// <summary>Pone una LÁPIDA donde ha muerto una rata (cae hasta el suelo).</summary>
-        public static void Gravestone(Vector2 at)
+        public static void Gravestone(Vector2 at, string ratName = null, int style = 0)
         {
             var go = new GameObject("Lápida");
             go.transform.position = at;
             var sr = go.AddComponent<SpriteRenderer>();
-            sr.sprite = GravestoneSprite();
+            // 0.27: tres estilos (losa, cruz de madera y cuña de queso) y el nombre encima
+            sr.sprite = style == 1 ? CrossSprite() : style == 2 ? CheeseStoneSprite() : GravestoneSprite();
             sr.sortingOrder = 40;
             go.AddComponent<GravestoneSettle>();
+            if (!string.IsNullOrEmpty(ratName)) go.AddComponent<GravestoneName>().ratName = ratName;
         }
+
+        private static Sprite crossSprite, cheeseSprite;
+
+        private static Sprite PixelSprite(string[] rows, System.Collections.Generic.Dictionary<char, Color32> pal)
+        {
+            int H = rows.Length, W = rows[0].Length;
+            var tex = new Texture2D(W, H, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point };
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    char ch = rows[H - 1 - y][x];
+                    tex.SetPixel(x, y, pal.TryGetValue(ch, out var c) ? c : new Color32(0, 0, 0, 0));
+                }
+            tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, W, H), new Vector2(0.5f, 0f), 32f);
+        }
+
+        private static Sprite CrossSprite() => crossSprite ??= PixelSprite(new[]
+        {
+            "...kkkk...",
+            "...kWwk...",
+            "kkkkWwkkkk",
+            "kWWWWwwwwk",
+            "kwwwwwwwdk",
+            "kkkkWwkkkk",
+            "...kWwk...",
+            "...kWdk...",
+            "...kWdk...",
+            "...kWdk...",
+            "..gkWdkg..",
+            "gggkkkkggg",
+        }, new System.Collections.Generic.Dictionary<char, Color32>
+        {
+            ['k'] = new Color32(40, 28, 22, 255), ['W'] = new Color32(150, 108, 66, 255), ['w'] = new Color32(122, 86, 52, 255),
+            ['d'] = new Color32(92, 64, 40, 255), ['g'] = new Color32(80, 150, 70, 255),
+        });
+
+        private static Sprite CheeseStoneSprite() => cheeseSprite ??= PixelSprite(new[]
+        {
+            "........kk..",
+            "......kkYk..",
+            "....kkYYYk..",
+            "..kkYYoYYYk.",
+            "kkYYYYYYYYk.",
+            "kYYoYYYYoYk.",
+            "kYYYYYYYYYYk",
+            "kYYYYoYYYYYk",
+            "kyYYYYYYYYyk",
+            "kyyyyyyyyyyk",
+            "gkkkkkkkkkkg",
+        }, new System.Collections.Generic.Dictionary<char, Color32>
+        {
+            ['k'] = new Color32(60, 40, 16, 255), ['Y'] = new Color32(238, 196, 72, 255), ['y'] = new Color32(196, 150, 46, 255),
+            ['o'] = new Color32(176, 132, 36, 255), ['g'] = new Color32(80, 150, 70, 255),
+        });
 
         // ============================================================
         //  Motor

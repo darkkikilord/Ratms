@@ -65,7 +65,7 @@ namespace Ratms.Networking
 
             var w = menu != null ? menu.SelectedWeapon : WeaponsMenuUI.WeaponId.None;
             if (w == WeaponsMenuUI.WeaponId.None)
-                return T("TAB: armas  ·  ← →: andar  ·  ↑: saltar (dos veces: voltereta)  ·  clic derecho: mover la cámara");
+                return T("TAB: armas  ·  ← →: andar  ·  ↑: saltar (dos veces: voltereta)  ·  P: provocar  ·  clic derecho: mover la cámara");
             if (WeaponsMenuUI.ClickTargeted(w))
                 return T("Clic: elegir el sitio  ·  clic derecho y arrastrar: mirar lejos  ·  V: vista general");
             bool charge = w == WeaponsMenuUI.WeaponId.Bazooka || w == WeaponsMenuUI.WeaponId.Grenade || w == WeaponsMenuUI.WeaponId.ClusterBomb

@@ -148,6 +148,13 @@ Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMe
 - Si se va alguien de un equipo compartido, `ShareOutRatsServer` da sus ratas a un compañero (aviso "¡X se ha ido! Sus ratas pasan a Y"); si era el último, reconexión/eliminación como antes.
 - Prueba: `tools\autotest-multi.ps1 -SkipBuild -Coop` (host y cliente en el mismo bando).
 
+## Espectáculo (0.27)
+- **Cámara lenta** al reventar una rata (`SlowMotion.Trigger` desde `NetworkHealth.OnDeathStateChanged`): `Time.timeScale` 0,25 ~1,3 s, zoom y franjas de cine; Opciones → "Cámara lenta al reventar una rata" (`opt_slowmo`); apagada en pruebas salvo `-Slowmo`.
+- **Burlas**: tecla **P** (provocar) con la rata del turno → `NetworkTurnManager.TauntServerRpc` → `SayClientRpc`: bocadillo (`SpeechBubbles`), voz `Sfx.Id.Voice` con tono según el cuerpo (`Sfx.PlayPitched`) y saltito. 30 % de los turnos la rata suelta una frase al empezar. Frases en `RatLines`.
+- **Lápidas**: 3 estilos (losa, cruz de madera, cuña de queso) con el nombre de la rata (`GravestoneName`, se ve de cerca).
+- **Clima** (`Weather`; regla "Clima" con "Al azar"; el host lo sortea y viaja en `BiomeSyncer.weatherNet`): lluvia/tormenta (gotas que arrastra el viento + sonido en bucle), niebla (velo en los bordes), nieve y tormenta (cielo oscuro, relámpagos y RAYOS de verdad al acabar el 40 % de los turnos: cráter y daño, `SpectacleOnTurnEnd`). Visuales en `WeatherFx`.
+- Prueba: `tools\autotest.ps1 -Role show -Slowmo`.
+
 ## Convenciones
 - Comentarios abundantes en español con `/// <summary>` explicando el *porqué* (el usuario aprende leyéndolos). Mantener ese estilo.
 - `[Header]` + `[Tooltip]` en español en todos los campos del Inspector.
@@ -165,7 +172,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilación rápida: `tools\compilar-rapido.ps1`. Compilación completa de Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.26 (equipos de varios jugadores online). Antes: 0.25 (modos de juego). Antes: 0.24 (ratas a montones y cuerpos con ventajas). Plan del usuario (15 nov 2026): 0.25 modos de juego, 0.26 equipos de varios jugadores online, 0.27 espectáculo (repetición a cámara lenta, burlas/voces, lápidas, clima), 0.28 muchas armas nuevas (hasta ~48 como Worms); al final, informe con mejoras. Antes: 0.23 (reconexión online). Bloque 6 completo: lobby con ¡Listo!, reglas del host, revancha a la sala (ya existían) y reconexión. Siguiente: bloque 7 (publicar en itch.io). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.27 (espectáculo: cámara lenta, burlas, lápidas y clima). Antes: 0.26 (equipos de varios jugadores online). Antes: 0.25 (modos de juego). Antes: 0.24 (ratas a montones y cuerpos con ventajas). Plan del usuario (15 nov 2026): 0.25 modos de juego, 0.26 equipos de varios jugadores online, 0.27 espectáculo (repetición a cámara lenta, burlas/voces, lápidas, clima), 0.28 muchas armas nuevas (hasta ~48 como Worms); al final, informe con mejoras. Antes: 0.23 (reconexión online). Bloque 6 completo: lobby con ¡Listo!, reglas del host, revancha a la sala (ya existían) y reconexión. Siguiente: bloque 7 (publicar en itch.io). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)

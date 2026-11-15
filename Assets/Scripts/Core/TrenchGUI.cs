@@ -460,6 +460,11 @@ namespace Ratms.UI
             GoreOn = Toggle(new Rect(area.x, y, area.width, h), "Sangre y vísceras", GoreOn, tw); y += gap;
             LaughsOn = Toggle(new Rect(area.x, y, area.width, h), "Risas y frases de las ratas", LaughsOn, tw); y += gap;
             ShakeOn = Toggle(new Rect(area.x, y, area.width, h), "Temblor de cámara", ShakeOn, tw); y += gap;
+            {
+                bool slow = PlayerPrefs.GetInt("opt_slowmo", 1) == 1;
+                bool now = Toggle(new Rect(area.x, y, area.width, h), "Cámara lenta al reventar una rata", slow, tw); y += gap;
+                if (now != slow) PlayerPrefs.SetInt("opt_slowmo", now ? 1 : 0);
+            }
             Ratms.Networking.ControlHints.Enabled = Toggle(new Rect(area.x, y, area.width, h), "Ayudas de controles", Ratms.Networking.ControlHints.Enabled, tw); y += gap;
             // Pantalla y resolución (DisplaySettings): la completa va a la resolución
             // elegida, no estira la de la ventana.

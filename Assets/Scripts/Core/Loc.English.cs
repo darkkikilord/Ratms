@@ -440,6 +440,25 @@ namespace Ratms.UI
 
             // ---------------- Pantalla de carga (0.22) ----------------
             ("(¡copiado!)", "(copied!)"),
+            // ---------------- Espectáculo (0.27) ----------------
+            ("¡CÁMARA LENTA!", "SLOW MOTION!"), ("Cámara lenta al reventar una rata", "Slow motion when a rat bursts"),
+            ("Clima", "Weather"), ("Despejado", "Clear"), ("Lluvia", "Rain"), ("Niebla", "Fog"), ("Tormenta", "Storm"), ("Nieve", "Snow"), ("Al azar", "Random"),
+            ("despejado", "clear"), ("lluvia", "rain"), ("niebla", "fog"), ("tormenta", "storm"), ("nieve", "snow"), ("al azar", "random"),
+            ("Modo {7} · clima {8} · {0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
+             "Mode {7} · weather {8} · {0} rats · {1} health · {2} s turns · sudden death {3} · {4} barrels · crates {5} · mutilations {6}"),
+            ("TAB: armas  ·  ← →: andar  ·  ↑: saltar (dos veces: voltereta)  ·  P: provocar  ·  clic derecho: mover la cámara",
+             "TAB: weapons  ·  ← →: walk  ·  ↑: jump (twice: backflip)  ·  P: taunt  ·  right-click: move the camera"),
+            ("¡Ven aquí si tienes bigotes!", "Come here if you've got whiskers!"), ("¡Tu madre era un hámster!", "Your mother was a hamster!"),
+            ("¡Huele a queso rancio!", "Smells like rotten cheese!"), ("¡Te voy a dejar sin cola!", "I'll leave you tailless!"),
+            ("¡Ni con mira láser me das!", "You couldn't hit me with a laser sight!"), ("¡Cobarde de alcantarilla!", "Sewer coward!"),
+            ("¡Soy la reina de la cloaca!", "I'm the queen of the sewer!"), ("¡A llorar al desagüe!", "Go cry down the drain!"),
+            ("¡Ratonzuelo de laboratorio!", "Lab mouse!"), ("¡Esta trinchera es mía!", "This trench is mine!"),
+            ("¡Ñiec, ñiec, ñiec!", "Squeak, squeak, squeak!"), ("¡Apuntas como un topo!", "You aim like a mole!"),
+            ("¡A por ellos!", "Get them!"), ("¡Por el queso!", "For the cheese!"), ("Esto va a doler...", "This is gonna hurt..."),
+            ("¡Al ataque!", "Attack!"), ("¿Quién quiere guerra?", "Who wants a fight?"), ("Huele a victoria", "Smells like victory"),
+            ("Ni un paso atrás", "Not one step back"), ("¡Que tiemble la cloaca!", "Let the sewer tremble!"), ("Mamá, ¡mírame!", "Mom, look at me!"),
+            ("Vamos allá...", "Here we go..."),
+
             // ---------------- Equipos compartidos (0.26) ----------------
             ("Mi bando", "My side"), ("Automático", "Automatic"),
             ("¡{0} se ha ido!\nSus ratas pasan a {1}", "{0} has left!\nTheir rats go to {1}"),

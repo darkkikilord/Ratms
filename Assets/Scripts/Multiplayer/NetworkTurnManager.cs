@@ -143,6 +143,8 @@ namespace Ratms.Networking
         partial void ModesOnSpawn();
         partial void ModesOnGameStart();
         partial void ModesOnTurnBegin();
+        partial void SpectacleOnSpawn();
+        partial void SpectacleOnTurnBegin();
 
         // =========================================================
         // CICLO DE VIDA
@@ -170,6 +172,7 @@ namespace Ratms.Networking
             ItemsOnSpawn();
             StatsOnSpawn();
             ModesOnSpawn();
+            SpectacleOnSpawn();
         }
 
         public override void OnNetworkDespawn()
@@ -326,6 +329,7 @@ namespace Ratms.Networking
 
             bool wasRealTurn = CurrentRatId.Value != ulong.MaxValue;
             if (wasRealTurn && ModesOnTurnEnd(CurrentTeam.Value)) return;   // 0.25: la Colina puede acabar la partida
+            if (wasRealTurn) SpectacleOnTurnEnd();   // 0.27: rayos de la tormenta
             if (SuddenDeath.Value && wasRealTurn)
                 WaterRise.Value += MatchRules.SuddenDeathRisePerTurn;
 
@@ -377,6 +381,7 @@ namespace Ratms.Networking
                     ItemsOnTurnBegin();
                     PoisonOnTurnBegin();
                     ModesOnTurnBegin();
+                    SpectacleOnTurnBegin();
                     return;
                 }
             }

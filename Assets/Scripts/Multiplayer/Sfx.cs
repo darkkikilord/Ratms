@@ -19,7 +19,9 @@ namespace Ratms.Networking
     public class Sfx : MonoBehaviour
     {
         public enum Id { Explosion, BigExplosion, Shot, Whack, Swish, Launch, Throw, Splash, Teleport, Rope, Jump, TurnStart, Tick, Victory, Squeak, Laugh, Splat, Ouch, Flame, Burn, MachineGun, Plane, Whistle,
-                         Choir, Beep, Twang, SniperShot, Coo, Dig }
+                         Choir, Beep, Twang, SniperShot, Coo, Dig,
+                         // 0.27
+                         Voice, Thunder, Rain }
 
         private const int Rate = 44100;
         private static Sfx instance;
@@ -60,6 +62,24 @@ namespace Ratms.Networking
             var src = fx.sources[fx.next];
             fx.next = (fx.next + 1) % fx.sources.Count;
             src.pitch = 1f + Random.Range(-pitchJitter, pitchJitter);
+            src.PlayOneShot(clip, v);
+        }
+
+        /// <summary>0.27: el clip de un efecto (para bucles como la lluvia).</summary>
+        public static AudioClip Clip(Id id) => Get(id);
+
+        /// <summary>0.27: como Play pero con tono fijo (cada rata con su voz).</summary>
+        public static void PlayPitched(Id id, float volume, float pitch)
+        {
+            if (Application.isBatchMode) return;
+            var fx = I;
+            var clip = Get(id);
+            if (clip == null) return;
+            float v = volume * PlayerPrefs.GetFloat("opt_master", 0.8f) * PlayerPrefs.GetFloat("opt_sfx", 0.8f);
+            if (v <= 0.001f) return;
+            var src = fx.sources[fx.next];
+            fx.next = (fx.next + 1) % fx.sources.Count;
+            src.pitch = pitch;
             src.PlayOneShot(clip, v);
         }
 
@@ -115,6 +135,10 @@ namespace Ratms.Networking
                 Id.SniperShot => Mix(Noise(0.4f, 9f, 1f, lowpass: 0.7f), Sine(0.12f, 200f, 55f, 0.8f)),
                 Id.Coo => Chain(new[] { 420f, 360f, 410f }, 0.13f, 0.05f, 0.3f),
                 Id.Dig => Mix(Noise(0.2f, 18f, 0.55f, lowpass: 0.15f), Sine(0.06f, 300f, 200f, 0.3f)),
+                // 0.27: "voz" de rata (sílabas en chino de dibujos animados), trueno y lluvia
+                Id.Voice => Chain(new[] { 900f, 1180f, 760f, 1040f, 860f, 1260f }, 0.07f, 0.03f, 0.32f),
+                Id.Thunder => Mix(Noise(1.6f, 1.6f, 0.9f, lowpass: 0.06f), Noise(0.25f, 10f, 0.6f, lowpass: 0.35f)),
+                Id.Rain => Noise(2.0f, 0.2f, 0.12f, lowpass: 0.5f),
                 _ => null,
             };
             if (d == null) return null;

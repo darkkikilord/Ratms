@@ -31,6 +31,10 @@ namespace Ratms.World
             readPerm: NetworkVariableReadPermission.Everyone,
             writePerm: NetworkVariableWritePermission.Server);
 
+        /// <summary>0.27: clima de la partida.</summary>
+        private readonly NetworkVariable<byte> weatherNet = new(0,
+            NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
         /// <summary>0.25: modo de juego (Fuertes cambia la forma del mapa en todos los PCs).</summary>
         private readonly NetworkVariable<byte> gameModeNet = new(0,
             NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -46,6 +50,12 @@ namespace Ratms.World
             };
             if (IsServer) gameModeNet.Value = (byte)Ratms.Networking.MatchRules.EffectiveGame;
             else Ratms.Networking.MatchRules.Game = (Ratms.Networking.GameMode)gameModeNet.Value;
+
+            // 0.27: clima (el host lo sortea si está "al azar")
+            weatherNet.OnValueChanged += (_, v) => Ratms.Networking.WeatherFx.Current = (Ratms.Networking.Weather)v;
+            if (IsServer) weatherNet.Value = (byte)Ratms.Networking.MatchRules.PickWeather();
+            Ratms.Networking.WeatherFx.Current = (Ratms.Networking.Weather)weatherNet.Value;
+            Ratms.Networking.WeatherFx.Ensure();
 
             if (IsServer)
             {
@@ -69,6 +79,7 @@ namespace Ratms.World
 
         public override void OnNetworkDespawn()
         {
+            Ratms.Networking.WeatherFx.Current = Ratms.Networking.Weather.Despejado;
             biomeTypeNet.OnValueChanged -= OnBiomeTypeChanged;
         }
 

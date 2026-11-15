@@ -114,6 +114,45 @@ namespace Ratms.Networking
                  : r < 0.86f ? Weather.Tormenta : Weather.Nieve;
         }
 
+        // ------------------------------------------------------------
+        //  0.32 — FORMA DEL MAPA ("Mapa" en las reglas)
+        // ------------------------------------------------------------
+        /// <summary>Opciones del selector: las formas (0-5) y "Al azar" (6).</summary>
+        public const int MapShapeChoices = Ratms.World.WormsTerrainShape.ShapeCount + 1;
+        /// <summary>Forma elegida (0-5) o 6 = al azar. PlayerPrefs "rule_shape".</summary>
+        public static int MapShapeSetting
+        {
+            get => Mathf.Clamp(PlayerPrefs.GetInt("rule_shape", 0), 0, MapShapeChoices - 1);
+            set => PlayerPrefs.SetInt("rule_shape", Mathf.Clamp(value, 0, MapShapeChoices - 1));
+        }
+        /// <summary>Para las pruebas: fuerza la forma sin tocar las preferencias.</summary>
+        public static Ratms.World.MapShape? OverrideMapShape;
+
+        /// <summary>(Servidor) Forma que se juega: la elegida o una al azar. En práctica, la normal.</summary>
+        public static Ratms.World.MapShape PickMapShape()
+        {
+            if (OverrideMapShape.HasValue) return OverrideMapShape.Value;
+            if (Mode == MatchMode.Practice) return Ratms.World.MapShape.Normal;
+            int s = MapShapeSetting;
+            if (s < Ratms.World.WormsTerrainShape.ShapeCount) return (Ratms.World.MapShape)s;
+            return (Ratms.World.MapShape)Random.Range(0, Ratms.World.WormsTerrainShape.ShapeCount);
+        }
+
+        public static string MapShapeName(int setting) => setting switch
+        {
+            1 => "Archipiélago", 2 => "Montaña", 3 => "Cañón", 4 => "Cavernas", 5 => "Cielo", 6 => "Al azar", _ => "Isla",
+        };
+        public static string MapShapeDescription(int setting) => setting switch
+        {
+            1 => "Islas sueltas entre canales: usa la cuerda.",
+            2 => "Un pico enorme en el centro: arriba se manda.",
+            3 => "Dos mesetas altas y un valle con agua en medio.",
+            4 => "Casi todo tierra: galerías, cuevas y chimeneas.",
+            5 => "Solo islas flotantes sobre el mar.",
+            6 => "Una forma distinta en cada partida.",
+            _ => "La isla de siempre: colinas, túneles e islotes.",
+        };
+
         /// <summary>El editor de reglas: cambia el modo y lo recuerda.</summary>
         public static void SaveGame(GameMode g) { game = g; PlayerPrefs.SetInt("rule_mode", (int)g); }
         public const int GameModeCount = 6;

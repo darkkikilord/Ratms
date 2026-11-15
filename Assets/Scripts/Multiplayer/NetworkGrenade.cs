@@ -195,7 +195,12 @@ namespace Ratms.Networking
 
             // Colisión CONTINUA: el terreno son líneas finas (EdgeCollider2D).
             if (IsServer && rb != null)
+            {
                 rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+                // 0.32: si acaba DENTRO de la tierra (dinamita en una cuesta, agujero
+                // debajo...), los bordes del terreno no la paran: el guardián la saca.
+                Ratms.World.TerrainGuard.Attach(gameObject);
+            }
 
             if (IsDynamite.Value) ApplyDynamiteVisual();
             else if (Variant.Value != 0) ApplyVariantSkin();

@@ -1432,7 +1432,7 @@ namespace Ratms.Networking
             var col = GetComponent<Collider2D>();
             if (col == null) return;
             Vector2 center = col.bounds.center;
-            float? up = Ratms.World.DestructibleTerrain.EscapeUpDistance(center, 1.5f);
+            float? up = Ratms.World.DestructibleTerrain.EscapeUpDistance(center, 1.5f) ?? Ratms.World.DestructibleTerrain.EscapeUpDistance(center, 14f);   // 0.32: también si se ha hundido mucho
             if (up == null) return;
 
             float lift = up.Value + col.bounds.extents.y + 0.03f;

@@ -318,6 +318,12 @@ namespace Ratms.Networking
             if (tm != null && !tm.CanAct(rpcParams.Receive.SenderClientId, NetworkObjectId))
                 return;
 
+            // 0.32: en una cuesta, "un pelín por delante de los pies" puede caer
+            // DENTRO de la tierra (y entonces atravesaba el mapa). La subimos al
+            // primer hueco libre.
+            float? up = Ratms.World.DestructibleTerrain.EscapeUpDistance(pos, 3f);
+            if (up.HasValue) pos += Vector3.up * (up.Value + 0.12f);
+
             GameObject go = Instantiate(grenadePrefab, pos, Quaternion.identity);
             var no = go.GetComponent<NetworkObject>();
             var grenade = go.GetComponent<NetworkGrenade>();

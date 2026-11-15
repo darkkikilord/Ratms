@@ -257,6 +257,12 @@ namespace Ratms.World
         ///  si un PC usara otro ancho, la misma semilla daría otro mapa.
         /// </summary>
         public static int MatchWidth;
+
+        /// <summary>
+        ///  0.32: FORMA del mapa de esta partida (regla "Mapa"). Como el ancho, la
+        ///  pone <see cref="BiomeSyncer"/> en todos los PCs antes de generar.
+        /// </summary>
+        public static MapShape MatchShape = MapShape.Normal;
         private int inspectorWidth;
         public int TextureHeight => height;
         public float PixelsPerUnit => terrain != null ? terrain.PixelsPerUnit : 32f;
@@ -686,7 +692,7 @@ namespace Ratms.World
         /// </summary>
         private Color32[] PaintWormsShape(float offGrainX, float offGrainY, out int[] heightLine)
         {
-            var shape = WormsTerrainShape.Build(width, height, seed);
+            var shape = WormsTerrainShape.Build(width, height, seed, MatchShape);
             if (Ratms.Networking.MatchRules.EffectiveGame == Ratms.Networking.GameMode.Fuertes) FortShape(shape.solid);
             var pixels = new Color32[width * height];
             heightLine = new int[width];

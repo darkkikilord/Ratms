@@ -47,6 +47,10 @@ namespace Ratms.World
         private readonly NetworkVariable<int> mapWidthNet = new(0,
             NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+        /// <summary>0.32: forma del mapa (Isla, Archipiélago, Montaña...). Igual que el ancho.</summary>
+        private readonly NetworkVariable<byte> mapShapeNet = new(0,
+            NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
         public override void OnNetworkSpawn()
         {
             // El ANCHO va antes que nada: ApplyBiome regenera el mapa con él.
@@ -62,6 +66,18 @@ namespace Ratms.World
                 mapWidthNet.Value = Ratms.Networking.MatchRules.MapWidthFor(teams, Ratms.Networking.MatchRules.EffectiveRatsPerTeam);
                 Debug.Log($"[BiomeSyncer] {teams} equipos → ancho del mapa {(mapWidthNet.Value > 0 ? mapWidthNet.Value.ToString() : "normal")}");
             }
+            if (IsServer)
+            {
+                mapShapeNet.Value = (byte)Ratms.Networking.MatchRules.PickMapShape();
+                Debug.Log($"[BiomeSyncer] Forma del mapa: {(MapShape)mapShapeNet.Value}");
+            }
+            TerrainGenerator.MatchShape = (MapShape)mapShapeNet.Value;
+            mapShapeNet.OnValueChanged += (_, v) =>
+            {
+                if (IsServer || TerrainGenerator.MatchShape == (MapShape)v) return;
+                TerrainGenerator.MatchShape = (MapShape)v;
+                ApplyBiome((BiomeType)biomeTypeNet.Value);
+            };
             TerrainGenerator.MatchWidth = mapWidthNet.Value;
             mapWidthNet.OnValueChanged += (_, v) =>
             {
@@ -110,6 +126,7 @@ namespace Ratms.World
         {
             Ratms.Networking.WeatherFx.Current = Ratms.Networking.Weather.Despejado;
             TerrainGenerator.MatchWidth = 0;   // la siguiente partida decide de nuevo
+            TerrainGenerator.MatchShape = MapShape.Normal;
             biomeTypeNet.OnValueChanged -= OnBiomeTypeChanged;
         }
 

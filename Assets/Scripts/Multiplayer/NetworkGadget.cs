@@ -129,6 +129,8 @@ namespace Ratms.Networking
                 fuseNet.Value = FuseOf(pendingKind);
                 SetupPhysics(pendingKind);
                 IgnoreOwner(true);
+                // 0.32: que nada atraviese el mapa (el topo es cinemático: el guardián lo deja en paz).
+                Ratms.World.TerrainGuard.Attach(gameObject);
                 if (pendingKind != Kind.Shrapnel && pendingKind != Kind.Mine && pendingKind != Kind.BananaShard && pendingKind != Kind.Meteor && !quietSpawn)
                     FollowWithCameraClientRpc(IsWalker(pendingKind) ? 10f : 8f);
             }

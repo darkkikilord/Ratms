@@ -19,7 +19,7 @@ namespace Ratms.UI
         private void OnGUI()
         {
             TrenchGUI.Begin();
-            var r = new Rect((TrenchGUI.VW - 860f) * 0.5f, (TrenchGUI.VH - 844f) * 0.5f, 860f, 844f);
+            var r = new Rect((TrenchGUI.VW - 860f) * 0.5f, (TrenchGUI.VH - 924f) * 0.5f, 860f, 924f);   // 0.32: +fila "Mapa"
             TrenchGUI.Panel(r);
             float x = r.x + 40f, w = r.width - 80f, y = r.y + 18f;
             TrenchGUI.Title(new Rect(r.x, y, r.width, 50f), "¿A QUÉ JUGAMOS?");
@@ -75,6 +75,17 @@ namespace Ratms.UI
                 GUI.color = c;
                 y += gap - rowH + 26f;
             }
+            // 0.32: forma del mapa
+            {
+                int sh = MatchRules.MapShapeSetting;
+                int step = TrenchGUI.Stepper(new Rect(r.x, y, r.width, rowH), "Mapa", Loc.T(MatchRules.MapShapeName(sh)));
+                if (step != 0) MatchRules.MapShapeSetting = (sh + step + MatchRules.MapShapeChoices) % MatchRules.MapShapeChoices;
+                y += rowH + 2f;
+                var c = GUI.color; GUI.color = new Color(1f, 0.85f, 0.45f);
+                TrenchGUI.Small(new Rect(r.x + 230f, y, r.width - 230f, 26f), MatchRules.MapShapeDescription(MatchRules.MapShapeSetting));
+                GUI.color = c;
+                y += gap - rowH + 26f;
+            }
             MatchRules.RatsPerTeam = TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Ratas por equipo", new[] { "1", "2", "3", "4" }, MatchRules.RatsPerTeam - 1) + 1; y += gap;
             MatchRules.StartHealth = Hp[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Vida inicial", new[] { "50", "100", "150", "200" }, Idx(Hp, MatchRules.StartHealth, 1))]; y += gap;
             MatchRules.TurnSeconds = Turn[TrenchGUI.Choice(new Rect(r.x, y, r.width, rowH), "Tiempo de turno", new[] { "20 s", "30 s", "45 s", "60 s" }, Idx(Turn, MatchRules.TurnSeconds, 1))]; y += gap;
@@ -102,14 +113,15 @@ namespace Ratms.UI
         /// <remarks>Viaja por red EMPAQUETADO (<see cref="Loc.Pack"/>): cada cliente
         /// lo lee en su idioma con <see cref="Loc.Show"/>.</remarks>
         public static string Summary() => Loc.Pack(
-            "Modo {7} · clima {8} · {0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
+            "Modo {7} · mapa {9} · clima {8} · {0} ratas · {1} vida · turnos de {2} s · muerte súbita {3} · {4} barriles · cajas {5} · mutilaciones {6}",
             MatchRules.Game == GameMode.Duelo ? 1 : MatchRules.RatsPerTeam, MatchRules.StartHealth, MatchRules.TurnSeconds,
             MatchRules.SuddenDeathMinutes > 0 ? MatchRules.SuddenDeathMinutes + " min" : "nunca",
             MatchRules.Barrels,
             MatchRules.CrateChance <= 0f ? "nunca" : MatchRules.CrateChance < 0.3f ? "pocas" : MatchRules.CrateChance < 0.5f ? "normal" : "muchas",
             MatchRules.Mutilations ? "sí" : "no",
             MatchRules.GameName(MatchRules.Game),
-            MatchRules.WeatherName(MatchRules.EffectiveWeatherSetting).ToLower());
+            MatchRules.WeatherName(MatchRules.EffectiveWeatherSetting).ToLower(),
+            MatchRules.MapShapeName(MatchRules.MapShapeSetting).ToLower());
 
         private static int Idx(int[] arr, int v, int def) { int i = Array.IndexOf(arr, v); return i < 0 ? def : i; }
         private static int Idx(float[] arr, float v, int def)

@@ -174,6 +174,7 @@ namespace Ratms.Testing
             if (role == "show") { yield return RunShow(); yield break; }
             if (role == "promo") { yield return RunPromo(); yield break; }
             if (role == "crowd") { yield return RunCrowd(); yield break; }
+            if (role == "shapes") { yield return RunShapes(); yield break; }
 
             // --- 1) Menú principal ---------------------------------
             yield return new WaitForSeconds(2.5f);

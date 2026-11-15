@@ -28,8 +28,30 @@ namespace Ratms.World
     ///  Todo depende SOLO de la semilla (System.Random + Mathf.PerlinNoise), así
     ///  que cada PC genera exactamente el mismo mapa.
     /// </summary>
+    /// <summary>
+    ///  0.32 — FORMA del mapa (regla "Mapa"). Todas salen de la misma semilla
+    ///  en cada PC; la elige el host y viaja en <see cref="BiomeSyncer"/>.
+    /// </summary>
+    public enum MapShape : byte
+    {
+        /// <summary>La isla de siempre: colinas, salientes, túneles, alguna isla flotante.</summary>
+        Normal,
+        /// <summary>Muchas islas medianas separadas por canales de agua.</summary>
+        Archipielago,
+        /// <summary>Un pico enorme en el centro y laderas que bajan al mar.</summary>
+        Montana,
+        /// <summary>Dos mesetas altas a los lados y un valle con agua en medio.</summary>
+        Canon,
+        /// <summary>Casi todo tierra: galerías largas, cuevas grandes y chimeneas al cielo.</summary>
+        Cavernas,
+        /// <summary>Solo islas flotantes sobre el mar.</summary>
+        Cielo,
+    }
+
     public static class WormsTerrainShape
     {
+        public const int ShapeCount = 6;
+
         public struct Result
         {
             /// <summary>true = píxel sólido (tierra). Índice y·ancho + x.</summary>
@@ -41,7 +63,7 @@ namespace Ratms.World
 
         private const int Cell = 4;
 
-        public static Result Build(int width, int height, int seed)
+        public static Result Build(int width, int height, int seed, MapShape shape = MapShape.Normal)
         {
             var rng = new System.Random(seed ^ 0x77A11);
             float R() => (float)rng.NextDouble();
@@ -69,6 +91,41 @@ namespace Ratms.World
                 prof[x] = baseH + a * bigAmp + b * gh * 0.045f + c * gh * 0.012f;
             }
 
+            // 0.32: cada FORMA retoca el perfil. El ruido de arriba se conserva
+            // (más suave) para que ninguna forma quede de regla y cartabón.
+            for (int x = 0; x < gw; x++)
+            {
+                float wig = prof[x] - baseH;                       // colinas del ruido (±)
+                float u = x / (float)(gw - 1);                     // 0..1 de izquierda a derecha
+                switch (shape)
+                {
+                    case MapShape.Montana:
+                    {
+                        float t = (u - 0.5f) / 0.2f;
+                        prof[x] = gh * 0.28f + wig * 0.55f + gh * 0.46f * Mathf.Exp(-t * t);
+                        break;
+                    }
+                    case MapShape.Canon:
+                    {
+                        float d = Mathf.Abs(u - 0.5f) * 2f;        // 0 en el centro, 1 en los bordes
+                        float k = Mathf.Clamp01((d - 0.3f) / 0.22f);
+                        k = k * k * (3f - 2f * k);
+                        prof[x] = Mathf.Lerp(-gh * 0.1f, gh * 0.64f + wig * 0.5f, k);
+                        break;
+                    }
+                    case MapShape.Cavernas:
+                        prof[x] = gh * 0.70f + wig * 0.45f;
+                        break;
+                    case MapShape.Cielo:
+                        prof[x] = -gh * 0.12f;                     // todo mar: la tierra son las islas
+                        break;
+                    case MapShape.Archipielago:
+                        prof[x] = gh * 0.30f + wig * 0.8f;          // islas bajas
+                        break;
+                }
+                prof[x] = Mathf.Min(prof[x], gh * 0.86f);          // siempre algo de cielo para disparar
+            }
+
             // Bordes: el terreno baja hasta el agua (isla), con curva irregular.
             float oE = Off();
             int edge = Mathf.RoundToInt(gw / scale * (0.13f + R() * 0.05f));   // la playa mide lo mismo en mapas grandes
@@ -85,17 +142,21 @@ namespace Ratms.World
             // Así hay que usar cuerda, teletransporte o un buen salto, como en Worms.
             int gaps = R() < 0.3f ? 0 : (R() < 0.65f ? 1 : 2);
             if (scale > 1.2f) gaps += 1;   // mapa grande: un canal más para que no sea un solo continente
+            if (shape == MapShape.Archipielago) gaps = Mathf.RoundToInt((3 + rng.Next(2)) * scale);
+            else if (shape == MapShape.Montana || shape == MapShape.Canon || shape == MapShape.Cielo) gaps = 0;
+            float gapSpacing = shape == MapShape.Archipielago ? 0.13f : 0.22f;
             var gapCenters = new List<int>();
             for (int g = 0; g < gaps; g++)
             {
                 for (int tries = 0; tries < 20; tries++)
                 {
-                    int cx = Mathf.RoundToInt(gw * (scale > 1.2f ? 0.2f + R() * 0.6f : 0.28f + R() * 0.44f));
+                    int cx = Mathf.RoundToInt(gw * (scale > 1.2f || shape == MapShape.Archipielago ? 0.16f + R() * 0.68f : 0.28f + R() * 0.44f));
                     bool ok = true;
-                    foreach (int o in gapCenters) if (Mathf.Abs(o - cx) < gw * 0.22f / scale) ok = false;
+                    foreach (int o in gapCenters) if (Mathf.Abs(o - cx) < gw * gapSpacing / scale) ok = false;
                     if (!ok) continue;
                     gapCenters.Add(cx);
                     float half = 6f + R() * 6f;          // 12-24 celdas = 1.5-3 u de canal
+                    if (shape == MapShape.Archipielago) half += 4f;   // canales más anchos entre islas
                     float shoulder = 18f + R() * 14f;    // bajada suave a los lados
                     for (int x = 0; x < gw; x++)
                     {
@@ -127,6 +188,9 @@ namespace Ratms.World
             float oTx = Off(), oTy = Off(), oMx = Off(), oMy = Off();
             float oPx = Off(), oPy = Off();
             float overhang = 0.9f + R() * 0.5f;              // cuánto "salen" los salientes
+            // Cavernas: túneles mucho más hondos y abundantes, y más cuevas grandes.
+            bool caverns = shape == MapShape.Cavernas;
+            float tunnelMax = caverns ? 190f : 75f, maskMin = caverns ? 0.36f : 0.47f, ridgeW = caverns ? 0.06f : 0.045f, caveMin = caverns ? 0.66f : 0.74f;
             for (int y = 0; y < gh; y++)
             {
                 for (int x = 0; x < gw; x++)
@@ -144,39 +208,75 @@ namespace Ratms.World
                     // TÚNELES: líneas del ruido ridged, entre 5 y 70 celdas de
                     // hondo, y solo donde una segunda máscara lo permite (no
                     // queremos un queso gruyer).
-                    if (depth > 5f && depth < 75f)
+                    if (depth > 5f && depth < tunnelMax && y > 8)
                     {
                         float tn = Mathf.PerlinNoise(x * 0.012f + oTx, y * 0.02f + oTy);
                         float ridge = Mathf.Abs(tn - 0.5f);
                         float mask = Mathf.PerlinNoise(x * 0.02f + oMx, y * 0.02f + oMy);
-                        if (mask > 0.47f)
+                        if (mask > maskMin)
                         {
-                            float w = 0.045f * Mathf.Clamp01((mask - 0.47f) * 6f);
+                            float w = ridgeW * Mathf.Clamp01((mask - maskMin) * 6f);
                             if (ridge < w) d = Mathf.Min(d, -0.6f * (1f - ridge / w) - 0.05f);
                         }
                         // Alguna cueva grande y redonda (galería), pero pocas.
                         float cave = Mathf.PerlinNoise(x * 0.03f + oPx, y * 0.045f + oPy);
-                        if (cave > 0.74f) d = Mathf.Min(d, -(cave - 0.74f) * 10f);
+                        if (cave > caveMin) d = Mathf.Min(d, -(cave - caveMin) * 10f);
                     }
 
                     field[y * gw + x] = d;
                 }
             }
 
+            // ---------- 2b) CHIMENEAS (Cavernas) ----------
+            // Pozos verticales que unen las galerías con el cielo: por ahí se
+            // entra y se sale, y las ratas pueden aparecer en las cuevas (solo
+            // valen sitios conectados con el cielo).
+            if (caverns)
+            {
+                int shafts = Mathf.RoundToInt((4 + rng.Next(3)) * scale);
+                float oS = Off();
+                for (int i = 0; i < shafts; i++)
+                {
+                    float sx = gw * (0.1f + 0.8f * (i + R() * 0.8f) / shafts);
+                    int top = Mathf.RoundToInt(Mathf.Min(prof[Mathf.Clamp((int)sx, 0, gw - 1)] + 8f, gh - 1));
+                    int bottom = Mathf.Max(10, top - 50 - rng.Next(70));
+                    float rad = 3f + R() * 2.5f;
+                    for (int y = bottom; y <= top; y++)
+                    {
+                        float cx = sx + (Mathf.PerlinNoise(y * 0.05f + oS + i * 13f, 0.4f) - 0.5f) * 14f;
+                        for (int x = Mathf.Max(0, (int)(cx - rad - 1)); x <= Mathf.Min(gw - 1, (int)(cx + rad + 1)); x++)
+                        {
+                            float k = 1f - Mathf.Abs(x - cx) / rad;
+                            if (k > 0f) field[y * gw + x] = Mathf.Min(field[y * gw + x], -k * 1.2f - 0.1f);
+                        }
+                    }
+                }
+            }
+
             // ---------- 3) ISLAS FLOTANTES ----------
             int islands = Mathf.RoundToInt((1 + rng.Next(3)) * scale);   // más islas en mapas grandes
+            if (shape == MapShape.Cielo) islands = Mathf.RoundToInt((8 + rng.Next(3)) * scale);
+            else if (shape == MapShape.Canon) islands += 2;              // pasaderas sobre el valle
+            else if (shape == MapShape.Cavernas) islands = Mathf.Max(0, islands - 1);
             float oIx = Off();
+            var placed = new List<Vector3>();   // (x, y, radio) de las islas ya puestas
             for (int i = 0; i < islands; i++)
             {
-                for (int tries = 0; tries < 10; tries++)
+                for (int tries = 0; tries < 16; tries++)
                 {
-                    int cx = Mathf.RoundToInt(gw * (0.15f + R() * 0.7f));
-                    float rx = 12f + R() * 16f;
+                    bool sky = shape == MapShape.Cielo;
+                    int cx = Mathf.RoundToInt(gw * (sky ? 0.06f + R() * 0.88f : shape == MapShape.Canon && i < 2 ? 0.38f + R() * 0.24f : 0.15f + R() * 0.7f));
+                    float rx = sky ? 16f + R() * 18f : 12f + R() * 16f;
                     float ry = rx * (0.4f + R() * 0.2f);
-                    float floor = Mathf.Max(prof[Mathf.Clamp(cx, 0, gw - 1)], 0f) + ry + 22f;
-                    float ceil = gh - ry - 22f;
+                    float floor = Mathf.Max(prof[Mathf.Clamp(cx, 0, gw - 1)], sky ? gh * 0.14f : 0f) + ry + 22f;
+                    float ceil = gh - ry - 22f - (sky ? gh * 0.12f : 0f);
                     if (floor >= ceil) continue;
                     float cy = floor + R() * (ceil - floor);
+                    // En el cielo, que no se monten unas encima de otras.
+                    bool clash = false;
+                    if (sky) foreach (var o in placed) if (new Vector2(o.x - cx, (o.y - cy) * 1.6f).magnitude < o.z + rx + 6f) { clash = true; break; }
+                    if (clash) continue;
+                    placed.Add(new Vector3(cx, cy, rx));
                     for (int y = Mathf.Max(0, (int)(cy - ry - 4)); y < Mathf.Min(gh, (int)(cy + ry + 4)); y++)
                         for (int x = Mathf.Max(0, (int)(cx - rx - 4)); x < Mathf.Min(gw, (int)(cx + rx + 4)); x++)
                         {

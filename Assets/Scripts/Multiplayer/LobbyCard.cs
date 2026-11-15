@@ -28,7 +28,7 @@ namespace Ratms.Networking
             bool twoCols = n > 5;
             int listRows = twoCols ? (n + 1) / 2 : Mathf.Max(n, 1);
             float extra = Mathf.Max(0f, listRows * 38f - 4 * 38f);
-            float w = 640f, h = (host ? 870f : 600f) + extra;
+            float w = 640f, h = (host ? 944f : 600f) + extra;   // 0.32: +fila "Mapa"
             var r = new Rect(TrenchGUI.VW - w - 30f, (TrenchGUI.VH - h) * 0.5f, w, h);
             TrenchGUI.Panel(r);
             float x = r.x + 30f, cw = w - 60f, y = r.y + 14f;

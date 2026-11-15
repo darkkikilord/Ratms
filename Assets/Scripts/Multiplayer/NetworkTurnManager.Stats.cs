@@ -98,6 +98,8 @@ namespace Ratms.Networking
                     team = team[i], dealt = dealt[i], taken = taken[i], kills = kills[i], ownKills = ownKills[i], alive = alive[i],
                 });
             MatchStats.Last = m;
+            // 0.35: si el final ya se anunció, apuntamos la partida en la hoja de servicios.
+            if (GameEnded.Value) Career.OnMatchEnded(WinnerClientId.Value == ulong.MaxValue ? -1 : WinnerTeam.Value);
         }
     }
 

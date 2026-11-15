@@ -112,6 +112,7 @@ namespace Ratms.Networking
 
             ulong winnerId = cachedTurnManager.WinnerClientId.Value;
             bool isDraw = winnerId == ulong.MaxValue;
+            Career.OnMatchEnded(isDraw ? -1 : cachedTurnManager.WinnerTeam.Value);   // 0.35 (si las cifras ya llegaron)
 
             // Frase random
             if (funnyPhraseText != null)

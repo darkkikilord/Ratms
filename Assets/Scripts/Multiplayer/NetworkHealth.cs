@@ -457,6 +457,8 @@ namespace Ratms.Networking
             if (type == DamageType.Water) { Fx.Splash(hitPoint); Sfx.Play(Sfx.Id.Splash); RatVoice.Say(this, RatVoice.Kind.Splash); return; }
             bool laughs = PlayerPrefs.GetInt("opt_laughs", 1) == 1;
 
+            Career.OnHit(CurrentTurnRat(), GetComponent<NetworkPlayerMovement>(), amount);   // 0.35
+
             // GORE: salpicón de sangre hacia fuera del golpe (mancha el suelo).
             Vector2 away = BodyCenter - (Vector2)hitPoint;
             Fx.Blood(BodyCenter, away.sqrMagnitude > 0.0004f ? away : Vector2.up, amount);
@@ -528,6 +530,8 @@ namespace Ratms.Networking
         private void OnDeathStateChanged(bool oldValue, bool newValue)
         {
             if (!newValue) return;
+            // 0.35: hoja de servicios (bajas, muertes, logros) de este PC.
+            Career.OnRatDied(GetComponent<NetworkPlayerMovement>(), CurrentTurnRat(), lastDamageType);
             // Muerte en tierra: REVIENTA (gore) + lápida + frase de humor negro.
             // En el agua no: ya hay salpicadura.
             if (lastDamageType != DamageType.Water)

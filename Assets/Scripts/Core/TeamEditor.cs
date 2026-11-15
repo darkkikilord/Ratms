@@ -41,7 +41,14 @@ namespace Ratms.UI
             {
                 case 0: l.body = (RatLook.BodyType)Wrap((int)l.body, dir, RatLook.Bodies); break;
                 case 1: l.fur = (RatLook.FurType)Wrap((int)l.fur, dir, RatLook.Furs); break;
-                case 2: l.hat = (RatLook.HatType)Wrap((int)l.hat, dir, RatLook.Hats); break;
+                case 2:
+                    // 0.35: los sombreros de logro no salen hasta conseguirlo (Career).
+                    for (int k = 0; k < RatLook.Hats; k++)
+                    {
+                        l.hat = (RatLook.HatType)Wrap((int)l.hat, dir, RatLook.Hats);
+                        if (!Career.IsHatLocked(l.hat)) break;
+                    }
+                    break;
                 case 3: l.tail = (RatLook.TailType)Wrap((int)l.tail, dir, RatLook.Tails); break;
                 case 4: l.eye = (RatLook.EyeType)Wrap((int)l.eye, dir, RatLook.Eyes); break;
                 case 5: l.mouth = (RatLook.MouthType)Wrap((int)l.mouth, dir, RatLook.Mouths); break;

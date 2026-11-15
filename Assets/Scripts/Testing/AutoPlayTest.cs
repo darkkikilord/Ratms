@@ -153,6 +153,8 @@ namespace Ratms.Testing
             // Las mutilaciones son al azar: fuera de su propia prueba las
             // apagamos para que las mediciones (andar, armas...) sean fiables.
             MatchRules.OverrideMutilations = false;
+            // 0.35: la hoja de servicios de las pruebas va en memoria (no toca la del jugador).
+            Career.ResetForTest();
             if (role == "local") { yield return RunLocalMatch(); yield break; }
             if (role == "gallery") { yield return RunGallery(); yield break; }
             if (role == "items") { yield return RunItems(); yield break; }
@@ -176,6 +178,7 @@ namespace Ratms.Testing
             if (role == "crowd") { yield return RunCrowd(); yield break; }
             if (role == "shapes") { yield return RunShapes(); yield break; }
             if (role == "voices") { yield return RunVoices(); yield break; }
+            if (role == "career") { yield return RunCareer(); yield break; }
 
             // --- 1) Menú principal ---------------------------------
             yield return new WaitForSeconds(2.5f);

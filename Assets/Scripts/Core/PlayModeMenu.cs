@@ -42,8 +42,9 @@ namespace Ratms.UI
 
             if (TrenchGUI.Button(new Rect(x, y, w, 64f), "¡A LA TRINCHERA!", big: true)) { PlayerPrefs.Save(); OnLocal?.Invoke(); }
             y += 80f;
-            if (TrenchGUI.Button(new Rect(x, y, w * 0.48f, 46f), "Mi equipo (nombres y ratas)")) OnTeam?.Invoke();
-            if (TrenchGUI.Button(new Rect(x + w * 0.52f, y, w * 0.48f, 46f), "Volver")) OnBack?.Invoke();
+            if (TrenchGUI.Button(new Rect(x, y, w * 0.42f, 46f), "Mi equipo (nombres y ratas)")) OnTeam?.Invoke();
+            if (TrenchGUI.Button(new Rect(x + w * 0.44f, y, w * 0.27f, 46f), "Logros")) CareerOverlay.Open();   // 0.35
+            if (TrenchGUI.Button(new Rect(x + w * 0.73f, y, w * 0.27f, 46f), "Volver")) OnBack?.Invoke();
             TrenchGUI.End();
         }
     }

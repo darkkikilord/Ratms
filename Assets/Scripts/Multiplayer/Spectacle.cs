@@ -223,6 +223,7 @@ namespace Ratms.Networking
             if (rat == null || !rat.IsOwner) return;
             next = Time.unscaledTime + 2f;
             tm.TauntServerRpc(rat.NetworkObjectId);
+            Career.OnTaunt();   // 0.35
         }
     }
 

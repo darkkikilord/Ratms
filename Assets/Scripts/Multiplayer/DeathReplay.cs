@@ -508,6 +508,7 @@ namespace Ratms.Networking
             if (error == null && frames.Count > 0)
             {
                 LastGifPath = path;
+                Career.OnGifSaved();   // 0.35
                 toast = Loc.F("Repetición guardada: {0}", path);
                 Debug.Log($"[Repetición] GIF guardado ({frames.Count} fotogramas): {path}");
             }

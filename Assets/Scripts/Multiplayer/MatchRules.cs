@@ -41,7 +41,14 @@ namespace Ratms.Networking
     /// </summary>
     public static class MatchRules
     {
-        public const int MaxTeams = 4;
+        /// <summary>
+        ///  Hasta 10 equipos (0.31): 10 jugadores online o 10 equipos en el mismo PC.
+        ///  Cada equipo tiene color y nombre propios (<see cref="LocalTeamNames"/>,
+        ///  <c>RatAppearance.TeamColors</c>).
+        /// </summary>
+        public const int MaxTeams = 10;
+        /// <summary>Jugadores por sala online (anfitrión incluido) = un equipo cada uno como mucho.</summary>
+        public const int MaxPlayers = MaxTeams;
         public const int MaxRatsPerTeam = 4;
 
         /// <summary>Tipo de partida que se arranca ahora (lo pone quien la lanza).</summary>
@@ -281,7 +288,26 @@ namespace Ratms.Networking
         public static int HealthCrateAmount = 30;
 
         /// <summary>Nombres de los equipos en partida local (uno por color de casco).</summary>
-        public static readonly string[] LocalTeamNames = { "Rojos", "Azules", "Verdes", "Amarillos" };
+        public static readonly string[] LocalTeamNames =
+        {
+            "Rojos", "Azules", "Verdes", "Amarillos", "Naranjas",
+            "Morados", "Rosas", "Celestes", "Blancos", "Marrones",
+        };
+
+        /// <summary>
+        ///  0.31 — ANCHO DEL MAPA según las ratas que habrá: con 2 equipos de 4
+        ///  sobra el mapa normal (2048 px = 64 u), pero 10 equipos de 4 (40 ratas)
+        ///  no caben sin estar pegadas. Devuelve 0 = el ancho normal del Inspector.
+        ///  El alto no cambia (el cielo para los disparos bombeados es el mismo).
+        /// </summary>
+        public static int MapWidthFor(int teams, int ratsPerTeam)
+        {
+            int rats = Mathf.Max(1, teams) * Mathf.Max(1, ratsPerTeam);
+            if (rats <= 16) return 0;        // normal: 64 u
+            if (rats <= 24) return 2560;     // 80 u
+            if (rats <= 32) return 3072;     // 96 u
+            return 3584;                     // 112 u
+        }
 
         /// <summary>Nombres de rata de trinchera (se reparten al azar sin repetir dentro del equipo).</summary>
         public static readonly string[] RatNames =

@@ -49,6 +49,10 @@ namespace Ratms.World
 
             int gw = width / Cell, gh = height / Cell;
             float[] field = new float[gw * gh];
+            // Mapas GRANDES (muchas ratas): el ruido va por celdas, así que más
+            // ancho = más colinas sin estirarlas. Lo que se cuenta "por mapa"
+            // (bordes, canales, islas) se escala con esto para que no quede vacío.
+            float scale = Mathf.Max(1f, width / 2048f);
 
             // ---------- 1) PERFIL DE COLINAS ----------
             // Tres octavas: montes grandes, lomas y rugosidad. La base va a
@@ -67,7 +71,7 @@ namespace Ratms.World
 
             // Bordes: el terreno baja hasta el agua (isla), con curva irregular.
             float oE = Off();
-            int edge = Mathf.RoundToInt(gw * (0.13f + R() * 0.05f));
+            int edge = Mathf.RoundToInt(gw / scale * (0.13f + R() * 0.05f));   // la playa mide lo mismo en mapas grandes
             for (int x = 0; x < gw; x++)
             {
                 int d = Mathf.Min(x, gw - 1 - x);
@@ -80,14 +84,15 @@ namespace Ratms.World
             // CANALES: 0-2 cortes que bajan hasta el agua y parten la isla.
             // Así hay que usar cuerda, teletransporte o un buen salto, como en Worms.
             int gaps = R() < 0.3f ? 0 : (R() < 0.65f ? 1 : 2);
+            if (scale > 1.2f) gaps += 1;   // mapa grande: un canal más para que no sea un solo continente
             var gapCenters = new List<int>();
             for (int g = 0; g < gaps; g++)
             {
-                for (int tries = 0; tries < 12; tries++)
+                for (int tries = 0; tries < 20; tries++)
                 {
-                    int cx = Mathf.RoundToInt(gw * (0.28f + R() * 0.44f));
+                    int cx = Mathf.RoundToInt(gw * (scale > 1.2f ? 0.2f + R() * 0.6f : 0.28f + R() * 0.44f));
                     bool ok = true;
-                    foreach (int o in gapCenters) if (Mathf.Abs(o - cx) < gw * 0.22f) ok = false;
+                    foreach (int o in gapCenters) if (Mathf.Abs(o - cx) < gw * 0.22f / scale) ok = false;
                     if (!ok) continue;
                     gapCenters.Add(cx);
                     float half = 6f + R() * 6f;          // 12-24 celdas = 1.5-3 u de canal
@@ -159,7 +164,7 @@ namespace Ratms.World
             }
 
             // ---------- 3) ISLAS FLOTANTES ----------
-            int islands = 1 + rng.Next(3);
+            int islands = Mathf.RoundToInt((1 + rng.Next(3)) * scale);   // más islas en mapas grandes
             float oIx = Off();
             for (int i = 0; i < islands; i++)
             {

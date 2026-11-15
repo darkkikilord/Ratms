@@ -29,6 +29,13 @@ namespace Ratms.Networking
             new Color32(60, 118, 226, 255),   // azul
             new Color32(66, 176, 86, 255),    // verde
             new Color32(232, 196, 58, 255),   // amarillo
+            // 0.31: hasta 10 equipos
+            new Color32(240, 132, 36, 255),   // naranja
+            new Color32(146, 82, 206, 255),   // morado
+            new Color32(238, 112, 178, 255),  // rosa
+            new Color32(72, 206, 220, 255),   // celeste
+            new Color32(236, 236, 228, 255),  // blanco
+            new Color32(132, 86, 50, 255),    // marrón
         };
         private static readonly Color32 DummyColor = new Color32(120, 128, 96, 255);   // caqui (diana)
 
@@ -152,9 +159,10 @@ namespace Ratms.Networking
             return new Vector3(wc.x, wb.y - box.edgeRadius, transform.position.z);
         }
 
-        /// <summary>Color de un equipo (0-3).</summary>
+        /// <summary>Color de un equipo (0-9).</summary>
         public static Color32 ColorForTeam(int teamIndex) =>
-            (Ratms.UI.Accessibility.ColorBlind ? ColorBlindTeams : TeamColors)[Mathf.Abs(teamIndex) % TeamColors.Length];
+            ColorForTeamIn(Ratms.UI.Accessibility.ColorBlind ? ColorBlindTeams : TeamColors, teamIndex);
+        private static Color32 ColorForTeamIn(Color32[] pal, int teamIndex) => pal[Mathf.Abs(teamIndex) % pal.Length];
 
         /// <summary>
         ///  0.30 — paleta para DALTÓNICOS (Okabe-Ito): bermellón, azul,
@@ -167,6 +175,13 @@ namespace Ratms.Networking
             new Color32(0, 114, 178, 255),    // azul
             new Color32(204, 121, 167, 255),  // morado rosado
             new Color32(240, 228, 66, 255),   // amarillo
+            // 0.31: el resto de Okabe-Ito + grises (claro/oscuro se distinguen sin color)
+            new Color32(230, 159, 0, 255),    // naranja
+            new Color32(0, 158, 115, 255),    // verde azulado
+            new Color32(86, 180, 233, 255),   // celeste
+            new Color32(245, 245, 245, 255),  // blanco
+            new Color32(70, 70, 70, 255),     // gris oscuro
+            new Color32(150, 150, 150, 255),  // gris
         };
 
         public void Init(NetworkPlayerMovement m, int teamIndex, bool isDummy, ulong lookCode)

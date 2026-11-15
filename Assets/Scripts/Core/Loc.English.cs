@@ -291,6 +291,7 @@ namespace Ratms.UI
             ("Viento", "Wind"),
             ("Equipo {0}", "Team {0}"),
             ("Rojos", "Reds"), ("Azules", "Blues"), ("Verdes", "Greens"), ("Amarillos", "Yellows"),
+            ("Naranjas", "Oranges"), ("Morados", "Purples"), ("Rosas", "Pinks"), ("Celestes", "Cyans"), ("Blancos", "Whites"), ("Marrones", "Browns"),
             ("coja", "limping"), ("SIN PATAS", "NO LEGS"), ("sin patas (pata de palo)", "no legs (peg leg)"),
             ("garfio", "hook"), ("SIN BRAZOS", "NO ARMS"), ("sin brazos (garfio)", "no arms (hook)"), ("tuerta", "one-eyed"),
 

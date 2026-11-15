@@ -30,7 +30,12 @@ namespace Ratms.UI
 
             TrenchGUI.Label(new Rect(x, y, w, 34f), "PARTIDA LOCAL  (mismo PC, os pasáis el teclado)");
             y += 44f;
-            MatchRules.LocalTeams = TrenchGUI.Choice(new Rect(x, y, w, 44f), "Equipos", new[] { "2", "3", "4" }, MatchRules.LocalTeams - 2) + 2;
+            // 0.31: de 2 a 10 equipos (◀ ▶; nueve botones no cabían en una fila).
+            {
+                int teams = MatchRules.LocalTeams;
+                int step = TrenchGUI.Stepper(new Rect(x, y, w, 44f), "Equipos", teams.ToString());
+                if (step != 0) MatchRules.LocalTeams = 2 + ((teams - 2 + step + (MatchRules.MaxTeams - 1)) % (MatchRules.MaxTeams - 1));
+            }
             y += 54f;
             y += RulesEditor.Draw(new Rect(x, y, w, 0f));
             y += 10f;

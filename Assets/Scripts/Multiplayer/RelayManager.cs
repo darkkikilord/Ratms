@@ -64,7 +64,9 @@ namespace Ratms.Networking
                 await InitializeAsync();
 
                 // Reservamos un "cupo" en un relay server
-                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(maxAdditionalPlayers);
+                Allocation allocation = await RelayService.Instance.CreateAllocationAsync(Mathf.Max(maxAdditionalPlayers, MatchRules.MaxPlayers - 1));
+                // 0.31: el valor de la escena era 3 (4 jugadores); ahora caben
+                // MatchRules.MaxPlayers (10) aunque el Inspector diga menos.
 
                 // Pedimos el código corto que usarán los clientes para unirse
                 string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);

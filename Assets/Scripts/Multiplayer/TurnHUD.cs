@@ -269,18 +269,28 @@ namespace Ratms.Networking
         {
             RefreshTeamInfo();
             if (teamInfo.Count < 2) return;   // práctica: no hace falta
-            const float rowH = 22f, barW = 260f, nameW = 150f;
-            float totalW = nameW + barW + 90f;
-            float y = vh - 12f - teamInfo.Count * (rowH + 4f);
-            float x = (vw - totalW) * 0.5f;
-            GUI.DrawTexture(new Rect(x - 10f, y - 8f, totalW + 20f, teamInfo.Count * (rowH + 4f) + 12f), panelTex);
+            // 0.31: con más de 5 equipos (hasta 10) van en DOS columnas y barras
+            // más cortas: una sola columna de 10 tapaba medio campo de batalla.
+            bool twoCols = teamInfo.Count > 5;
+            float rowH = twoCols ? 18f : 22f, barW = twoCols ? 150f : 260f, nameW = twoCols ? 130f : 150f;
+            float colW = nameW + barW + 90f;
+            int rows = twoCols ? (teamInfo.Count + 1) / 2 : teamInfo.Count;
+            float totalW = twoCols ? colW * 2f + 20f : colW;
+            // Abajo queda la línea de ayudas de controles (ControlHints): dejamos su hueco.
+            float top = vh - 40f - rows * (rowH + 4f);
+            float left = (vw - totalW) * 0.5f;
+            GUI.DrawTexture(new Rect(left - 10f, top - 8f, totalW + 20f, rows * (rowH + 4f) + 12f), panelTex);
+            float x = left, y = top;
+            int drawn = 0;
 
             var prevAlign = windStyle.alignment;
             var prevCol = windStyle.normal.textColor;
             int prevSize = windStyle.fontSize;
-            windStyle.fontSize = 15;
+            windStyle.fontSize = twoCols ? 13 : 15;
             foreach (var kv in teamInfo)
             {
+                if (twoCols && drawn == rows) { x = left + colW + 20f; y = top; }
+                drawn++;
                 Color c = TeamColor(kv.Key);
                 bool dead = kv.Value.alive == 0;
                 bool turn = tm.CurrentTeam.Value == kv.Key;

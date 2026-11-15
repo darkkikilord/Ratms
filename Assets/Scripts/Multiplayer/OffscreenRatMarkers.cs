@@ -15,6 +15,7 @@ namespace Ratms.Networking
         private Texture2D arrow;
         private GUIStyle label, hint;
         private float builtScale = -1f;
+        private readonly System.Collections.Generic.List<Rect> labelRects = new();
 
         private void OnGUI()
         {
@@ -30,7 +31,22 @@ namespace Ratms.Networking
             float margin = 34f * scale;
             var center = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
 
-            foreach (var m in FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None))
+            // 0.31: con muchas ratas (hasta 40) los nombres del borde se montaban
+            // unos encima de otros. La rata del turno va primero y luego las más
+            // cercanas; un NOMBRE que pisaría a otro ya dibujado no se pone (la
+            // flecha sí, para saber que por ahí hay alguien).
+            labelRects.Clear();
+            var all = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None);
+            var camPos = (Vector2)cam.transform.position;
+            System.Array.Sort(all, (a, b) =>
+            {
+                bool ta = a != null && tm.CurrentRatId.Value == a.NetworkObjectId, tb = b != null && tm.CurrentRatId.Value == b.NetworkObjectId;
+                if (ta != tb) return ta ? -1 : 1;
+                float da = a != null ? ((Vector2)a.transform.position - camPos).sqrMagnitude : float.MaxValue;
+                float db = b != null ? ((Vector2)b.transform.position - camPos).sqrMagnitude : float.MaxValue;
+                return da.CompareTo(db);
+            });
+            foreach (var m in all)
             {
                 if (m == null || !m.IsSpawned || m.IsTestDummy) continue;
                 if (WeatherRules.FogHides(m)) continue;   // 0.30: perdidas en la niebla
@@ -63,6 +79,10 @@ namespace Ratms.Networking
                 // Nombre y vida, hacia dentro de la pantalla.
                 Vector2 tp = edge - dir * (size + 26f * scale);
                 var r = new Rect(tp.x - 90f * scale, tp.y - 12f * scale, 180f * scale, 24f * scale);
+                bool overlaps = false;
+                foreach (var o in labelRects) if (o.Overlaps(r)) { overlaps = true; break; }
+                if (overlaps) { GUI.color = prevC; continue; }
+                labelRects.Add(r);
                 label.normal.textColor = new Color(0f, 0f, 0f, col.a * 0.8f);
                 GUI.Label(new Rect(r.x + 1.5f, r.y + 1.5f, r.width, r.height), $"{m.RatName.Value} {h.CurrentHealth.Value}", label);
                 label.normal.textColor = col;

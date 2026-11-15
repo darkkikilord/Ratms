@@ -635,7 +635,7 @@ namespace Ratms.Networking
 
             // Rata dibujada por código (más bonita, casco del color del equipo).
             if (useProceduralRat && GetComponent<RatAppearance>() == null)
-                gameObject.AddComponent<RatAppearance>().Init(this, TeamIndex.Value >= 0 ? TeamIndex.Value : (int)(OwnerClientId % 4), IsTestDummy, LookCode.Value);
+                gameObject.AddComponent<RatAppearance>().Init(this, TeamIndex.Value >= 0 ? TeamIndex.Value : (int)(OwnerClientId % MatchRules.MaxTeams), IsTestDummy, LookCode.Value);
 
             // Si SOY yo (y aún no hay turnos repartidos), que la cámara me
             // siga. Luego el TurnManager la pone sobre la rata de cada turno.

@@ -328,6 +328,20 @@ public class CameraFollow : MonoBehaviour
         HandleDragAndEdges();
     }
 
+    /// <summary>
+    ///  0.31: zoom máximo de la cámara libre. Con mapas grandes (muchos equipos)
+    ///  el <see cref="maxFreeZoom"/> del Inspector no dejaba ver el mapa entero:
+    ///  se amplía lo justo para que quepa de lado a lado.
+    /// </summary>
+    private float MaxFreeZoomNow
+    {
+        get
+        {
+            if (terrain == null || cam == null) return maxFreeZoom;
+            return Mathf.Max(maxFreeZoom, (terrain.WorldSize.x + 4f) * 0.5f / Mathf.Max(0.5f, cam.aspect));
+        }
+    }
+
     /// <summary>Vista general de todo el mapa (o, si ya lo está, vuelve a la rata).</summary>
     public void ToggleOverview()
     {
@@ -341,7 +355,7 @@ public class CameraFollow : MonoBehaviour
                 Vector3 c = terrain.transform.position + new Vector3(size.x * 0.5f, size.y * 0.45f, 0f);
                 freePos = new Vector3(c.x, c.y, 0f) + offset;
                 float aspect = Mathf.Max(0.5f, cam.aspect);
-                freeZoom = Mathf.Clamp(Mathf.Max(size.y * 0.55f, (size.x + 4f) * 0.5f / aspect), minZoom, maxFreeZoom);
+                freeZoom = Mathf.Clamp(Mathf.Max(size.y * 0.55f, (size.x + 4f) * 0.5f / aspect), minZoom, MaxFreeZoomNow);
             }
         }
     }
@@ -406,7 +420,7 @@ public class CameraFollow : MonoBehaviour
         if (Mathf.Abs(wheel) < 0.01f) return;
         if (FreeMode)
         {
-            freeZoom = Mathf.Clamp(freeZoom - wheel * scrollStep, minZoom, maxFreeZoom);
+            freeZoom = Mathf.Clamp(freeZoom - wheel * scrollStep, minZoom, MaxFreeZoomNow);
             Overview = false;
         }
         else targetZoom = Mathf.Clamp(targetZoom - wheel * scrollStep, minZoom, maxZoom);

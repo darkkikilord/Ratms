@@ -490,6 +490,8 @@ namespace Ratms.Networking
                         int teamsTotal = MatchRules.Mode == MatchMode.Local ? MatchRules.EffectiveLocalTeams : NetworkManager.Singleton.ConnectedClientsIds.Count;
                         int expected = Mathf.Max(spawnedRats.Count + 1, teamsTotal * MatchRules.EffectiveRatsPerTeam);
                         float minDist = expected > 4 ? Mathf.Min(minDistanceBetweenSpawns, 6f) : minDistanceBetweenSpawns;
+                        // 0.31: con 30-40 ratas, aunque el mapa crezca, 6 u no caben todas.
+                        if (expected > 24) minDist = Mathf.Min(minDist, 4.5f);
                         // 0.25 — Fuertes: cada equipo en su mitad (pares a la izquierda, impares a la derecha).
                         Vector3? validPos = MatchRules.EffectiveGame == GameMode.Fuertes && spawnTeamHint >= 0
                             ? generator.GetRandomValidSpawnWorld(avoid, minDist * 0.6f, spawnTeamHint % 2 == 0 ? 0.03f : 0.6f, spawnTeamHint % 2 == 0 ? 0.4f : 0.97f)

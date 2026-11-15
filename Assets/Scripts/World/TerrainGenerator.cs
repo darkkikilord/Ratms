@@ -249,6 +249,15 @@ namespace Ratms.World
         /// null, usa <see cref="GetHeightLine"/>.</summary>
         public int[] GetBackdropLine() => lastBackdropLine ?? lastHeightLine;
         public int TextureWidth => width;
+
+        /// <summary>
+        ///  Ancho del mapa de ESTA partida (píxeles; 0 = el del Inspector).
+        ///  Con muchas ratas el mapa crece (<see cref="Ratms.Networking.MatchRules.MapWidthFor"/>).
+        ///  Lo fija <see cref="BiomeSyncer"/> en TODOS los PCs antes de regenerar:
+        ///  si un PC usara otro ancho, la misma semilla daría otro mapa.
+        /// </summary>
+        public static int MatchWidth;
+        private int inspectorWidth;
         public int TextureHeight => height;
         public float PixelsPerUnit => terrain != null ? terrain.PixelsPerUnit : 32f;
 
@@ -396,6 +405,8 @@ namespace Ratms.World
         {
             seed = newSeed;
             if (terrain == null) terrain = GetComponent<DestructibleTerrain>();
+            if (inspectorWidth == 0) inspectorWidth = width;
+            width = MatchWidth > 0 ? MatchWidth : inspectorWidth;
 
             // LOG DE DIAGNÓSTICO — deja constancia de con qué valores se genera
             // el terreno, para poder debuggear por qué las piedras no aparecen.

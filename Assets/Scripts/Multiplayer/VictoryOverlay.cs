@@ -36,7 +36,9 @@ namespace Ratms.Networking
             var tm = NetworkTurnManager.Instance;
             var stats = MatchStats.Last;
             int rows = stats != null ? stats.teams.Count : 0;
-            float w = 1020f, h = 470f + rows * 48f;
+            // 0.31: con muchos equipos las filas se aprietan para que quepan 10.
+            float rowStep = rows > 6 ? 38f : 48f;
+            float w = 1020f, h = 470f + rows * rowStep;
             var r = new Rect((TrenchGUI.VW - w) * 0.5f, (TrenchGUI.VH - h) * 0.5f, w, h);
             float s = Mathf.Lerp(0.9f, 1f, 1f - (1f - t) * (1f - t));
             var prev = GUI.matrix;
@@ -81,7 +83,7 @@ namespace Ratms.Networking
                     {
                         var gc = GUI.color;
                         GUI.color = new Color(1f, 0.85f, 0.3f, 0.18f);
-                        GUI.DrawTexture(new Rect(x - 12f, y - 2f, tw + 24f, 44f), Texture2D.whiteTexture);
+                        GUI.DrawTexture(new Rect(x - 12f, y - 2f, tw + 24f, rowStep - 4f), Texture2D.whiteTexture);
                         GUI.color = gc;
                     }
                     string name = tm != null ? tm.TeamDisplayName(row.team) : Loc.F("Equipo {0}", row.team + 1);
@@ -94,7 +96,7 @@ namespace Ratms.Networking
                         float cw = (i + 1 < col.Length ? col[i + 1] : 1f) - col[i];
                         TrenchGUI.Label(new Rect(x + tw * col[i], y, tw * cw, 40f), cells[i]);
                     }
-                    y += 48f;
+                    y += rowStep;
                 }
             }
             TrenchGUI.LabelStyle.normal.textColor = old;

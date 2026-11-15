@@ -39,8 +39,37 @@ namespace Ratms.World
         private readonly NetworkVariable<byte> gameModeNet = new(0,
             NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
+        /// <summary>
+        ///  0.31: ancho del mapa en píxeles (0 = normal). Crece con el número de
+        ///  ratas; TODOS los PCs deben generar con el mismo ancho o la misma
+        ///  semilla daría mapas distintos.
+        /// </summary>
+        private readonly NetworkVariable<int> mapWidthNet = new(0,
+            NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
         public override void OnNetworkSpawn()
         {
+            // El ANCHO va antes que nada: ApplyBiome regenera el mapa con él.
+            if (IsServer)
+            {
+                var nm = NetworkManager;
+                int teams = Ratms.Networking.MatchRules.Mode switch
+                {
+                    Ratms.Networking.MatchMode.Local => Ratms.Networking.MatchRules.EffectiveLocalTeams,
+                    Ratms.Networking.MatchMode.Online => nm != null ? nm.ConnectedClientsIds.Count : 2,
+                    _ => 1,
+                };
+                mapWidthNet.Value = Ratms.Networking.MatchRules.MapWidthFor(teams, Ratms.Networking.MatchRules.EffectiveRatsPerTeam);
+                Debug.Log($"[BiomeSyncer] {teams} equipos → ancho del mapa {(mapWidthNet.Value > 0 ? mapWidthNet.Value.ToString() : "normal")}");
+            }
+            TerrainGenerator.MatchWidth = mapWidthNet.Value;
+            mapWidthNet.OnValueChanged += (_, v) =>
+            {
+                if (IsServer || TerrainGenerator.MatchWidth == v) return;
+                TerrainGenerator.MatchWidth = v;
+                ApplyBiome((BiomeType)biomeTypeNet.Value);
+            };
+
             biomeTypeNet.OnValueChanged += OnBiomeTypeChanged;
             gameModeNet.OnValueChanged += (_, v) =>
             {
@@ -80,6 +109,7 @@ namespace Ratms.World
         public override void OnNetworkDespawn()
         {
             Ratms.Networking.WeatherFx.Current = Ratms.Networking.Weather.Despejado;
+            TerrainGenerator.MatchWidth = 0;   // la siguiente partida decide de nuevo
             biomeTypeNet.OnValueChanged -= OnBiomeTypeChanged;
         }
 

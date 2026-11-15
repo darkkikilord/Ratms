@@ -142,6 +142,7 @@ namespace Ratms.Networking
         private IEnumerator Run(MatchMode mode, string gameScene)
         {
             var nm = NetworkManager.Singleton;
+            LobbySync.SayGoodbye();
             if (nm != null && nm.IsListening) nm.Shutdown();
             float t = 0f;
             while (nm != null && (nm.IsListening || nm.ShutdownInProgress) && t < 5f) { t += Time.unscaledDeltaTime; yield return null; }

@@ -75,6 +75,7 @@ namespace Ratms.Networking
         public static void ExitToMenu()
         {
             var nm = NetworkManager.Singleton;
+            LobbySync.SayGoodbye();
             if (nm != null && nm.IsListening) nm.Shutdown();
             PlayerNameRegistry.Clear();
             MatchRules.Mode = MatchMode.Online;

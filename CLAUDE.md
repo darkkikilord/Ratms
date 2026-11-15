@@ -125,6 +125,12 @@ Estilo común IMGUI `Core/TrenchGUI` (paneles de caja de munición). `PlayModeMe
 - 0.22.1: código de sala copiable (se copia solo al crear la sala, clic para recopiar; "Unirse" lo rellena del portapapeles), "Mi equipo" pieza a pieza (botones cuerpo/pelo/sombrero/cola/ojos/boca en `TeamEditor`), mina más dañina (mecha 0,45 s, radio 2,4, `Explode(minFrac)`), nube de gas que daña en casi todo lo que se ve (`GasSystem`: radio 1,15×size).
 - Pruebas: `tools\autotest.ps1 -Width W -Height H` para probar otras resoluciones. Falsas alarmas quitadas: "ATRAVESADO" durante la prueba del agua y "no sube la pared" (ahora con suelo plano y cielo libre).
 
+## Reconexión (0.23)
+- Online, si un cliente se desconecta SIN avisar, su equipo queda **ausente** `NetworkTurnManager.ReconnectGrace` (90 s): sus ratas siguen (`DontDestroyWithOwner = true` en `GameSceneSpawnManager.SpawnRat`), se saltan sus turnos y se avisa a todos. Si entra alguien a la sala en ese tiempo, `TryReclaimTeamServer` le da ese equipo (`ChangeOwnership` de sus ratas; conserva el nombre). Si se acaba el tiempo, eliminado. Código: `NetworkTurnManager.Reconnect.cs`.
+- Salir a propósito (pausa → salir, pantalla de victoria) llama a `LobbySync.SayGoodbye()` antes de `Shutdown`: el cliente manda "ratms_bye" (el host lo elimina al momento, como antes) y el host manda "ratms_hostbye" a los clientes.
+- Cliente: `ConnectionLostOverlay` ("¡SE CORTÓ LA CONEXIÓN!", cuenta atrás) con "Volver a la partida": vuelve al menú y `MultiplayerMenuController.AutoRejoin` entra solo con `RelayManager.LastJoinedCode`.
+- Prueba: `autotest-multi.ps1` — el cliente simula un corte, reconecta, juega otro turno y se va a propósito (el host debe ganar al momento). OJO: con Unity abierto, compila antes con `autotest.ps1` y usa `autotest-multi.ps1 -SkipBuild`.
+
 ## Convenciones
 - Comentarios abundantes en español con `/// <summary>` explicando el *porqué* (el usuario aprende leyéndolos). Mantener ese estilo.
 - `[Header]` + `[Tooltip]` en español en todos los campos del Inspector.
@@ -142,7 +148,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 - **Flujo acordado**: trabajar directamente en `Main`. Tras cada tarea que compile → commit + `git push` sin pedir confirmación. Si algo sale mal se revierte con git. Nunca `push --force`.
 - Compilación rápida: `tools\compilar-rapido.ps1`. Compilación completa de Unity (Unity debe estar cerrado): `B:\Juegos\6000.0.50f1\Editor\Unity.exe -batchmode -nographics -quit -projectPath <repo> -logFile <log>` y buscar `error CS` en el log.
 - `origin/Pre-multipalyer` es un intento antiguo de multijugador de otro colaborador (Guillermo, ago 2025); **no fusionar**.
-- Commits con versión: `Ratms 0.X: resumen`. Último: 0.22.1 (resoluciones, pantalla de carga, icono, código de sala copiable, Mi equipo pieza a pieza). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
+- Commits con versión: `Ratms 0.X: resumen`. Último: 0.23 (reconexión online). Bloque 6 completo: lobby con ¡Listo!, reglas del host, revancha a la sala (ya existían) y reconexión. Siguiente: bloque 7 (publicar en itch.io). Siguiente: bloque 6 (online pulido). Cada versión cerrada lleva etiqueta git `v0.X` y un .exe jugable en `Documentos\Ratms Versiones\Ratms 0.X (...)`.
 - Las builds exportadas van fuera del repo, en `Documents/Ratms Versiones`.
 
 ## Plan por versiones (lo eligió el usuario: un bloque por versión, en este orden)
@@ -154,7 +160,7 @@ También prueba escopeta, teletransporte y cuerda. La prueba normal usa 1 rata p
 3. ~~Jugar solo: IA de ratas enemigas~~ ❌ DESCARTADO por el usuario (14 nov 2026): el juego NO tendrá IA. No proponerla.
 4. Menús ✅ (0.19). Queda: elegir sombrero/cola pieza a pieza en "Mi equipo".
 5. Presentación: **0.20** ✅ cámara inteligente + libre, música variada, animaciones, arsenal más claro y ayudas. El usuario NO quiere más biomas de momento.
-6. Online pulido: lobby con "listo", reglas del host, reconexión, revancha.
+6. Online pulido ✅ (0.23): lobby con "listo", reglas del host, revancha a la sala y reconexión.
 7. Publicar: icono, pantalla de carga, itch.io.
 
 ## Estado y roadmap (nov 2026)

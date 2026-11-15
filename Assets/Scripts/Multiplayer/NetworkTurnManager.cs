@@ -110,6 +110,7 @@ namespace Ratms.Networking
             public readonly List<NetworkPlayerMovement> rats = new();
             public int nextRat;
             public bool eliminated;
+            public float awayUntil = -1f;             // 0.23: desconectado, esperando a que vuelva
             public NetworkPlayerMovement forcedRat;   // elegida con "Cambiar rata" para su próximo turno
         }
 
@@ -184,6 +185,7 @@ namespace Ratms.Networking
                 return;
             }
             gameStarted = true;
+            Leavers.Clear();   // 0.23: los ids de cliente se reutilizan entre sesiones
             currentTeamPos = -1;
             Debug.Log($"[NetworkTurnManager] Empieza la partida: {teams.Count} equipos.");
             ItemsOnGameStart();
@@ -197,6 +199,12 @@ namespace Ratms.Networking
 
         private void OnClientDisconnected(ulong clientId)
         {
+            // 0.23: online, primero se le espera un rato (reconexión).
+            if (MarkAwayServer(clientId))
+            {
+                if (!GameEnded.Value && CurrentTurnClientId.Value == clientId) AdvanceTurnServer();
+                return;
+            }
             // Desconectarse = sus equipos quedan eliminados.
             foreach (var t in teams)
                 if (t.owner == clientId && !t.eliminated) EliminateTeam(t);
@@ -263,6 +271,8 @@ namespace Ratms.Networking
         {
             ItemsUpdate();
             if (!IsServer || !gameStarted || GameEnded.Value) return;
+            AwayUpdateServer();
+            if (GameEnded.Value) return;
 
             MatchTime.Value += Time.deltaTime;
             if (!SuddenDeath.Value && SuddenDeathAt.Value > 0f && MatchTime.Value >= SuddenDeathAt.Value)
@@ -323,6 +333,7 @@ namespace Ratms.Networking
                 int pos = (currentTeamPos + k + teams.Count) % teams.Count;
                 var team = teams[pos];
                 if (!TeamAlive(team)) continue;
+                if (team.awayUntil > 0f) continue;   // desconectado: se salta su turno
 
                 // ¿Alguien usó "Cambiar rata"? Esa rata va primero.
                 if (team.forcedRat != null && IsAlive(team.forcedRat))

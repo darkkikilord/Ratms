@@ -219,7 +219,10 @@ namespace Ratms.Networking
         {
             var nm = NetworkManager.Singleton;
             if (nm != null && (nm.IsHost || nm.IsClient || nm.IsServer))
+            {
+                LobbySync.SayGoodbye();
                 nm.Shutdown();
+            }
 
             PlayerNameRegistry.Clear();
             MatchRules.Mode = MatchMode.Online;

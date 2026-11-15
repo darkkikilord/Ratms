@@ -32,6 +32,8 @@ namespace Ratms.Networking
 
         /// <summary>Último código de sala generado por el host.</summary>
         public string LastJoinCode { get; private set; }
+        /// <summary>0.23: último código con el que este PC entró como cliente (para reconectar).</summary>
+        public static string LastJoinedCode;
 
         /// <summary>
         ///  Inicializa Unity Services y entra con autenticación anónima.
@@ -115,6 +117,7 @@ namespace Ratms.Networking
                 NetcodeHygiene.BeforeSessionStart();
                 NetworkManager.Singleton.StartClient();
 
+                LastJoinedCode = joinCode.Trim().ToUpper();
                 Debug.Log($"[Relay] Unido a sala {joinCode}");
                 return true;
             }

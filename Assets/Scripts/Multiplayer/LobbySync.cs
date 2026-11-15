@@ -117,6 +117,8 @@ namespace Ratms.Networking
             var cmm = nm.CustomMessagingManager;
             cmm.RegisterNamedMessageHandler("ratms_hello", OnHello);
             cmm.RegisterNamedMessageHandler("ratms_roster", OnRoster);
+            cmm.RegisterNamedMessageHandler("ratms_bye", (sender, _) => NetworkTurnManager.Leavers.Add(sender));
+            cmm.RegisterNamedMessageHandler("ratms_hostbye", (_, _) => ConnectionLostOverlay.HostClosed = true);
             if (nm.IsServer)
             {
                 nm.OnClientDisconnectCallback -= OnClientLeft;
@@ -133,6 +135,29 @@ namespace Ratms.Networking
             var sb = new System.Text.StringBuilder(d.team ?? "");
             for (int i = 0; i < TeamProfile.Slots; i++) sb.Append('|').Append(d.names[i]).Append(':').Append(d.looks[i]);
             return sb.ToString();
+        }
+
+        /// <summary>
+        ///  0.23: el cliente avisa de que se va A PROPÓSITO (antes de Shutdown),
+        ///  para que el host no le guarde el sitio para reconectar.
+        /// </summary>
+        public static void SayGoodbye()
+        {
+            ConnectionLostOverlay.LeftOnPurpose = true;
+            var nm = NetworkManager.Singleton;
+            if (nm == null || !nm.IsListening) return;
+            using var w = new FastBufferWriter(8, Allocator.Temp);
+            w.WriteValueSafe((byte)1);
+            if (nm.IsServer)
+            {
+                // El host se va: a los clientes no les ofrecemos "volver".
+                foreach (var id in nm.ConnectedClientsIds)
+                    if (id != nm.LocalClientId)
+                        nm.CustomMessagingManager.SendNamedMessage("ratms_hostbye", id, w, NetworkDelivery.Reliable);
+                return;
+            }
+            if (!nm.IsConnectedClient) return;
+            nm.CustomMessagingManager.SendNamedMessage("ratms_bye", NetworkManager.ServerClientId, w, NetworkDelivery.Reliable);
         }
 
         private void OnClientLeft(ulong id)

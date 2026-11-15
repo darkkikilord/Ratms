@@ -440,6 +440,15 @@ namespace Ratms.UI
 
             // ---------------- Pantalla de carga (0.22) ----------------
             ("(¡copiado!)", "(copied!)"),
+            // ---------------- Reconexión (0.23) ----------------
+            ("¡{0} se ha desconectado!\nTiene {1} s para volver", "{0} got disconnected!\nThey have {1} s to come back"),
+            ("¡{0} ha vuelto a la trinchera!", "{0} is back in the trench!"),
+            ("¡SE CORTÓ LA CONEXIÓN!", "CONNECTION LOST!"),
+            ("Tu equipo te espera en la trinchera {0} s más.", "Your team will wait in the trench for {0} more s."),
+            ("Se acabó el tiempo para volver.", "Time to come back is over."),
+            ("Volver a la partida", "Back to the match"),
+            ("FIN DE LA SALA", "ROOM CLOSED"),
+            ("El host ha cerrado la partida.", "The host closed the match."),
             ("cola normal", "normal tail"),
             ("ojos normales", "normal eyes"),
             ("boca normal", "normal mouth"),

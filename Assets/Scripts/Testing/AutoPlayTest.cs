@@ -349,6 +349,8 @@ namespace Ratms.Testing
 
             int myTurns = 0;
             var hostRatsUsed = new List<string>();
+            NetworkTurnManager.ReconnectGrace = 40f;   // prueba: menos espera
+            StartCoroutine(ReconnectWatcher());
             while (!finished)
             {
                 yield return WaitFor(() => IsMyTurn(nm) || GameOver(), 90f, "mi turno (host)", fatal: false);
@@ -400,6 +402,9 @@ namespace Ratms.Testing
                 if (!rotated) Problem("Multijugador: la rata del host no rota entre turnos");
             }
             yield return WaitFor(GameOver, 20f, "fin de la partida", fatal: false);
+            Log($"Reconexión vista por el host: ausente {(sawAway ? "✓" : "⚠")} · ha vuelto {(sawReclaim ? "✓" : "⚠")}");
+            if (!sawAway) Problem("Reconexión: el host no dejó al cliente como ausente");
+            if (!sawReclaim) Problem("Reconexión: el cliente no recuperó su equipo");
             var tm = NetworkTurnManager.Instance;
             bool won = tm != null && tm.GameEnded.Value && tm.WinnerClientId.Value == nm.LocalClientId;
             Log($"Fin de partida: {(tm != null && tm.GameEnded.Value ? "terminada" : "⚠ NO terminó")} · ganador = {(tm != null ? tm.WinnerClientId.Value.ToString() : "?")} · " +
@@ -474,10 +479,36 @@ namespace Ratms.Testing
                     for (float t = 0f; t < 2.5f; t += 0.5f) { mine.TestPressJump(); mine.TestJumpHeld = true; yield return new WaitForSeconds(0.5f); }
                     mine.TestInputX = 0f; mine.TestJumpHeld = false;
                 }
+                else if (!reconnectedOnce)
+                {
+                    // 0.23: CORTE de conexión (sin avisar) y vuelta a la partida.
+                    reconnectedOnce = true;
+                    Log("Cliente: simulo un CORTE de conexión (sin avisar al host)");
+                    yield return Capture("C03_cliente_antes_del_corte");
+                    RelayManager.LastJoinedCode = "PRUEBA";   // para que se vea el botón "Volver a la partida"
+                    nm.Shutdown();
+                    yield return new WaitForSeconds(1.5f);
+                    yield return Capture("C03b_cliente_conexion_perdida");
+                    yield return new WaitForSeconds(1f);
+                    NetcodeHygiene.BeforeSessionStart();
+                    var utp2 = nm.GetComponent<UnityTransport>();
+                    if (utp2 != null) utp2.SetConnectionData("127.0.0.1", 7777);
+                    nm.StartClient();
+                    yield return WaitFor(() => nm.IsConnectedClient, 15f, "volver a conectar", fatal: false);
+                    yield return WaitFor(() => FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Count(m => m.IsSpawned && m.IsOwner) >= 1,
+                                         20f, "recuperar mis ratas", fatal: false);
+                    int mineBack = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Count(m => m.IsSpawned && m.IsOwner);
+                    Log($"Cliente: reconectado {(nm.IsConnectedClient ? "✓" : "⚠")} · ratas mías otra vez: {mineBack} {(mineBack >= 1 ? "✓" : "⚠")}");
+                    if (mineBack < 1) Problem("Reconexión: el cliente no recuperó sus ratas");
+                    yield return Capture("C04_cliente_reconectado");
+                    continue;   // a esperar mi turno otra vez
+                }
                 else
                 {
-                    Log("Cliente: me desconecto A PROPÓSITO (el host debería ganar)");
-                    yield return Capture("C03_cliente_antes_de_irse");
+                    Log("Cliente: tras reconectar me ha tocado turno ✓ · ahora me voy A PROPÓSITO (el host debería ganar ya)");
+                    yield return Capture("C05_cliente_antes_de_irse");
+                    LobbySync.SayGoodbye();
+                    yield return new WaitForSeconds(0.2f);
                     nm.Shutdown();
                     yield return new WaitForSeconds(0.5f);
                     Finish(null);
@@ -1114,6 +1145,33 @@ namespace Ratms.Testing
 
         private static bool IsMyTurn(NetworkManager nm) =>
             NetworkTurnManager.Instance != null && NetworkTurnManager.Instance.IsTurnOf(nm.LocalClientId);
+
+        private bool reconnectedOnce, sawAway, sawReclaim;
+
+        /// <summary>(Host) Mira si el equipo del cliente pasa a "ausente" y luego vuelve.</summary>
+        private IEnumerator ReconnectWatcher()
+        {
+            while (!finished && !GameOver())
+            {
+                var tm = NetworkTurnManager.Instance;
+                if (tm != null && tm.HasAwayTeamServer && !sawAway)
+                {
+                    sawAway = true;
+                    Log($"Host: el cliente se cortó → su equipo queda AUSENTE ✓ · aviso: \"{TurnHUD.LastAnnouncement}\"");
+                    yield return Capture("M05_host_cliente_ausente");
+                }
+                if (sawAway && !sawReclaim && tm != null && !tm.HasAwayTeamServer)
+                {
+                    var theirs = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Where(m => m.IsSpawned && !m.IsTestDummy && !m.IsOwner).ToList();
+                    if (theirs.Count > 0)
+                    {
+                        sawReclaim = true;
+                        Log($"Host: el cliente ha VUELTO y sus {theirs.Count} ratas vuelven a ser suyas ✓ · aviso: \"{TurnHUD.LastAnnouncement}\"");
+                    }
+                }
+                yield return new WaitForSeconds(0.25f);
+            }
+        }
 
         private static bool GameOver() => NetworkTurnManager.Instance != null && NetworkTurnManager.Instance.GameEnded.Value;
 

@@ -277,6 +277,14 @@ namespace Ratms.Networking
             if (spawnedClients.Contains(clientId)) return;
             if (MatchRules.Mode != MatchMode.Online) return;   // local/práctica: no entra nadie más
 
+            // 0.23: ¿vuelve alguien a quien se le cortó? Recupera su equipo.
+            var tm = NetworkTurnManager.Instance;
+            if (tm != null && tm.HasAwayTeamServer && tm.TryReclaimTeamServer(clientId))
+            {
+                spawnedClients.Add(clientId);
+                return;
+            }
+
             if (debugLogs)
                 Debug.Log($"[GameSceneSpawnManager] OnClientConnectedLate → clientId={clientId}, le spawneamos su equipo.");
             SpawnTeamsForClient(clientId);
@@ -367,6 +375,8 @@ namespace Ratms.Networking
                 Destroy(go);
                 return;
             }
+            // 0.23: si su jugador se desconecta, la rata se queda (y puede recuperarla al volver).
+            no.DontDestroyWithOwner = true;
 
             // Equipo, nombre y vida: los lee la rata en su OnNetworkSpawn (servidor).
             NetworkPlayerMovement.SpawnNextTeam = team;

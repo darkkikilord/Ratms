@@ -223,6 +223,18 @@ namespace Ratms.Networking
                 NetworkManager.Singleton.OnClientDisconnectCallback   += HandleClientDisconnected;
                 NetworkManager.Singleton.OnServerStarted              += HandleServerStarted;
             }
+            if (!string.IsNullOrEmpty(ConnectionLostOverlay.PendingRejoinCode)) StartCoroutine(AutoRejoin());
+        }
+
+        /// <summary>0.23: venimos de "Volver a la partida": entrar ya con el último código.</summary>
+        private IEnumerator AutoRejoin()
+        {
+            string code = ConnectionLostOverlay.PendingRejoinCode;
+            ConnectionLostOverlay.PendingRejoinCode = null;
+            yield return null; yield return null;   // que el menú termine de montarse
+            ShowMultiplayer();
+            if (joinCodeInput != null) joinCodeInput.text = code;
+            OnJoinRoomClicked();
         }
 
         private void OnDisable()

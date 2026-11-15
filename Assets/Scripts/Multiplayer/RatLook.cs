@@ -1,4 +1,4 @@
-namespace Ratms.Networking
+﻿namespace Ratms.Networking
 {
     /// <summary>
     ///  ASPECTO DE UNA RATA, por piezas. Todas siguen el mismo estilo
@@ -149,23 +149,29 @@ namespace Ratms.Networking
             public float fall;      // ×daño por caída
             public float knock;     // ×empujón que RECIBE (las pesadas vuelan menos)
             public string summary;  // para "Mi equipo"
+            // 0.30: TAMAÑO. hitW/hitH = escala del colisionador (ancho/alto):
+            // la gigante es un blanco enorme y la enana uno chiquitito. visual =
+            // escala del dibujo (para que se note a simple vista).
+            public float hitW, hitH, visual;
+            /// <summary>Escala media del blanco: las explosiones "llegan" más lejos a las grandes.</summary>
+            public float HitScale => (hitW + hitH) * 0.5f;
         }
 
         public BodyStats Stats => StatsOf(body);
 
         public static BodyStats StatsOf(BodyType b) => b switch
         {
-            BodyType.Gorda => new BodyStats { hp = 15, speed = 0.92f, jump = 0.95f, melee = 1f, fall = 1f, knock = 0.85f, summary = "+15 vida · lenta · cuesta empujarla" },
-            BodyType.Flaca => new BodyStats { hp = -10, speed = 1.12f, jump = 1.12f, melee = 0.9f, fall = 0.9f, knock = 1.1f, summary = "-10 vida · rápida y saltarina" },
-            BodyType.Jorobada => new BodyStats { hp = 5, speed = 0.95f, jump = 0.95f, melee = 1f, fall = 0.6f, knock = 0.95f, summary = "+5 vida · casi no se hace daño al caer" },
-            BodyType.Musculosa => new BodyStats { hp = 5, speed = 1f, jump = 1f, melee = 1.5f, fall = 1f, knock = 0.9f, summary = "+5 vida · golpes cuerpo a cuerpo ×1,5" },
-            BodyType.Topo => new BodyStats { hp = 0, speed = 1.05f, jump = 0.9f, melee = 1.2f, fall = 0.8f, knock = 1f, summary = "mordisco fuerte · pequeña y difícil de acertar" },
-            BodyType.Gigante => new BodyStats { hp = 30, speed = 0.85f, jump = 0.88f, melee = 1.3f, fall = 1.25f, knock = 0.7f, summary = "+30 vida · muy lenta · enorme blanco" },
-            BodyType.Enana => new BodyStats { hp = -20, speed = 1.18f, jump = 1.08f, melee = 0.8f, fall = 0.5f, knock = 1.25f, summary = "-20 vida · rapidísima · cae de pie" },
-            BodyType.Salchicha => new BodyStats { hp = 5, speed = 1.15f, jump = 0.85f, melee = 1f, fall = 1f, knock = 0.9f, summary = "+5 vida · corre mucho, salta poco" },
-            BodyType.Cabezona => new BodyStats { hp = 10, speed = 1f, jump = 1f, melee = 1.25f, fall = 1f, knock = 1f, summary = "+10 vida · golpes ×1,25" },
-            BodyType.Erguida => new BodyStats { hp = -5, speed = 1f, jump = 1.22f, melee = 1f, fall = 0.85f, knock = 1.05f, summary = "-5 vida · salta muchísimo" },
-            _ => new BodyStats { hp = 0, speed = 1f, jump = 1f, melee = 1f, fall = 1f, knock = 1f, summary = "" },
+            BodyType.Gorda => new BodyStats { hitW = 1.15f, hitH = 1.0f, visual = 1.0f, hp = 15, speed = 0.92f, jump = 0.95f, melee = 1f, fall = 1f, knock = 0.85f, summary = "+15 vida · lenta · cuesta empujarla" },
+            BodyType.Flaca => new BodyStats { hitW = 0.85f, hitH = 1.05f, visual = 1.0f, hp = -10, speed = 1.12f, jump = 1.12f, melee = 0.9f, fall = 0.9f, knock = 1.1f, summary = "-10 vida · rápida y saltarina" },
+            BodyType.Jorobada => new BodyStats { hitW = 1.05f, hitH = 0.95f, visual = 1.0f, hp = 5, speed = 0.95f, jump = 0.95f, melee = 1f, fall = 0.6f, knock = 0.95f, summary = "+5 vida · casi no se hace daño al caer" },
+            BodyType.Musculosa => new BodyStats { hitW = 1.1f, hitH = 1.05f, visual = 1.0f, hp = 5, speed = 1f, jump = 1f, melee = 1.5f, fall = 1f, knock = 0.9f, summary = "+5 vida · golpes cuerpo a cuerpo ×1,5" },
+            BodyType.Topo => new BodyStats { hitW = 1.0f, hitH = 0.8f, visual = 1.0f, hp = 0, speed = 1.05f, jump = 0.9f, melee = 1.2f, fall = 0.8f, knock = 1f, summary = "mordisco fuerte · pequeña y difícil de acertar" },
+            BodyType.Gigante => new BodyStats { hitW = 1.3f, hitH = 1.3f, visual = 1.18f, hp = 30, speed = 0.85f, jump = 0.88f, melee = 1.3f, fall = 1.25f, knock = 0.7f, summary = "+30 vida · muy lenta · enorme blanco" },
+            BodyType.Enana => new BodyStats { hitW = 0.75f, hitH = 0.75f, visual = 0.85f, hp = -20, speed = 1.18f, jump = 1.08f, melee = 0.8f, fall = 0.5f, knock = 1.25f, summary = "-20 vida · rapidísima · cae de pie" },
+            BodyType.Salchicha => new BodyStats { hitW = 1.25f, hitH = 0.85f, visual = 1.0f, hp = 5, speed = 1.15f, jump = 0.85f, melee = 1f, fall = 1f, knock = 0.9f, summary = "+5 vida · corre mucho, salta poco" },
+            BodyType.Cabezona => new BodyStats { hitW = 1.05f, hitH = 1.08f, visual = 1.0f, hp = 10, speed = 1f, jump = 1f, melee = 1.25f, fall = 1f, knock = 1f, summary = "+10 vida · golpes ×1,25" },
+            BodyType.Erguida => new BodyStats { hitW = 0.9f, hitH = 1.15f, visual = 1.0f, hp = -5, speed = 1f, jump = 1.22f, melee = 1f, fall = 0.85f, knock = 1.05f, summary = "-5 vida · salta muchísimo" },
+            _ => new BodyStats { hitW = 1f, hitH = 1f, visual = 1f, hp = 0, speed = 1f, jump = 1f, melee = 1f, fall = 1f, knock = 1f, summary = "" },
         };
 
         // ============================================================

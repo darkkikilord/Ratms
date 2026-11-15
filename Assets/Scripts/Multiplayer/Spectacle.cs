@@ -10,6 +10,73 @@ namespace Ratms.Networking
     /// <summary>0.27: clima de la partida (se elige en las reglas; viaja por red con el bioma).</summary>
     public enum Weather : byte { Despejado, Lluvia, Niebla, Tormenta, Nieve }
 
+    /// <summary>
+    ///  0.30 — EL CLIMA CAMBIA EL JUEGO (no solo se ve). Todo sale de
+    ///  <see cref="WeatherFx.Current"/>, que es igual en todos los PCs:
+    ///   • Lluvia: el fuego dura la mitad y el gas se disuelve antes.
+    ///   • Nieve: el suelo RESBALA (cuesta arrancar y frenar) y las caídas duelen menos.
+    ///   • Niebla: no ves la vida ni el nombre de las ratas enemigas lejanas.
+    ///   • Tormenta: el viento sopla siempre fuerte, el fuego dura menos y caen rayos.
+    /// </summary>
+    public static class WeatherRules
+    {
+        public static Weather Now => WeatherFx.Current;
+        public static float FireLife => Now switch { Weather.Lluvia => 0.5f, Weather.Tormenta => 0.6f, Weather.Nieve => 0.8f, _ => 1f };
+        public static float GasLife => Now switch { Weather.Lluvia => 0.6f, Weather.Tormenta => 0.75f, _ => 1f };
+        public static float FallDamage => Now == Weather.Nieve ? 0.6f : 1f;
+        public static bool Slippery => Now == Weather.Nieve;
+        public const float FogSight = 10f;
+
+        /// <summary>Texto del aviso al empezar la partida (español; se traduce al mostrarlo).</summary>
+        public static string Describe(Weather w) => w switch
+        {
+            Weather.Lluvia => "LLUVIA\nEl fuego y el gas duran menos",
+            Weather.Niebla => "NIEBLA\nNo ves la vida de los enemigos lejanos",
+            Weather.Tormenta => "TORMENTA\nViento fuerte y ¡cuidado con los rayos!",
+            Weather.Nieve => "NIEVE\nEl suelo resbala y las caídas duelen menos",
+            _ => null,
+        };
+
+        private static int fogFrame = -1;
+        private static int fogTeam = -1;
+        private static readonly List<Vector2> fogEyes = new();
+
+        /// <summary>
+        ///  ¿Esconde la niebla la vida/nombre de esta rata? Solo a las enemigas
+        ///  que estén a más de <see cref="FogSight"/> u de TODAS las ratas del
+        ///  equipo que mira (el tuyo online; el del turno en partida local).
+        /// </summary>
+        public static bool FogHides(NetworkPlayerMovement m)
+        {
+            if (Now != Weather.Niebla || m == null) return false;
+            if (fogFrame != Time.frameCount)
+            {
+                fogFrame = Time.frameCount;
+                fogEyes.Clear();
+                fogTeam = -1;
+                var tm = NetworkTurnManager.Instance;
+                var cur = tm != null ? tm.CurrentRat : null;
+                var nm = NetworkManager.Singleton;
+                bool local = nm != null && nm.IsServer && nm.ConnectedClientsIds.Count <= 1;
+                if (cur != null && (local || cur.IsOwner)) fogTeam = cur.TeamIndex.Value;
+                var all = Object.FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None);
+                if (fogTeam < 0)
+                    foreach (var r in all) if (r.IsOwner && !r.IsTestDummy) { fogTeam = r.TeamIndex.Value; break; }
+                foreach (var r in all)
+                {
+                    if (r.TeamIndex.Value != fogTeam || r.IsTestDummy) continue;
+                    var h = r.GetComponent<NetworkHealth>();
+                    if (h != null && !h.IsDead.Value) fogEyes.Add(h.BodyCenter);
+                }
+            }
+            if (fogTeam < 0 || m.TeamIndex.Value == fogTeam) return false;
+            var mh = m.GetComponent<NetworkHealth>();
+            Vector2 p = mh != null ? mh.BodyCenter : (Vector2)m.transform.position;
+            foreach (var e in fogEyes) if ((e - p).sqrMagnitude < FogSight * FogSight) return false;
+            return true;
+        }
+    }
+
     // =====================================================================
     //  CÁMARA LENTA
     // =====================================================================
@@ -39,21 +106,17 @@ namespace Ratms.Networking
             instance.StartCoroutine(instance.Run(at));
         }
 
+        /// <summary>
+        ///  0.30: ya NO se ralentiza el juego en directo (con Time.timeScale el
+        ///  anfitrión iba lento y descuadraba los turnos). Ahora la cámara se
+        ///  acerca a la explosión y la CÁMARA LENTA se ve en la REPETICIÓN
+        ///  (<see cref="DeathReplay"/>) al acabar el turno.
+        /// </summary>
         private IEnumerator Run(Vector2 at)
         {
-            active = true;
-            until = Time.unscaledTime + 1.3f;
             CameraFollow.Instance?.FocusOnImpact(at, 1.4f);
-            Time.timeScale = 0.25f;
-            while (Time.unscaledTime < until) yield return null;
-            // vuelta suave a la velocidad normal
-            for (float t = 0f; t < 0.35f; t += Time.unscaledDeltaTime)
-            {
-                Time.timeScale = Mathf.Lerp(0.25f, 1f, t / 0.35f);
-                yield return null;
-            }
-            Time.timeScale = 1f;
-            active = false;
+            DeathReplay.NoteDeath(at);
+            yield break;
         }
 
         private void OnDestroy() { if (active) Time.timeScale = 1f; }
@@ -151,7 +214,7 @@ namespace Ratms.Networking
 
         private void Update()
         {
-            if (!Input.GetKeyDown(KeyCode.P) || Time.unscaledTime < next) return;
+            if (!Controls.Down(Controls.Act.Taunt) || Time.unscaledTime < next) return;
             if (GUIUtility.keyboardControl != 0 || PauseMenu.IsOpen) return;
             var tm = NetworkTurnManager.Instance;
             var nm = NetworkManager.Singleton;

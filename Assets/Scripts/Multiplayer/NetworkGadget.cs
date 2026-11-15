@@ -615,7 +615,7 @@ namespace Ratms.Networking
                 if (nh == null || done.Contains(nh) || nh.IsDead.Value) continue;
                 done.Add(nh);
                 Vector2 body = nh.BodyCenter;
-                float t = Mathf.Clamp01(1f - Vector2.Distance(at, body) / radius);
+                float t = Mathf.Clamp01(1f - nh.BlastDistance(at) / radius);
                 if (t <= 0f) continue;
                 int dmg = Mathf.CeilToInt(maxDamage * Mathf.Lerp(minFrac, 1f, t));
                 if (dmg <= 0) continue;

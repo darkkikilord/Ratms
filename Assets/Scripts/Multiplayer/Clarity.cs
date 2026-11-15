@@ -16,7 +16,8 @@ namespace Ratms.Networking
         private int lastSig = -1;
         private Transform row;
 
-        private void Awake() => health = GetComponent<NetworkHealth>();
+        private NetworkPlayerMovement fogMove;
+        private void Awake() { health = GetComponent<NetworkHealth>(); fogMove = GetComponent<NetworkPlayerMovement>(); }
 
         private void LateUpdate()
         {
@@ -25,6 +26,8 @@ namespace Ratms.Networking
             int sig = !alive ? 0 : (health.Injuries.Value | (health.Poisoned ? 256 : 0));
             if (sig != lastSig) { lastSig = sig; Rebuild(); }
             if (row == null) return;
+            bool fog = fogMove != null && WeatherRules.FogHides(fogMove);   // 0.30
+            if (fog == row.gameObject.activeSelf && lastSig != 0) row.gameObject.SetActive(!fog);
             row.position = new Vector3(transform.position.x, transform.position.y + 1.32f, -4f);
             var cam = Camera.main;
             float k = cam != null ? Mathf.Clamp(cam.orthographicSize / 6f, 0.8f, 1.8f) : 1f;   // legibles también de lejos

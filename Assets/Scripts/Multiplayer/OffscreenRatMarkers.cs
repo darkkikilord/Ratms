@@ -33,6 +33,7 @@ namespace Ratms.Networking
             foreach (var m in FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None))
             {
                 if (m == null || !m.IsSpawned || m.IsTestDummy) continue;
+                if (WeatherRules.FogHides(m)) continue;   // 0.30: perdidas en la niebla
                 var h = m.GetComponent<NetworkHealth>();
                 if (h == null || h.IsDead.Value) continue;
                 Vector3 sp = cam.WorldToScreenPoint(h.BodyCenter);

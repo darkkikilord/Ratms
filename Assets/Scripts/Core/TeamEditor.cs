@@ -101,7 +101,9 @@ namespace Ratms.UI
                     if (!string.IsNullOrEmpty(stats.summary))
                     {
                         var c0 = GUI.color; GUI.color = new Color(1f, 0.85f, 0.45f);
-                        TrenchGUI.Small(new Rect(fx + 90f, row.y + 2f, 560f, 26f), Loc.T(stats.summary));
+                        // 0.30: y el tamaño del blanco (la gigante recibe más, la enana menos)
+                        string size = stats.HitScale >= 1.12f ? Loc.T("blanco grande") : stats.HitScale <= 0.9f ? Loc.T("blanco pequeño") : "";
+                        TrenchGUI.Small(new Rect(fx + 90f, row.y + 2f, 560f, 26f), Loc.T(stats.summary) + (size.Length > 0 ? "  ·  " + size : ""));
                         GUI.color = c0;
                     }
                     float bw = (row.xMax - fx) / 5f;

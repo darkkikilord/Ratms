@@ -208,7 +208,7 @@ namespace Ratms.Networking
                 string ammoText = ammo >= 0 ? $" x{ammo}" : "";
                 bool armless = menu != null && !menu.HandsOk && menu.SelectedWeapon == WeaponsMenuUI.WeaponId.None;
                 GUI.Label(new Rect(panel.x, panel.y + panelSize.y + 2f, panel.width, 24f),
-                          armless ? Ratms.UI.Loc.T("Arma: ¡MORDISCO! (ESPACIO)   · sin brazos") : Ratms.UI.Loc.F("Arma: {0}{1}   (1-8 o TAB)", weapon, ammoText), windStyle);
+                          armless ? Ratms.UI.Loc.T("Arma: ¡MORDISCO! (ESPACIO)   · sin brazos") : Ratms.UI.Controls.Explain(Ratms.UI.Loc.F("Arma: {0}{1}   (1-0 o TAB)", weapon, ammoText)), windStyle);
                 // Lesiones de la rata del turno
                 string injuries = turnHealth != null ? turnHealth.InjuryText : "";
                 if (!string.IsNullOrEmpty(injuries))

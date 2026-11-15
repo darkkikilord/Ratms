@@ -41,6 +41,7 @@ namespace Ratms.Networking
         public static void Spawn(Vector2 pos, Vector2 vel, float life, float size)
         {
             var g = I;
+            life *= WeatherRules.GasLife;   // 0.30: la lluvia disuelve el gas (igual en todos los PCs)
             if (g.soft == null) g.soft = SoftCircle();
             var go = new GameObject("Gas");
             go.transform.SetParent(g.transform, false);

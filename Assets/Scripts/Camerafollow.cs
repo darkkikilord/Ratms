@@ -320,10 +320,10 @@ public class CameraFollow : MonoBehaviour
         if (Ratms.UI.PauseMenu.IsOpen) return;
 
         // C → volver a la rata
-        if (Input.GetKeyDown(KeyCode.C) && (FreeMode || Overview)) { ExitFree(); return; }
+        if (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.CameraBack) && (FreeMode || Overview)) { ExitFree(); return; }
 
         // V → vista general (y otra vez V, volver)
-        if (Input.GetKeyDown(KeyCode.V)) { ToggleOverview(); if (!FreeMode) return; }
+        if (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.Overview)) { ToggleOverview(); if (!FreeMode) return; }
 
         HandleDragAndEdges();
     }
@@ -425,7 +425,7 @@ public class CameraFollow : MonoBehaviour
     {
         var mv = target != null ? target.GetComponent<NetworkPlayerMovement>() : null;
         if (mv == null || !mv.IsOwner || !mv.CanControlNow) return false;
-        return Mathf.Abs(Input.GetAxisRaw("Horizontal")) > 0.1f || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.Space);
+        return Mathf.Abs(Ratms.UI.Controls.Horizontal) > 0.1f || Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.Jump) || Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.Fire);
     }
 
     // ==============================================================

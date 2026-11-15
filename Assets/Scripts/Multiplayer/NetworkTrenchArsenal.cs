@@ -191,7 +191,7 @@ namespace Ratms.Networking
                 {
                     Vector2? p = TestClickTarget;
                     TestClickTarget = null;
-                    if (p == null && (menu == null || !menu.IsVisible) && Input.GetMouseButtonDown(0) && Camera.main != null)
+                    if (p == null && (menu == null || !menu.IsVisible) && !WeaponsMenuUI.MouseOverUI && Input.GetMouseButtonDown(0) && Camera.main != null)
                         p = Camera.main.ScreenToWorldPoint(Input.mousePosition);
                     if (p == null) return false;
                     if (id == WeaponsMenuUI.WeaponId.Sandbags || id == WeaponsMenuUI.WeaponId.Girder)
@@ -825,7 +825,7 @@ namespace Ratms.Networking
                 var nh = col != null ? col.GetComponentInParent<NetworkHealth>() : null;
                 if (nh == null || nh == skip || nh.IsDead.Value || !done.Add(nh)) continue;
                 Vector2 b = nh.BodyCenter;
-                float k = Mathf.Clamp01(1f - Vector2.Distance(at, b) / radius);
+                float k = Mathf.Clamp01(1f - nh.BlastDistance(at) / radius);
                 if (k <= 0f) continue;
                 nh.ApplyDamageServer(Mathf.CeilToInt(maxDamage * k), b, DamageType.Explosion, at);
                 Vector2 away = b - at; if (away.sqrMagnitude < 0.0001f) away = Vector2.up;

@@ -16,6 +16,7 @@ namespace Ratms.Networking
             if (GetComponent<TauntInput>() == null) gameObject.AddComponent<TauntInput>();
             if (GetComponent<TurnMarker>() == null) gameObject.AddComponent<TurnMarker>();   // 0.29: flecha del turno
             WeatherFx.Ensure();
+            DeathReplay.Ensure();   // 0.30: graba los últimos segundos para la repetición
         }
 
         [ServerRpc(RequireOwnership = false)]
@@ -54,8 +55,17 @@ namespace Ratms.Networking
         }
 
         /// <summary>(Servidor, al empezar un turno) a veces la rata suelta una frase.</summary>
+        private bool weatherAnnounced;
+
         partial void SpectacleOnTurnBegin()
         {
+            // 0.30: al empezar la partida se avisa de qué hace el clima
+            if (!weatherAnnounced && CurrentRatId.Value != ulong.MaxValue)
+            {
+                weatherAnnounced = true;
+                string w = WeatherRules.Describe(WeatherFx.Current);
+                if (w != null) AnnounceClientRpc(w, new Color(0.7f, 0.85f, 1f));
+            }
             if (CurrentRatId.Value != ulong.MaxValue && Random.value < 0.3f)
                 SayClientRpc(CurrentRatId.Value, 100 + Random.Range(0, RatLines.TurnStart.Length), false);
         }
@@ -93,7 +103,7 @@ namespace Ratms.Networking
             foreach (var h in FindObjectsByType<NetworkHealth>(FindObjectsSortMode.None))
             {
                 if (h == null || h.IsDead.Value) continue;
-                float d = Vector2.Distance(h.BodyCenter, at);
+                float d = h.BlastDistance(at);
                 if (d > 2.2f) continue;
                 int dmg = Mathf.CeilToInt(22f * (1f - d / 2.2f)) + 3;
                 h.ApplyDamageServer(dmg, h.BodyCenter, DamageType.Explosion, at);

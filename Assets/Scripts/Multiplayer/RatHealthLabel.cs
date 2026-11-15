@@ -103,6 +103,8 @@ namespace Ratms.Networking
         /// </summary>
         // Cacheamos el nombre para no rebuild el texto cada frame
         private string cachedName;
+        private NetworkPlayerMovement FogMove => fogMoveCache != null ? fogMoveCache : (fogMoveCache = GetComponent<NetworkPlayerMovement>());
+        private NetworkPlayerMovement fogMoveCache;
 
         private void LateUpdate()
         {
@@ -113,6 +115,9 @@ namespace Ratms.Networking
                 if (labelGO.activeSelf) labelGO.SetActive(false);
                 return;
             }
+            // 0.30: la NIEBLA esconde la vida de las enemigas lejanas
+            bool fog = FogMove != null && WeatherRules.FogHides(FogMove);
+            if (fog == labelGO.activeSelf) labelGO.SetActive(!fog);
             labelGO.transform.position = new Vector3(
                 transform.position.x,
                 transform.position.y + HeightAboveRat,

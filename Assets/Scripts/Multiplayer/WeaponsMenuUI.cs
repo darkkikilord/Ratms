@@ -149,14 +149,17 @@ namespace Ratms.Networking
         };
 
         /// <summary>Tecla que se pinta en el arsenal.</summary>
-        private static string KeyLabel(WeaponEntry w) => w.shortcut switch
+        /// <summary>
+        ///  0.30: la tecla que se pinta es la de su RANURA FAVORITA (1-9, 0) si
+        ///  la tiene; si no, nada. Adiós a las letras sueltas (Q, E, R, T...):
+        ///  cada uno pone en las ranuras las armas que más usa.
+        /// </summary>
+        private static string KeyLabel(WeaponEntry w) => KeyLabel(w.id);
+        public static string KeyLabel(WeaponId id)
         {
-            KeyCode.Q => "Q", KeyCode.E => "E", KeyCode.R => "R", KeyCode.F => "F",
-            KeyCode.T => "T", KeyCode.G => "G", KeyCode.Y => "Y", KeyCode.H => "H", KeyCode.Z => "Z", KeyCode.X => "X",
-            KeyCode.B => "B", KeyCode.N => "N", KeyCode.M => "M", KeyCode.J => "J", KeyCode.K => "K", KeyCode.L => "L",
-            KeyCode.None => w.id == WeaponId.None ? "0" : "TAB",
-            _ => w.id == WeaponId.None ? "0" : $"{(int)w.id + 1}",
-        };
+            int slot = Ratms.UI.Controls.SlotOf((int)id);
+            return slot < 0 ? "" : Ratms.UI.Controls.Short(Ratms.UI.Controls.Act.Slot1 + slot);
+        }
 
         /// <summary>Nombre corto del arma para el HUD.</summary>
         public static string ShortName(WeaponId id) => Ratms.UI.Loc.T(ShortNameEs(id));
@@ -296,15 +299,105 @@ namespace Ratms.Networking
             // Sin brazos: se le cae el arma de las manos (que no tiene).
             if (!HandsOk && NeedsHands(SelectedWeapon)) SelectedIndexNet.Value = (int)WeaponId.None;
 
-            if (Input.GetKeyDown(toggleKey))
-                visible = !visible;
-
-            // Atajos numéricos rápidos (0 = desenfundar, 1 = bazooka, etc.)
-            foreach (var w in weapons)
+            if (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.Arsenal) && !Ratms.UI.PauseMenu.IsOpen)
             {
-                if (Input.GetKeyDown(w.shortcut) && w.implemented && Usable(w.id))
-                    SelectedIndexNet.Value = (int)w.id;
+                visible = !visible;
+                if (visible) { cursor = SelectedWeapon; cursorByKeys = false; }
             }
+            if (visible && Input.GetKeyDown(KeyCode.Escape)) visible = false;
+            if (visible) Ratms.UI.Controls.BlockGameplayThisFrame();   // las flechas mueven el cursor, no la rata
+
+            // 0.30: RANURAS FAVORITAS (1-9 y 0, reasignables). Con el arsenal
+            // abierto y un arma señalada (ratón encima o cursor movido con las
+            // flechas), el número la GUARDA en esa ranura; si no, la saca.
+            int slot = Ratms.UI.Controls.SlotPressed();
+            if (slot >= 0)
+            {
+                if (visible && (hoverId.HasValue || cursorByKeys))
+                {
+                    var id = hoverId ?? cursor;
+                    Ratms.UI.Controls.SetFav(slot, (int)id);
+                    Sfx.Play(Sfx.Id.Whack, 0.3f, 0.1f);
+                    favFlash = Time.unscaledTime;
+                }
+                else
+                {
+                    int fav = Ratms.UI.Controls.Fav(slot);
+                    if (fav >= -1 && ((WeaponId)fav == WeaponId.None || Usable((WeaponId)fav))) Choose((WeaponId)fav);
+                    else Sfx.Play(Sfx.Id.Whack, 0.15f, 0.4f);
+                }
+            }
+
+            // Arma siguiente / anterior (sin tecla por defecto; se pone en Opciones → Controles)
+            if (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.NextWeapon)) Cycle(+1);
+            if (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.PrevWeapon)) Cycle(-1);
+
+            if (visible) MenuKeys();
+        }
+
+        // ---------- 0.30: cursor del arsenal con teclado ----------
+        private WeaponId cursor = WeaponId.None;
+        private bool cursorByKeys;
+        private WeaponId? hoverId;
+        private float favFlash = -10f;
+
+        /// <summary>Elige un arma y cierra el arsenal.</summary>
+        public void Choose(WeaponId id)
+        {
+            SelectedIndexNet.Value = (int)id;
+            visible = false;
+            Sfx.Play(Sfx.Id.Whack, 0.25f, 0.15f);
+        }
+
+        /// <summary>Recorre las armas usables en el orden del arsenal.</summary>
+        private void Cycle(int dir)
+        {
+            var all = new System.Collections.Generic.List<WeaponId>();
+            foreach (var (_, ids) in Groups) foreach (var id in ids) if (id == WeaponId.None || Usable(id)) all.Add(id);
+            if (all.Count == 0) return;
+            int i = all.IndexOf(SelectedWeapon);
+            i = ((i < 0 ? 0 : i + dir) % all.Count + all.Count) % all.Count;
+            SelectedIndexNet.Value = (int)all[i];
+            Sfx.Play(Sfx.Id.Whack, 0.2f, 0.2f);
+        }
+
+        /// <summary>Filas del arsenal tal y como se dibujan (8 por fila; cada grupo empieza fila).</summary>
+        private static System.Collections.Generic.List<WeaponId[]> Rows()
+        {
+            var rows = new System.Collections.Generic.List<WeaponId[]>();
+            foreach (var (_, ids) in Groups)
+                for (int i = 0; i < ids.Length; i += 8)
+                {
+                    int n = Mathf.Min(8, ids.Length - i);
+                    var r = new WeaponId[n];
+                    System.Array.Copy(ids, i, r, 0, n);
+                    rows.Add(r);
+                }
+            return rows;
+        }
+
+        private void MenuKeys()
+        {
+            int dx = (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.MenuRight) ? 1 : 0) - (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.MenuLeft) ? 1 : 0);
+            int dy = (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.MenuDown) ? 1 : 0) - (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.MenuUp) ? 1 : 0);
+            if (dx != 0 || dy != 0)
+            {
+                var rows = Rows();
+                int ry = 0, rx = 0;
+                for (int r = 0; r < rows.Count; r++) { int k = System.Array.IndexOf(rows[r], cursor); if (k >= 0) { ry = r; rx = k; break; } }
+                if (dy != 0) { ry = Mathf.Clamp(ry + dy, 0, rows.Count - 1); rx = Mathf.Min(rx, rows[ry].Length - 1); }
+                if (dx != 0)
+                {
+                    rx += dx;
+                    if (rx < 0 && ry > 0) { ry--; rx = rows[ry].Length - 1; }
+                    else if (rx >= rows[ry].Length && ry < rows.Count - 1) { ry++; rx = 0; }
+                    rx = Mathf.Clamp(rx, 0, rows[ry].Length - 1);
+                }
+                cursor = rows[ry][rx];
+                cursorByKeys = true;
+                Sfx.Play(Sfx.Id.Whack, 0.08f, 0.5f);
+            }
+            if (Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.MenuOk) && (cursor == WeaponId.None || Usable(cursor))) Choose(cursor);
         }
 
         /// <summary>Munición que le queda al equipo de esta rata (-1 = infinita).</summary>
@@ -490,9 +583,88 @@ namespace Ratms.Networking
             return weapons[0];
         }
 
+        /// <summary>0.30: barra rápida de favoritas a la derecha (Opciones → "Barra de armas favoritas").</summary>
+        private static Rect quickBarScreen;
+        private static int quickBarFrame = -10;
+
+        /// <summary>
+        ///  ¿Está el ratón encima de la barra rápida? Las armas de clic
+        ///  (teletransporte, avión...) no deben disparar con ese clic.
+        /// </summary>
+        public static bool MouseOverUI
+        {
+            get
+            {
+                if (Time.frameCount - quickBarFrame > 3) return false;
+                var m = Input.mousePosition;
+                return quickBarScreen.Contains(new Vector2(m.x, Screen.height - m.y));
+            }
+        }
+
+        public static bool QuickBarEnabled
+        {
+            get => PlayerPrefs.GetInt("opt_quickbar", 1) == 1;
+            set => PlayerPrefs.SetInt("opt_quickbar", value ? 1 : 0);
+        }
+
+        /// <summary>
+        ///  0.30 — BARRA RÁPIDA: las 10 ranuras favoritas en una columna a la
+        ///  derecha (tecla, dibujo y munición). Se ve en tu turno con el arsenal
+        ///  cerrado; un clic elige el arma. Así no hace falta recordar nada.
+        /// </summary>
+        private void DrawQuickBar()
+        {
+            if (!QuickBarEnabled || Ratms.UI.PauseMenu.IsOpen) return;
+            if (ownerRat != null && ownerRat.FiredThisTurn) return;   // ya disparó: que no estorbe
+            Ratms.UI.TrenchGUI.Begin();
+            EnsureStyles(1f);
+            float vw = Ratms.UI.TrenchGUI.VW, vh = Ratms.UI.TrenchGUI.VH;
+            const float t = 60f, gap = 5f;
+            int n = Ratms.UI.Controls.Slots;
+            float H = n * (t + gap) - gap;
+            float x = vw - t - 14f, y0 = Mathf.Max(150f, (vh - H) * 0.5f);
+            var e = Event.current;
+            float S = Ratms.UI.TrenchGUI.Scale;
+            quickBarScreen = new Rect((x - 4f) * S, (y0 - 4f) * S, (t + 8f) * S, (H + 8f) * S);
+            quickBarFrame = Time.frameCount;
+            for (int i = 0; i < n; i++)
+            {
+                var r = new Rect(x, y0 + i * (t + gap), t, t);
+                int fav = Ratms.UI.Controls.Fav(i);
+                bool empty = fav < -1;
+                var id = (WeaponId)fav;
+                bool hover = r.Contains(e.mousePosition);
+                if (e.type == EventType.Repaint)
+                {
+                    if (empty)
+                    {
+                        var c = GUI.color;
+                        GUI.color = new Color(0f, 0f, 0f, 0.25f);
+                        GUI.DrawTexture(r, Texture2D.whiteTexture);
+                        GUI.color = c;
+                        GUI.Label(new Rect(r.x + 4f, r.y + 2f, 30f, 20f), Ratms.UI.Controls.Short(Ratms.UI.Controls.Act.Slot1 + i), keyStyle);
+                    }
+                    else DrawTile(r, id, hover);
+                }
+                if (!empty && GUI.Button(r, GUIContent.none, GUIStyle.none) && (id == WeaponId.None || Usable(id)))
+                    Choose(id);
+                if (hover && !empty)   // nombre al pasar el ratón
+                {
+                    string name = id == WeaponId.None ? Ratms.UI.Loc.T("Guardar arma") : ShortName(id);
+                    var lr = new Rect(x - 260f, r.y + 12f, 250f, 26f);
+                    hintStyle.alignment = TextAnchor.MiddleRight;
+                    hintStyle.normal.textColor = Color.white;
+                    GUI.Label(lr, name, hintStyle);
+                    hintStyle.alignment = TextAnchor.MiddleCenter;
+                }
+            }
+            Ratms.UI.TrenchGUI.End();
+        }
+
         private void OnGUI()
         {
-            if (!visible || !IsMyActiveRat()) return;
+            if (!IsMyActiveRat()) return;
+            if (!visible) { DrawQuickBar(); return; }
 
             Ratms.UI.TrenchGUI.Begin();
             EnsureStyles(1f);
@@ -503,13 +675,14 @@ namespace Ratms.Networking
             float W = pad * 2f + cols * tile + (cols - 1f) * gap;
             float H = 54f;
             foreach (var g in Groups) H += groupH + Mathf.Ceil(g.ids.Length / cols) * (tile + gap);
-            H += infoH + 34f;
+            H += infoH + 52f;
             float x = panelOffset.x, y = Mathf.Max(10f, vh - H - panelOffset.y);
             var panel = new Rect(x, y, W, H);
             Ratms.UI.TrenchGUI.Panel(panel);
             Ratms.UI.TrenchGUI.Title(new Rect(x, y + 6f, W, 40f), "ARSENAL");
 
-            WeaponId shown = SelectedWeapon;   // la ficha: la que tenga el ratón encima, o la elegida
+            WeaponId shown = cursor;   // la ficha: la que tenga el ratón encima, o la del cursor
+            if (Event.current.type == EventType.Repaint) hoverId = null;
             float gy = y + 54f;
             var e = Event.current;
             foreach (var (group, ids) in Groups)
@@ -521,13 +694,10 @@ namespace Ratms.Networking
                     var id = ids[i];
                     var r = new Rect(x + pad + (i % (int)cols) * (tile + gap), gy + (i / (int)cols) * (tile + gap), tile, tile);
                     bool hover = r.Contains(e.mousePosition);
-                    if (hover) shown = id;
-                    DrawTile(r, id, hover);
-                    if (GUI.Button(r, GUIContent.none, GUIStyle.none) && Usable(id))
-                    {
-                        SelectedIndexNet.Value = (int)id;
-                        Sfx.Play(Sfx.Id.Whack, 0.25f, 0.15f);
-                    }
+                    if (hover) { shown = id; if (e.type == EventType.Repaint) { hoverId = id; cursor = id; cursorByKeys = false; } }
+                    DrawTile(r, id, hover || (cursorByKeys && id == cursor));
+                    if (GUI.Button(r, GUIContent.none, GUIStyle.none) && (id == WeaponId.None || Usable(id)))
+                        Choose(id);   // 0.30: elegir cierra el arsenal
                 }
                 gy += Mathf.Ceil(ids.Length / cols) * (tile + gap);
             }
@@ -545,12 +715,17 @@ namespace Ratms.Networking
             int ammo = shown == WeaponId.None ? -1 : AmmoLeft(shown);
             Ratms.UI.TrenchGUI.Label(new Rect(info.x + 10f, info.y + 4f, info.width - 20f, 30f),
                 title + (shown == WeaponId.None ? "" : ammo < 0 ? "   ∞" : $"   x{ammo}") + $"   [{KeyLabel(EntryOf(shown))}]");
-            string how = Ratms.UI.Loc.T(HowTo(shown));
+            string how = Ratms.UI.Controls.Explain(Ratms.UI.Loc.T(HowTo(shown)));
             if (!HandsOk && NeedsHands(shown)) how = Ratms.UI.Loc.T("Sin brazos no puedes usarla: con ESPACIO muerdes.");
             else if (ammo == 0) how = Ratms.UI.Loc.T("Sin munición. Las cajas que caen del cielo traen más.");
             GUI.Label(new Rect(info.x + 10f, info.y + 36f, info.width - 20f, info.height - 40f), how, Ratms.UI.TrenchGUI.SmallStyle);
 
-            GUI.Label(new Rect(x, y + H - 32f, W, 24f), Ratms.UI.Loc.T("Clic o tecla para elegir  ·  TAB cierra"), hintStyle);
+            bool flash = Time.unscaledTime - favFlash < 0.8f;
+            string hint = flash ? Ratms.UI.Loc.T("¡Guardada en la ranura!")
+                                : Ratms.UI.Controls.Explain(Ratms.UI.Loc.T("Clic, flechas + ENTER o 1-0 para elegir  ·  ratón encima + número = guardarla en esa ranura  ·  TAB cierra"));
+            hintStyle.normal.textColor = flash ? new Color(1f, 0.9f, 0.4f) : new Color(0.8f, 0.76f, 0.66f);
+            hintStyle.wordWrap = true;
+            GUI.Label(new Rect(x + 10f, y + H - 50f, W - 20f, 44f), hint, hintStyle);
             Ratms.UI.TrenchGUI.End();
         }
 

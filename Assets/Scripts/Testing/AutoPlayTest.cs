@@ -2454,7 +2454,7 @@ namespace Ratms.Testing
             rat.TestInputX = 0f;
             rat.TestJumpHeld = false;
             Vector2 end = rat.GetComponent<NetworkHealth>().BodyCenter;
-            Log($"Salir del {label} (radio {radius}, centro {depthBelowSurface} u bajo el suelo) → " +
+            Log($"Salir del {label} (radio {radius}, centro {depthBelowSurface} u bajo el suelo, rata {RatLook.BodyName(RatLook.Unpack(rat.LookCode.Value).body)}) → " +
                 (escaped ? $"✓ fuera en {t:0.0}s" : $"⚠ NO sale en 5s (se quedó en {end.x - blast.x:+0.00;-0.00},{end.y - surfaceY:+0.00;-0.00} respecto al borde)"));
             yield return null;
             rat.TestInputX = null;
@@ -2619,6 +2619,8 @@ namespace Ratms.Testing
         private IEnumerator Capture(string name)
         {
             if (finished) yield break;
+            DeathReplay.HoldRecording(0.15f);   // 0.30: dos capturas de pantalla en el mismo frame fallan
+            yield return null;
             yield return new WaitForEndOfFrame();
 
             Texture2D tex = null;

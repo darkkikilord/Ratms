@@ -239,7 +239,7 @@ namespace Ratms.Networking
 
                 // Distancia al CUERPO (no al pivote del prefab, que está bajo el suelo).
                 Vector2 body = nh.BodyCenter;
-                float dist = Vector2.Distance((Vector2)at, body);
+                float dist = nh.BlastDistance(at);   // 0.30: cuenta el tamaño del cuerpo
                 float t = Mathf.Clamp01(1f - (dist / explosionRadius));
                 int dmg = Mathf.CeilToInt(maxDamage * t);
                 if (dmg <= 0) continue;

@@ -78,7 +78,7 @@ namespace Ratms.Networking
             {
                 pos[i] = at + Random.insideUnitCircle * 0.12f;
                 vel[i] = baseVel + Random.insideUnitCircle * spread;
-                life[i] = Random.Range(minLife, maxLife);
+                life[i] = Random.Range(minLife, maxLife) * WeatherRules.FireLife;   // 0.30: la lluvia lo apaga antes
             }
             var tm = NetworkTurnManager.Instance;
             if (tm != null && tm.IsSpawned) tm.IgniteClientRpc(pos, vel, life);

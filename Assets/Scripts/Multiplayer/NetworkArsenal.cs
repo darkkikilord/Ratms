@@ -125,7 +125,7 @@ namespace Ratms.Networking
                 {
                     Vector2? target = TestStrikeTarget;
                     TestStrikeTarget = null;
-                    if (target == null && (weaponsMenu == null || !weaponsMenu.IsVisible) && Input.GetMouseButtonDown(0) && Camera.main != null)
+                    if (target == null && (weaponsMenu == null || !weaponsMenu.IsVisible) && !WeaponsMenuUI.MouseOverUI && Input.GetMouseButtonDown(0) && Camera.main != null)
                         target = Camera.main.ScreenToWorldPoint(Input.mousePosition);
                     if (target == null) return false;
                     StrikeServerRpc(target.Value.x, movement == null || movement.FacingRight, id == WeaponsMenuUI.WeaponId.Napalm);

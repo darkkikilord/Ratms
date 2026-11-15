@@ -335,6 +335,9 @@ namespace Ratms.Networking
 
             InTransition.Value = true;
             transitionTimer = transitionDelay;
+            // 0.30: si ha reventado alguna rata, la transición dura lo que la REPETICIÓN
+            if (deathsThisTurn > 0 && SlowMotion.Enabled) transitionTimer += DeathReplay.Length;
+            deathsThisTurn = 0;
             CurrentTurnClientId.Value = ulong.MaxValue;
             CurrentRatId.Value = ulong.MaxValue;
             CurrentTeam.Value = -1;
@@ -427,8 +430,10 @@ namespace Ratms.Networking
 
         private float RollWind()
         {
-            if (!windEnabled || Random.value < calmChance) return 0f;
+            bool storm = WeatherFx.Current == Weather.Tormenta;   // 0.30: en la tormenta el viento SIEMPRE sopla fuerte
+            if (!windEnabled || (!storm && Random.value < calmChance)) return 0f;
             float magnitude = Mathf.Max(0.1f, Random.value * Random.value * 1.4f);
+            if (storm) magnitude = Random.Range(0.55f, 1f);
             magnitude = Mathf.Min(1f, magnitude);
             float sign = Random.value < 0.5f ? -1f : 1f;
             return Mathf.Round(sign * magnitude * 10f) / 10f;
@@ -463,9 +468,12 @@ namespace Ratms.Networking
         private static readonly string[] SuicideLines = { "¡SE HA SUICIDADO!", "¡AUTOGOL!", "¡ESO NO SE APUNTA ASÍ!", "¡PREMIO DARWIN!" };
         private static readonly string[] FriendlyLines = { "¡FUEGO AMIGO!", "¡TRAICIÓN EN LA TRINCHERA!", "¡ERA DE LOS TUYOS!" };
 
+        private int deathsThisTurn;
+
         public void OnRatDiedServer(NetworkPlayerMovement rat)
         {
             if (!IsServer || !gameStarted) return;
+            if (!rat.IsTestDummy) deathsThisTurn++;
 
             // --- Avisos cómicos ---
             var shooter = CurrentRat != null ? CurrentRat : LastTurnRat;

@@ -420,7 +420,7 @@ namespace Ratms.Networking
                 var nh = col != null ? col.GetComponentInParent<NetworkHealth>() : null;
                 if (nh == null || nh.IsDead.Value || !done.Add(nh)) continue;
                 Vector2 body = nh.BodyCenter;
-                float t = Mathf.Clamp01(1f - Vector2.Distance(at, body) / radius);
+                float t = Mathf.Clamp01(1f - nh.BlastDistance(at) / radius);
                 int dmg = Mathf.CeilToInt(maxDamage * t);
                 if (dmg <= 0) continue;
                 nh.ApplyDamageServer(dmg, body, DamageType.Explosion, at);

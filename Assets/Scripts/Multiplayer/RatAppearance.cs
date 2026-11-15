@@ -153,7 +153,21 @@ namespace Ratms.Networking
         }
 
         /// <summary>Color de un equipo (0-3).</summary>
-        public static Color32 ColorForTeam(int teamIndex) => TeamColors[Mathf.Abs(teamIndex) % TeamColors.Length];
+        public static Color32 ColorForTeam(int teamIndex) =>
+            (Ratms.UI.Accessibility.ColorBlind ? ColorBlindTeams : TeamColors)[Mathf.Abs(teamIndex) % TeamColors.Length];
+
+        /// <summary>
+        ///  0.30 — paleta para DALTÓNICOS (Okabe-Ito): bermellón, azul,
+        ///  morado rosado y amarillo. Se distinguen con cualquier tipo de
+        ///  daltonismo (rojo y verde se confundían).
+        /// </summary>
+        private static readonly Color32[] ColorBlindTeams =
+        {
+            new Color32(213, 94, 0, 255),     // bermellón
+            new Color32(0, 114, 178, 255),    // azul
+            new Color32(204, 121, 167, 255),  // morado rosado
+            new Color32(240, 228, 66, 255),   // amarillo
+        };
 
         public void Init(NetworkPlayerMovement m, int teamIndex, bool isDummy, ulong lookCode)
         {
@@ -304,8 +318,10 @@ namespace Ratms.Networking
 
             Vector3 ls = transform.lossyScale;
             float squash = flash * flash;
-            sr.transform.localScale = new Vector3((1f + 0.22f * squash) * sx / Mathf.Max(0.0001f, Mathf.Abs(ls.x)),
-                                                  (1f - 0.18f * squash) * sy / Mathf.Max(0.0001f, Mathf.Abs(ls.y)), 1f);
+            // 0.30: la gigante se dibuja más grande y la enana más pequeña (desde los pies).
+            float vis = Look.Stats.visual > 0f ? Look.Stats.visual : 1f;
+            sr.transform.localScale = new Vector3((1f + 0.22f * squash) * sx * vis / Mathf.Max(0.0001f, Mathf.Abs(ls.x)),
+                                                  (1f - 0.18f * squash) * sy * vis / Mathf.Max(0.0001f, Mathf.Abs(ls.y)), 1f);
         }
 
         // Muelle del estirado/aplastado: 1 = normal, >1 = estirada en vertical.

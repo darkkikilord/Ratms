@@ -63,6 +63,8 @@ namespace Ratms.UI
             // 0.22: también por ancho, para ventanas estrechas (4:3, 5:4...)
             // donde los paneles anchos (victoria, opciones) se salían por los lados.
             Scale = Mathf.Max(0.5f, Mathf.Min(Screen.height / 1080f, Screen.width / 1440f));
+            // 0.30 accesibilidad: "Tamaño de los textos" (80 %-130 %)
+            Scale *= Accessibility.UiScale;
             Ensure();
             saved = GUI.matrix;
             GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(Scale, Scale, 1f));
@@ -436,7 +438,7 @@ namespace Ratms.UI
         public static event Action OnVolumesChanged;
 
         /// <summary>Altura que ocupa <see cref="OptionsBlock"/> (para dimensionar la ventana).</summary>
-        public const float OptionsBlockHeight = 10 * 52f + 12f;
+        public const float OptionsBlockHeight = 11 * 52f + 12f;
 
         /// <summary>Dibuja el bloque de opciones en <paramref name="area"/>. Devuelve la altura usada.</summary>
         public static float OptionsBlock(Rect area)
@@ -462,10 +464,13 @@ namespace Ratms.UI
             ShakeOn = Toggle(new Rect(area.x, y, area.width, h), "Temblor de cámara", ShakeOn, tw); y += gap;
             {
                 bool slow = PlayerPrefs.GetInt("opt_slowmo", 1) == 1;
-                bool now = Toggle(new Rect(area.x, y, area.width, h), "Cámara lenta al reventar una rata", slow, tw); y += gap;
+                bool now = Toggle(new Rect(area.x, y, area.width, h), "Repetición a cámara lenta al reventar una rata", slow, tw); y += gap;
                 if (now != slow) PlayerPrefs.SetInt("opt_slowmo", now ? 1 : 0);
             }
             Ratms.Networking.ControlHints.Enabled = Toggle(new Rect(area.x, y, area.width, h), "Ayudas de controles", Ratms.Networking.ControlHints.Enabled, tw); y += gap;
+            // 0.30: teclas, armas favoritas y accesibilidad (ventana aparte)
+            if (Button(new Rect(area.x, y, area.width, h), "Controles y accesibilidad…")) ControlsOverlay.Open();
+            y += gap;
             // Pantalla y resolución (DisplaySettings): la completa va a la resolución
             // elegida, no estira la de la ventana.
             int mode = Choice(new Rect(area.x, y, area.width, h), "Pantalla", new[] { "Ventana", "Completa" }, DisplaySettings.Fullscreen ? 1 : 0, tw);

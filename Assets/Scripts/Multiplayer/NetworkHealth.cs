@@ -243,6 +243,19 @@ namespace Ratms.Networking
         ///  popups, golpes o "¿ha tocado el agua?" hay que usar esto, no
         ///  transform.position.
         /// </summary>
+        /// <summary>
+        ///  0.30 — Distancia "efectiva" de una explosión a esta rata: se divide
+        ///  por el tamaño del cuerpo. A la gigante (×1,3) una explosión a 2 u le
+        ///  pega como si estuviera a 1,5 u; a la enana (×0,75), como a 2,7 u.
+        /// </summary>
+        public float BlastDistance(Vector2 at)
+        {
+            if (movementRef == null) movementRef = GetComponent<NetworkPlayerMovement>();
+            float s = movementRef != null ? Mathf.Max(0.5f, movementRef.Body.HitScale) : 1f;
+            return Vector2.Distance(at, BodyCenter) / s;
+        }
+        private NetworkPlayerMovement movementRef;
+
         public Vector2 BodyCenter
         {
             get

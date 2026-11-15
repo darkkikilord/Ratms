@@ -46,7 +46,70 @@ namespace Ratms.Testing
             }
             bool rain = GameObject.Find("Clima") != null;
             Check($"Clima → objeto de efectos creado: {rain}", rain, "Clima: no se crean los efectos");
+
+            // --- 0.30: el clima cambia el juego ---
+            WeatherFx.Current = Weather.Lluvia;
+            bool rainRules = WeatherRules.FireLife < 0.6f && WeatherRules.GasLife < 0.7f;
+            WeatherFx.Current = Weather.Nieve;
+            bool snowRules = WeatherRules.Slippery && WeatherRules.FallDamage < 1f;
+            WeatherFx.Current = Weather.Niebla;
+            int fogHidden = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).Count(m => WeatherRules.FogHides(m));
+            Check($"Clima en el juego → lluvia: fuego ×{0.5f} y gas ×0.6: {rainRules} · nieve resbala y amortigua: {snowRules} · niebla esconde {fogHidden} rata(s) lejana(s)",
+                  rainRules && snowRules, "Clima: las reglas de juego no cambian con el clima");
             WeatherFx.Current = Weather.Despejado;
+
+            // --- 0.30: tamaño del cuerpo (gigante = blanco grande, enana = pequeño) ---
+            {
+                var any = FindObjectsByType<NetworkPlayerMovement>(FindObjectsSortMode.None).FirstOrDefault(m => m.IsSpawned && !m.IsTestDummy);
+                if (any != null)
+                {
+                    var box = any.GetComponent<BoxCollider2D>();
+                    var hh = any.GetComponent<NetworkHealth>();
+                    ulong old = any.LookCode.Value;
+                    var giant = RatLook.Unpack(old); giant.body = RatLook.BodyType.Gigante;
+                    var dwarf = RatLook.Unpack(old); dwarf.body = RatLook.BodyType.Enana;
+                    any.LookCode.Value = giant.Pack();
+                    yield return null;
+                    Vector2 gs = box.size + Vector2.one * box.edgeRadius * 2f;
+                    float gd = hh.BlastDistance(hh.BodyCenter + Vector2.right * 2f);
+                    yield return CloseupWithColliders(any, "S01b_gigante", size: 3.2f, overlay: true);
+                    any.LookCode.Value = dwarf.Pack();
+                    yield return null;
+                    Vector2 ds = box.size + Vector2.one * box.edgeRadius * 2f;
+                    float dd = hh.BlastDistance(hh.BodyCenter + Vector2.right * 2f);
+                    yield return CloseupWithColliders(any, "S01c_enana", size: 3.2f, overlay: true);
+                    any.LookCode.Value = old;
+                    yield return null;
+                    bool sizeOk = gs.x > ds.x * 1.4f && gs.y > ds.y * 1.4f && gd < dd;
+                    Check($"Tamaño del cuerpo → gigante {gs.x:0.00}×{gs.y:0.00} (explosión a 2 u cuenta como {gd:0.00}) · enana {ds.x:0.00}×{ds.y:0.00} (cuenta como {dd:0.00})",
+                          sizeOk, "Tamaño: la gigante no es un blanco más grande que la enana");
+                }
+            }
+
+            // --- 0.30: barra rápida de favoritas, arsenal con cursor y ventana de controles ---
+            {
+                yield return Capture("S01d_barra_rapida");
+                var r0 = FindLocalRatOfTurn(tm);
+                var menu = r0 != null ? r0.GetComponentInChildren<WeaponsMenuUI>() : null;
+                bool keysOk = Ratms.UI.Controls.Key(Ratms.UI.Controls.Act.Fire, 0) == KeyCode.Space
+                              && Ratms.UI.Controls.Key(Ratms.UI.Controls.Act.Jump, 0) == KeyCode.UpArrow;
+                Check($"Controles → teclas por defecto (ESPACIO dispara, ↑ salta) · ranura 1 = {(WeaponsMenuUI.WeaponId)Ratms.UI.Controls.Fav(0)}",
+                      keysOk, "Controles: las teclas por defecto no son las de siempre");
+                if (menu != null)
+                {
+                    menu.SetVisible(true);
+                    yield return new WaitForSeconds(0.4f);
+                    bool blocked = Ratms.UI.Controls.Blocked;
+                    yield return Capture("S01e_arsenal");
+                    menu.SetVisible(false);
+                    Check($"Arsenal abierto → la rata no se mueve con las flechas: {blocked}", blocked, "Arsenal: no bloquea el movimiento");
+                }
+                Ratms.UI.ControlsOverlay.Open();
+                yield return new WaitForSeconds(0.4f);
+                yield return Capture("S01f_controles");
+                Ratms.UI.ControlsOverlay.Close();
+                yield return new WaitForSeconds(0.2f);
+            }
 
             // --- Burla con bocadillo ---
             var rat = FindLocalRatOfTurn(tm);
@@ -87,8 +150,25 @@ namespace Ratms.Testing
             yield return new WaitForSecondsRealtime(2.5f);
             var stone = FindObjectsByType<GravestoneName>(FindObjectsSortMode.None).FirstOrDefault();
             bool named = stone != null && stone.ratName == deadName;
-            Check($"Rata reventada '{deadName}' → cámara lenta (escala de tiempo {ts:0.00}) · lápida con su nombre: {named}",
+            Check($"Rata reventada '{deadName}' → lápida con su nombre: {named}",
                   named, "Lápida: no aparece o no lleva el nombre de la rata");
+
+            // --- 0.30: REPETICIÓN a cámara lenta al acabar el turno ---
+            if (SlowMotion.Enabled)
+            {
+                bool pending = DeathReplay.HasPending;
+                tm.EndTurnServerRpc();
+                float t0 = Time.unscaledTime;
+                while (!DeathReplay.Playing && Time.unscaledTime - t0 < 6f) yield return null;
+                bool playing = DeathReplay.Playing;
+                yield return new WaitForSecondsRealtime(0.6f);
+                yield return Capture("S04b_repeticion");
+                yield return new WaitForSecondsRealtime(1.8f);
+                yield return Capture("S04c_repeticion_lenta");
+                Check($"Repetición → grabada: {pending} · se pone al acabar el turno: {playing}", pending && playing, "Repetición: no se reproduce al reventar una rata");
+                t0 = Time.unscaledTime;
+                while (DeathReplay.Playing && Time.unscaledTime - t0 < 10f) yield return null;
+            }
             if (stone != null)
             {
                 var cam = Camera.main;

@@ -454,7 +454,8 @@ namespace Ratms.Networking
                 {
                     bodyCode = LookCode.Value;
                     bodyKnown = true;
-                    bodyStats = bodyCode != 0 ? RatLook.Unpack(bodyCode).Stats : RatLook.StatsOf((RatLook.BodyType)255);
+                    // Las dianas de las pruebas, siempre de tamaño y fuerza normales (resultados comparables)
+                    bodyStats = bodyCode != 0 && !IsTestDummy ? RatLook.Unpack(bodyCode).Stats : RatLook.StatsOf((RatLook.BodyType)255);
                 }
                 return bodyStats;
             }
@@ -595,6 +596,8 @@ namespace Ratms.Networking
             // suavemente sobre los bumps, igual que un personaje de Worms.
             ApplyColliderEdgeRadius();
             AlignColliderWithFeet();
+            ApplyBodyHitbox();   // 0.30: la gigante es más grande de verdad (y la enana, más pequeña)
+            LookCode.OnValueChanged += (_, _) => ApplyBodyHitbox();
 
             // SUAVIDAD: el dueño es quien simula la física de su rata.
             //  · Interpolate → Unity dibuja la rata entre dos pasos de física,
@@ -755,7 +758,7 @@ namespace Ratms.Networking
                 return;
             }
 
-            inputX = TestInputX ?? Input.GetAxisRaw("Horizontal");
+            inputX = TestInputX ?? Ratms.UI.Controls.Horizontal;   // 0.30: teclas reasignables
             if (Lured) inputX = LureInput();   // ¡huele a queso! no hay quien la pare
 
             // Salto — acepta W o la flecha arriba (lo que cada quien prefiera).
@@ -788,7 +791,7 @@ namespace Ratms.Networking
             }
 
             // Salto: SOLO Flecha Arriba. W queda libre para apuntar arriba.
-            bool jumpKeyDown = Input.GetKeyDown(KeyCode.UpArrow) || ConsumeTestJump();
+            bool jumpKeyDown = Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.Jump) || ConsumeTestJump();
 
             // Colgando de la cuerda: la flecha arriba la SUELTA (no salta).
             if (rope != null && rope.IsAttached)
@@ -907,8 +910,7 @@ namespace Ratms.Networking
             // ya NO apuntan — la flecha arriba es saltar, y la flecha abajo
             // queda libre por si en el futuro queremos agacharse o algo así.
             float v = 0f;
-            if (Input.GetKey(KeyCode.W)) v = 1f;
-            else if (Input.GetKey(KeyCode.S)) v = -1f;
+            v = Ratms.UI.Controls.Aim;   // 0.30: W/S por defecto, reasignables
             if (Mathf.Abs(v) < 0.1f) return;
 
             // Rango SEMIcírculo del lado al que mira la rata:
@@ -966,13 +968,34 @@ namespace Ratms.Networking
         ///  granada, carga/dispara el GrenadeThrower. Si no tienes arma
         ///  equipada, ESPACIO no hace nada.
         /// </summary>
+        private bool tapHeld;
+        private WeaponsMenuUI.WeaponId tapWeapon;
+
         private void HandleFireInput()
         {
             WeaponsMenuUI.WeaponId equipped = CurrentWeapon();
 
-            bool fireDown = Input.GetKeyDown(KeyCode.Space) || testFireDown;
-            bool fireUp   = Input.GetKeyUp(KeyCode.Space)   || testFireUp;
+            bool fireDown = Ratms.UI.Controls.Down(Ratms.UI.Controls.Act.Fire) || testFireDown;
+            bool fireUp   = Ratms.UI.Controls.Up(Ratms.UI.Controls.Act.Fire)   || testFireUp;
             testFireDown = testFireUp = false;
+
+            // 0.30 ACCESIBILIDAD — "Cargar sin mantener": con armas de carga (o
+            // el lanzallamas) la primera pulsación empieza y la segunda suelta.
+            if (Ratms.UI.Accessibility.TapToCharge && TestInputX == null)
+            {
+                bool chargeable = equipped == WeaponsMenuUI.WeaponId.Bazooka || equipped == WeaponsMenuUI.WeaponId.Grenade
+                                  || equipped == WeaponsMenuUI.WeaponId.ClusterBomb || equipped == WeaponsMenuUI.WeaponId.Flamethrower
+                                  || NetworkTrenchArsenal.UsesTrajectory(equipped);
+                if (!chargeable || equipped != tapWeapon) tapHeld = false;
+                tapWeapon = equipped;
+                if (chargeable)
+                {
+                    bool press = fireDown;
+                    fireDown = fireUp = false;
+                    if (press && !tapHeld) { fireDown = true; tapHeld = true; }
+                    else if (press && tapHeld) { fireUp = true; tapHeld = false; }
+                }
+            }
 
             // CUERDA NINJA: herramienta de movimiento, NO gasta el arma del turno.
             bool hands = health == null || health.CanUseHands;
@@ -1016,7 +1039,7 @@ namespace Ratms.Networking
             // Juega en el próximo turno de tu equipo; este turno se pierde.
             if (equipped == WeaponsMenuUI.WeaponId.SelectRat)
             {
-                bool click = Input.GetMouseButtonDown(0) && TestInputX == null;
+                bool click = Input.GetMouseButtonDown(0) && TestInputX == null && !WeaponsMenuUI.MouseOverUI;
                 if (fireDown || click)
                 {
                     ulong target = 0;
@@ -1043,7 +1066,7 @@ namespace Ratms.Networking
             // TELETRANSPORTE: clic izquierdo o ESPACIO.
             if (equipped == WeaponsMenuUI.WeaponId.Teleport && teleport != null)
             {
-                bool click = Input.GetMouseButtonDown(0) && TestInputX == null;
+                bool click = Input.GetMouseButtonDown(0) && TestInputX == null && !WeaponsMenuUI.MouseOverUI;
                 if ((fireDown || click) && teleport.TryTeleport())
                 {
                     firedThisTurn = true;
@@ -1189,7 +1212,7 @@ namespace Ratms.Networking
                     if (fallHeight > fallDamageThreshold)
                     {
                         float rawDmg = (fallHeight - fallDamageThreshold) * fallDamagePerUnit;
-                        int dmg = Mathf.Clamp(Mathf.RoundToInt(rawDmg * Body.fall), 1, fallDamageMax);
+                        int dmg = Mathf.Clamp(Mathf.RoundToInt(rawDmg * Body.fall * WeatherRules.FallDamage), 1, fallDamageMax);   // 0.30: la nieve amortigua
                         RequestFallDamageServerRpc(dmg);
                     }
                 }
@@ -1297,7 +1320,7 @@ namespace Ratms.Networking
             // o mataríamos el columpio.
             if (rope != null && rope.IsAttached)
             {
-                float climb = (Input.GetKey(KeyCode.W) ? 1f : 0f) - (Input.GetKey(KeyCode.S) ? 1f : 0f);
+                float climb = Ratms.UI.Controls.Aim;
                 if (TestRopeClimb.HasValue) climb = TestRopeClimb.Value;
                 rope.FixedTick(CanControl() ? inputX : 0f, CanControl() ? climb : 0f);
                 return;
@@ -1341,6 +1364,8 @@ namespace Ratms.Networking
             // Mutilaciones: coja va más lenta y sin patas, a rastras.
             float targetVx = inputX * maxSpeed * Body.speed * (health != null ? health.SpeedFactor : 1f);
             float accel = Mathf.Abs(targetVx) > 0.01f ? moveAcceleration : moveDeceleration;
+            // 0.30 NIEVE: cuesta arrancar y, sobre todo, frenar (la rata patina un poco).
+            if (WeatherRules.Slippery && HasFootContact()) accel *= Mathf.Abs(targetVx) > 0.01f ? 0.45f : 0.16f;
             float newVx = Mathf.MoveTowards(rb.linearVelocity.x, targetVx, accel * Time.fixedDeltaTime);
             Vector2 walkVel = new Vector2(newVx, rb.linearVelocity.y);
 
@@ -1384,7 +1409,7 @@ namespace Ratms.Networking
                 // Cae con MÁS gravedad que la de subir
                 vel.y += extraGravity * (fallGravityMultiplier - 1f) * Time.fixedDeltaTime;
             }
-            else if (vel.y > 0.01f && !(Input.GetKey(KeyCode.UpArrow) || TestJumpHeld) && Time.time > climbAssistUntil)
+            else if (vel.y > 0.01f && !(Ratms.UI.Controls.Held(Ratms.UI.Controls.Act.Jump) || TestJumpHeld) && Time.time > climbAssistUntil)
             {
                 // Sube pero no está pulsando salto → cortar el salto
                 vel.y += extraGravity * (lowJumpMultiplier - 1f) * Time.fixedDeltaTime;
@@ -1883,6 +1908,36 @@ namespace Ratms.Networking
             newSize.y = Mathf.Max(0.05f, newSize.y);
             box.size = newSize;
             box.edgeRadius = r;
+        }
+
+        private Vector2 hitboxBaseSize, hitboxBaseOffset;
+        private float hitboxBaseEdge;
+        private bool hitboxBaseKnown;
+
+        /// <summary>
+        ///  0.30 — TAMAÑO DEL CUERPO: escala el colisionador según el cuerpo
+        ///  (<see cref="RatLook.BodyStats.hitW"/>/<c>hitH</c>) dejando los PIES
+        ///  donde estaban. Así a la gigante le aciertan más los disparos y las
+        ///  explosiones, y a la enana cuesta darle. Se calcula siempre desde el
+        ///  tamaño original (se puede llamar varias veces).
+        /// </summary>
+        private void ApplyBodyHitbox()
+        {
+            var box = GetComponent<BoxCollider2D>();
+            if (box == null) return;
+            if (!hitboxBaseKnown) { hitboxBaseSize = box.size; hitboxBaseOffset = box.offset; hitboxBaseEdge = box.edgeRadius; hitboxBaseKnown = true; }
+            var b = Body;
+            float w = b.hitW > 0f ? b.hitW : 1f, h = b.hitH > 0f ? b.hitH : 1f;
+            // El tamaño "de verdad" incluye el halo del edgeRadius; escalamos el total.
+            float r = hitboxBaseEdge;
+            Vector2 full = hitboxBaseSize + new Vector2(r * 2f, r * 2f);
+            Vector2 scaled = new Vector2(full.x * w, full.y * h);
+            // En las pequeñas el redondeo de esquinas se come la caja: lo encogemos con ella.
+            float r2 = Mathf.Min(r, Mathf.Min(scaled.x, scaled.y) * 0.3f);
+            box.edgeRadius = r2;
+            box.size = new Vector2(Mathf.Max(0.02f, scaled.x - r2 * 2f), Mathf.Max(0.02f, scaled.y - r2 * 2f));
+            // pies quietos: el fondo de la caja no se mueve
+            box.offset = new Vector2(hitboxBaseOffset.x, hitboxBaseOffset.y + (scaled.y - full.y) * 0.5f);
         }
 
         /// <summary>

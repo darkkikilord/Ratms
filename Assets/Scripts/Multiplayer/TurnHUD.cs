@@ -60,6 +60,7 @@ namespace Ratms.Networking
         private void Update()
         {
             if (!Input.GetKeyDown(KeyCode.Escape) || Ratms.UI.PauseMenu.IsOpen) return;
+            if (ChatSystem.Busy) return;   // 0.37: ESC cierra el chat o los emotes, no abre la pausa
             if (pause == null)
             {
                 pause = gameObject.AddComponent<Ratms.UI.PauseMenu>();

@@ -182,6 +182,7 @@ namespace Ratms.Testing
             if (role == "voices") { yield return RunVoices(); yield break; }
             if (role == "career") { yield return RunCareer(); yield break; }
             if (role == "quick") { yield return RunQuick(); yield break; }
+            if (role == "emotes") { yield return RunEmotes(); yield break; }
 
             // --- 1) Menú principal ---------------------------------
             yield return new WaitForSeconds(2.5f);

@@ -185,6 +185,137 @@ namespace Ratms.Networking
         }
 
         // ------------------------------------------------------------
+        //  0.37 — LEER UN TEXTO (chat): la rata "pronuncia" lo que escribes
+        // ------------------------------------------------------------
+        /// <summary>
+        ///  La rata dice <paramref name="text"/> en ratuno: cada VOCAL del texto
+        ///  es una sílaba con esa vocal (a, e, i, o, u), la consonante de delante
+        ///  pone el chasquido (p, t, k, b, d, g, c, q, r) o el soplido (s, z, f,
+        ///  j, x, h, ch); m, n, l, y, v... entran suaves. Los espacios son pausas,
+        ///  "?" sube el tono al final, "!" y las MAYÚSCULAS lo suben y lo hacen
+        ///  más fuerte. "hola" suena a "jo-la" dicho por una rata.
+        ///  <paramref name="rat"/> puede ser null (en la sala de espera): entonces
+        ///  suena centrada con la voz de <paramref name="lookCode"/>.
+        /// </summary>
+        public static void SayText(Component rat, ulong lookCode, string text, float volume = 1f)
+        {
+            if (Application.isBatchMode || string.IsNullOrWhiteSpace(text)) return;
+            float v = volume * Volume * PlayerPrefs.GetFloat("opt_master", 0.8f);
+            if (v <= 0.001f) return;
+            Vector3 at = Vector3.zero;
+            bool positional = false;
+            if (rat != null)
+            {
+                var mv = rat.GetComponent<NetworkPlayerMovement>();
+                if (mv != null && mv.LookCode.Value != 0) lookCode = mv.LookCode.Value;
+                var hp = rat.GetComponent<NetworkHealth>();
+                at = hp != null ? (Vector3)hp.BodyCenter : rat.transform.position;
+                positional = true;
+            }
+            if (lookCode == 0) lookCode = (ulong)text.GetHashCode() | 1UL;
+            var p = ProfileOf(lookCode);
+            var data = Render(p, TextSyllables(p, text), 0.012f, 1f, new System.Random(text.GetHashCode()));
+            var clip = AudioClip.Create("voz_texto", data.Length, 1, Rate, false);
+            clip.SetData(data, 0);
+            var src = Source();
+            float pan = 0f, far = 1f;
+            var cam = Camera.main;
+            if (positional && cam != null)
+            {
+                Vector3 vp = cam.WorldToViewportPoint(at);
+                pan = Mathf.Clamp((vp.x - 0.5f) * 1.4f, -0.85f, 0.85f);
+                far = vp.x > -0.05f && vp.x < 1.05f && vp.y > -0.05f && vp.y < 1.05f ? 1f : 0.55f;
+            }
+            src.panStereo = pan;
+            src.pitch = 1f;
+            src.PlayOneShot(clip, v * far);
+            Said++;
+            Object.Destroy(clip, data.Length / (float)Rate + 1f);   // clip de un solo uso
+        }
+
+        /// <summary>Para las pruebas: el sonido de un texto dicho con la voz de <paramref name="lookCode"/>.</summary>
+        public static float[] RenderText(ulong lookCode, string text) =>
+            Render(ProfileOf(lookCode), TextSyllables(ProfileOf(lookCode), text), 0.012f, 1f, new System.Random(text.GetHashCode()));
+
+        /// <summary>Sílabas de un texto (para <see cref="SayText"/> y las pruebas).</summary>
+        public static int SyllablesOf(string text) => TextSyllables(ProfileOf(1), text).Count;
+
+        private static List<Syl> TextSyllables(Profile p, string text)
+        {
+            var syl = new List<Syl>();
+            if (text.Length > 140) text = text.Substring(0, 140);
+            bool question = text.TrimEnd().EndsWith("?");
+            bool shout = text.Contains("!");
+            int letters = 0, upper = 0;
+            foreach (char ch in text) if (char.IsLetter(ch)) { letters++; if (char.IsUpper(ch)) upper++; }
+            bool caps = letters >= 3 && upper > letters * 0.6f;
+            float baseP = (shout ? 1.12f : 1f) * (caps ? 1.12f : 1f);
+            float gain = caps || shout ? 1f : 0.85f;
+
+            float cons = 0f;           // consonante pendiente para la próxima vocal
+            float s = p.syllable * 0.85f;
+            int vowels = 0;
+            foreach (char raw in text) if (VowelOf(raw) >= 0) vowels++;
+            int idx = 0;
+            for (int i = 0; i < text.Length && syl.Count < 28; i++)
+            {
+                char ch = char.ToLowerInvariant(text[i]);
+                int v = VowelOf(ch);
+                if (v >= 0)
+                {
+                    float t = vowels > 1 ? idx / (float)(vowels - 1) : 0f;
+                    idx++;
+                    // Entonación: baja poco a poco; en preguntas, sube al final.
+                    float contour = question ? 0.95f + Mathf.Max(0f, t - 0.6f) * 1.1f : 1.1f - t * 0.22f;
+                    // Diptongos ("ue", "ia"...): la vocal se desliza hacia la siguiente.
+                    int next = i + 1 < text.Length ? VowelOf(char.ToLowerInvariant(text[i + 1])) : -1;
+                    bool accent = "áéíóú".IndexOf(ch) >= 0;
+                    float wob = 0.94f + (float)((ch * 7 + i * 13) % 11) / 100f;
+                    syl.Add(new Syl
+                    {
+                        v0 = v, v1 = next >= 0 ? next : v,
+                        len = s * (accent ? 1.4f : 1f) * (next >= 0 ? 1.3f : 1f),
+                        p0 = contour * baseP * wob * (accent ? 1.12f : 1f), p1 = contour * baseP * wob * 0.97f,
+                        gain = gain, cons = cons,
+                    });
+                    cons = 0f;
+                    if (next >= 0) i++;   // el diptongo ya se ha comido la siguiente vocal
+                    continue;
+                }
+                if (char.IsLetter(ch))
+                {
+                    cons = "ptkbdgcqr".IndexOf(ch) >= 0 ? 1f : "szfjxhç".IndexOf(ch) >= 0 ? 2f : Mathf.Max(cons, 0f);
+                    continue;
+                }
+                // Espacio y signos: pausa tras la última sílaba
+                if (syl.Count > 0)
+                {
+                    var last = syl[syl.Count - 1];
+                    float add = ch == ' ' ? 0.05f : ".,;:!?…".IndexOf(ch) >= 0 ? 0.14f : 0f;
+                    last.pause = Mathf.Max(last.pause, add);
+                    syl[syl.Count - 1] = last;
+                }
+            }
+            if (syl.Count == 0)   // "jajaja"-sin-vocales, "xd", emoticonos...: un gruñido corto
+                syl.Add(new Syl { v0 = U, v1 = O, len = 0.12f, p0 = 1f, p1 = 0.9f, gain = 0.8f, cons = 1 });
+            return syl;
+        }
+
+        /// <summary>a/e/i/o/u (con tildes y la y final) → índice de vocal; si no, -1.</summary>
+        private static int VowelOf(char c)
+        {
+            switch (char.ToLowerInvariant(c))
+            {
+                case 'a': case 'á': case 'à': return A;
+                case 'e': case 'é': case 'è': return E;
+                case 'i': case 'í': case 'ï': return I;
+                case 'o': case 'ó': case 'ò': return O;
+                case 'u': case 'ú': case 'ü': return U;
+                default: return -1;
+            }
+        }
+
+        // ------------------------------------------------------------
         //  SÍNTESIS
         // ------------------------------------------------------------
         // Formantes (Hz) de cada vocal: F1, F2.
@@ -203,6 +334,7 @@ namespace Ratms.Networking
         {
             public int v0, v1;
             public float len, p0, p1, gain, cons;   // cons: 0 = sin consonante, 1 = chasquido, 2 = "h" (aire)
+            public float pause;                      // 0.37: silencio extra DESPUÉS (entre palabras)
         }
 
         private static float[] Synth(Profile p, Kind kind, System.Random rng)
@@ -261,8 +393,14 @@ namespace Ratms.Networking
 
             // Duración total (+ pequeños silencios entre sílabas de la charla).
             float gap = kind == Kind.Talk ? 0.025f : kind == Kind.Laugh ? 0.03f : 0.008f;
+            return Render(p, syl, gap, kind == Kind.Death ? 3f : 1f, rng);
+        }
+
+        /// <summary>Convierte sílabas en sonido (fuente → formantes), normalizado.</summary>
+        private static float[] Render(Profile p, List<Syl> syl, float gap, float vibMul, System.Random rng)
+        {
             float total = 0.02f;
-            foreach (var sy in syl) total += sy.len + gap;
+            foreach (var sy in syl) total += sy.len + gap + sy.pause;
             var buf = new float[Mathf.CeilToInt(total * Rate)];
 
             float phase = 0f, vibPh = (float)rng.NextDouble() * 6.28f;
@@ -282,7 +420,7 @@ namespace Ratms.Networking
                     // Envolvente: ataque rápido, caída suave.
                     float env = Mathf.Min(1f, t * 14f) * Mathf.Min(1f, (1f - t) * 5f) * sy.gain;
                     // Tono con entonación + vibrato (más vibrato en los gritos largos).
-                    float vib = 1f + p.vibDepth * (kind == Kind.Death ? 3f : 1f) * Mathf.Sin(vibPh);
+                    float vib = 1f + p.vibDepth * vibMul * Mathf.Sin(vibPh);
                     vibPh += 6.2832f * p.vibRate / Rate;
                     float f = p.f0 * Mathf.Lerp(sy.p0, sy.p1, t) * vib;
                     phase += f / Rate; if (phase >= 1f) phase -= 1f;
@@ -302,7 +440,7 @@ namespace Ratms.Networking
                     float b = Resonate(src, fm.y, 140f, ref y1b, ref y2b);
                     buf[pos] = (a * 1.0f + b * 0.55f + src * 0.04f) * env;
                 }
-                pos += (int)(gap * Rate);
+                pos += (int)((gap + sy.pause) * Rate);
             }
 
             // Normaliza a un pico de ~0.55 (todas las voces igual de fuertes).

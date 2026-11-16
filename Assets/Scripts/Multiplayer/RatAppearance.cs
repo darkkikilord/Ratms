@@ -127,6 +127,75 @@ namespace Ratms.Networking
         /// <summary>Voltereta hacia atrás (el salto doble): el dibujo da una vuelta entera.</summary>
         public void Backflip() => flipStart = Time.time;
 
+        /// <summary>0.37: gestos de los emotes (<see cref="ChatSystem.Emotes"/>).</summary>
+        public enum EmoteAnim { Cheer, Laugh, Dance, Wave, Cry, Angry, Fart }
+        private EmoteAnim emoteAnim;
+        private float emoteStart = -10f;
+        private const float EmoteSeconds = 2.2f;
+
+        /// <summary>La rata hace un gesto (lo llama el chat/emotes en todos los PCs).</summary>
+        public void PlayEmote(EmoteAnim a)
+        {
+            emoteAnim = a;
+            emoteStart = Time.time;
+            if (a == EmoteAnim.Cheer || a == EmoteAnim.Wave || a == EmoteAnim.Dance) stretchVel += 3.6f;   // saltito
+            if (a == EmoteAnim.Fart) stretchVel -= 3f;                                                     // se encoge
+        }
+
+        /// <summary>
+        ///  Aplica el gesto encima de la animación normal (solo dibujo: no toca
+        ///  la física, así se ve igual en todos los PCs).
+        /// </summary>
+        private void ApplyEmote()
+        {
+            float t = Time.time - emoteStart;
+            if (t < 0f || t > EmoteSeconds || sr == null) return;
+            float fade = Mathf.Clamp01((EmoteSeconds - t) / 0.3f);
+            float dir = movement.FacingRight ? 1f : -1f;
+            var tr = sr.transform;
+            Vector3 pos = tr.position, scale = tr.localScale;
+            float rot = 0f;
+            switch (emoteAnim)
+            {
+                case EmoteAnim.Cheer:   // botes de alegría
+                    pos.y += Mathf.Abs(Mathf.Sin(t * 9f)) * 0.18f * fade;
+                    rot = Mathf.Sin(t * 9f) * 6f * fade;
+                    break;
+                case EmoteAnim.Laugh:   // se parte de risa: tiembla y se dobla
+                    pos.x += Mathf.Sin(t * 55f) * 0.025f * fade;
+                    scale.y *= 1f - 0.07f * Mathf.Abs(Mathf.Sin(t * 14f)) * fade;
+                    rot = -8f * dir * fade;
+                    break;
+                case EmoteAnim.Dance:   // baile: mira a un lado y a otro al ritmo, con botecitos
+                    sr.flipX = ((int)(t * 4f) % 2 == 0) ? !movement.FacingRight : movement.FacingRight;
+                    pos.y += Mathf.Abs(Mathf.Sin(t * 4f * Mathf.PI)) * 0.12f * fade;
+                    rot = Mathf.Sin(t * 8f) * 12f * fade;
+                    scale.y *= 1f + 0.08f * Mathf.Sin(t * 16f) * fade;
+                    break;
+                case EmoteAnim.Wave:    // saludo: se balancea adelante y atrás
+                    rot = Mathf.Sin(t * 12f) * 14f * fade;
+                    break;
+                case EmoteAnim.Cry:     // hundida, cabizbaja, sollozando
+                    scale.y *= 1f - (0.08f + 0.03f * Mathf.Sin(t * 18f)) * fade;
+                    rot = -10f * dir * fade;
+                    break;
+                case EmoteAnim.Angry:   // roja de rabia, temblando
+                    pos.x += Mathf.Sin(t * 70f) * 0.03f * fade;
+                    sr.color = Color.Lerp(sr.color, new Color(1f, 0.45f, 0.4f), 0.6f * fade * (0.6f + 0.4f * Mathf.Sin(t * 20f)));
+                    scale *= 1f + 0.05f * fade;
+                    break;
+                case EmoteAnim.Fart:    // aprieta... y suelta
+                    float k = t < 0.35f ? t / 0.35f : Mathf.Clamp01(1f - (t - 0.35f) * 3f);
+                    scale.y *= 1f - 0.15f * k;
+                    scale.x *= 1f + 0.12f * k;
+                    pos.x += t > 0.35f && t < 0.9f ? Mathf.Sin(t * 80f) * 0.02f : 0f;
+                    break;
+            }
+            tr.position = pos;
+            tr.localScale = scale;
+            if (Mathf.Abs(rot) > 0.01f) tr.rotation = Quaternion.Euler(0f, 0f, tr.rotation.eulerAngles.z + rot);
+        }
+
         /// <summary>
         ///  Punto de la MANO de esta rata en el mundo (donde agarra las armas),
         ///  calculado con SU anatomía: la flaca la tiene más alta, la topo casi
@@ -337,6 +406,7 @@ namespace Ratms.Networking
             float vis = Look.Stats.visual > 0f ? Look.Stats.visual : 1f;
             sr.transform.localScale = new Vector3((1f + 0.22f * squash) * sx * vis / Mathf.Max(0.0001f, Mathf.Abs(ls.x)),
                                                   (1f - 0.18f * squash) * sy * vis / Mathf.Max(0.0001f, Mathf.Abs(ls.y)), 1f);
+            ApplyEmote();   // 0.37
         }
 
         // Muelle del estirado/aplastado: 1 = normal, >1 = estirada en vertical.

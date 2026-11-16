@@ -26,6 +26,12 @@ namespace Ratms.Testing
                 $"{m.name}[id {(m.IsSpawned ? m.NetworkObjectId.ToString() : "SIN RED")} dueño {(m.IsSpawned ? m.OwnerClientId.ToString() : "?")}{(m.IsOwner ? " MÍA" : "")} eq {m.TeamIndex.Value} escena {m.gameObject.scene.name}]"));
         }
 
+        private IEnumerator CaptureLater(string name, float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            yield return Capture(name);
+        }
+
         private IEnumerator RunRematchHost()
         {
             Log("Papel: REVANCHA ONLINE (anfitrión)");
@@ -39,6 +45,10 @@ namespace Ratms.Testing
             menu?.ShowLobby();
             yield return WaitFor(() => nm.ConnectedClientsIds.Count >= 2 && LobbySync.AllReady, 60f, "cliente conectado y listo");
             if (finished) yield break;
+            // 0.37: chat en la sala de espera
+            yield return WaitFor(() => ChatSystem.Received >= 1, 10f, "el chat del cliente en la sala", fatal: false);
+            Check($"Chat en la sala → mensajes recibidos: {ChatSystem.Received}", ChatSystem.Received >= 1, "Chat: el anfitrión no recibe el mensaje de la sala");
+            yield return Capture("R00_host_chat_sala");
 
             for (int match = 1; match <= 2; match++)
             {
@@ -61,13 +71,22 @@ namespace Ratms.Testing
                     var theirs = tm.CurrentRat;
                     Vector2 start = theirs != null ? (Vector2)theirs.transform.position : Vector2.zero;
                     Log($"Turno del cliente con '{(theirs != null ? theirs.RatName.Value.ToString() : "?")}' en {start}");
+                    int recv0 = ChatSystem.Received, emo0 = ChatSystem.EmotesPlayed;
                     float t0 = Time.time;
                     bool sawDynamite = false;
+                    bool shot = false;
                     while (Time.time - t0 < 9f)
                     {
+                        if (!shot && ChatSystem.EmotesPlayed > emo0) { shot = true; StartCoroutine(CaptureLater("R03_host_chat_emote", 0.5f)); }
                         if (FindObjectsByType<NetworkGrenade>(FindObjectsSortMode.None).Any(g => g.IsDynamite.Value)) sawDynamite = true;
                         yield return null;
                     }
+                    // 0.37: el cliente ha escrito y hecho un emote al empezar su turno
+                    Check($"Chat y emotes en partida → mensajes nuevos {ChatSystem.Received - recv0} · emotes vistos {ChatSystem.EmotesPlayed - emo0}",
+                          ChatSystem.Received > recv0 && ChatSystem.EmotesPlayed > emo0, "Chat/emotes: el anfitrión no ve lo del cliente");
+                    ChatSystem.SendChat("¡Ni de broma, sarnoso!");
+                    ChatSystem.SendEmote(1);
+                    yield return new WaitForSeconds(3f);
                     float moved = theirs != null ? Vector2.Distance(start, theirs.transform.position) : 0f;
                     Check($"Revancha → el anfitrión ve moverse al cliente: {moved:F2} u · ve su dinamita: {sawDynamite}",
                           moved > 0.4f && sawDynamite, "Revancha: el cliente no puede actuar o el anfitrión no lo ve");
@@ -115,6 +134,9 @@ namespace Ratms.Testing
             if (!connected) { Finish("El cliente no pudo conectarse"); yield break; }
             FindFirstObjectByType<MultiplayerMenuController>()?.ShowLobby();
             yield return new WaitForSeconds(1f);
+            ChatSystem.SendChat("¡Hola! ¿Jugamos?");   // 0.37
+            yield return new WaitForSeconds(0.5f);
+            yield return Capture("R00_cliente_chat_sala");
             LobbySync.LocalReady = true;
 
             // Partida 1
@@ -139,6 +161,13 @@ namespace Ratms.Testing
             if (finished) yield break;
             var mine = tm.CurrentRat;
             Log($"Cliente: mi turno · rata '{mine.RatName.Value}' MÍA={mine.IsOwner} · puedo moverla: {mine.CanControlNow} · CanAct en el servidor lo dirá la dinamita");
+            // 0.37: primero chat y emote
+            int before = ChatSystem.Received, emoBefore = ChatSystem.EmotesPlayed;
+            ChatSystem.SendChat("¡Toma dinamita, rata!");
+            yield return new WaitForSeconds(1.3f);
+            ChatSystem.SendEmote(2);   // baile
+            yield return new WaitForSeconds(0.6f);
+            yield return Capture("R03_cliente_emote");
             mine.TestInputX = 1f;
             yield return new WaitForSeconds(1.5f);
             mine.TestInputX = 0f;
@@ -149,6 +178,10 @@ namespace Ratms.Testing
             yield return new WaitForSeconds(1f);
             bool dyn = FindObjectsByType<NetworkGrenade>(FindObjectsSortMode.None).Any(g => g.IsDynamite.Value);
             Check($"Revancha (cliente) → mi dinamita existe en red: {dyn}", dyn, "Revancha: el cliente no puede usar armas");
+            // La respuesta del anfitrión (mensaje + risa)
+            yield return WaitFor(() => ChatSystem.Received > before + 1 && ChatSystem.EmotesPlayed > emoBefore + 1, 15f, "la respuesta del anfitrión", fatal: false);
+            Check($"Chat y emotes (cliente) → mensajes nuevos {ChatSystem.Received - before} · emotes {ChatSystem.EmotesPlayed - emoBefore}",
+                  ChatSystem.Received > before + 1 && ChatSystem.EmotesPlayed > emoBefore + 1, "Chat/emotes: el cliente no recibe la respuesta");
             yield return Capture("R02_cliente_revancha");
             yield return new WaitForSeconds(5f);
             Finish(null);

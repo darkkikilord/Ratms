@@ -44,6 +44,22 @@ namespace Ratms.Testing
                 }
             }
             bool ordered = f0s[0] > f0s[f0s.Count - 1];
+            // 0.37: frases del chat dichas en ratuno
+            var phrases = new[] { ("hola", "hola"), ("que_tal", "¿Qué tal estás, rata?"), ("grito", "¡TE VOY A REVENTAR!"), ("frase", "Esa dinamita era para ti, sarnoso.") };
+            int phraseFiles = 0;
+            foreach (var body in new[] { RatLook.BodyType.Enana, RatLook.BodyType.Gigante })
+            {
+                ulong code = RatLook.Random(new System.Random(77), (int)body).Pack();
+                foreach (var (file, text) in phrases)
+                {
+                    var data = RatVoice.RenderText(code, text);
+                    WriteWav(Path.Combine(dir, $"chat_{body}_{file}.wav"), data, 22050);
+                    phraseFiles++;
+                }
+            }
+            int sylHola = RatVoice.SyllablesOf("hola"), sylLong = RatVoice.SyllablesOf("Esa dinamita era para ti, sarnoso.");
+            Check($"Voz del chat → {phraseFiles} frases guardadas · \"hola\" = {sylHola} sílabas · frase larga = {sylLong}",
+                  sylHola == 2 && sylLong >= 10, "Voz del chat: las sílabas no salen del texto");
             Check($"Voces → {files} clips guardados en voces\\ · {bad} raros · tono enana {f0s[0]:F0} Hz > gigante {f0s[f0s.Count - 1]:F0} Hz: {ordered}",
                   bad == 0 && ordered, "Voces: hay clips rotos o el tono no depende del cuerpo");
 

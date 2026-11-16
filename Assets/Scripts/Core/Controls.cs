@@ -28,6 +28,8 @@ namespace Ratms.UI
             Arsenal, NextWeapon, PrevWeapon, Taunt, Overview, CameraBack,
             MenuUp, MenuDown, MenuLeft, MenuRight, MenuOk,
             Slot1, Slot2, Slot3, Slot4, Slot5, Slot6, Slot7, Slot8, Slot9, Slot10,
+            // 0.37 (al final para no mover las teclas guardadas de las demás)
+            Chat, Emotes,
         }
 
         public const int Slots = 10;
@@ -52,6 +54,8 @@ namespace Ratms.UI
             Act.MenuLeft => "Menú: izquierda",
             Act.MenuRight => "Menú: derecha",
             Act.MenuOk => "Menú: elegir",
+            Act.Chat => "Chat (escribir)",
+            Act.Emotes => "Emotes",
             _ => Loc.F("Arma favorita {0}", (int)a - (int)Act.Slot1 + 1),
         };
 
@@ -60,7 +64,7 @@ namespace Ratms.UI
         {
             ("Movimiento", new[] { Act.Left, Act.Right, Act.Jump }),
             ("Armas", new[] { Act.AimUp, Act.AimDown, Act.Fire, Act.Arsenal, Act.NextWeapon, Act.PrevWeapon }),
-            ("Gestos y cámara", new[] { Act.Taunt, Act.Overview, Act.CameraBack }),
+            ("Gestos y cámara", new[] { Act.Taunt, Act.Chat, Act.Emotes, Act.Overview, Act.CameraBack }),
             ("Menús", new[] { Act.MenuUp, Act.MenuDown, Act.MenuLeft, Act.MenuRight, Act.MenuOk }),
         };
 
@@ -78,6 +82,8 @@ namespace Ratms.UI
             Act.Taunt => (KeyCode.P, KeyCode.None),
             Act.Overview => (KeyCode.V, KeyCode.None),
             Act.CameraBack => (KeyCode.C, KeyCode.None),
+            Act.Chat => (KeyCode.T, KeyCode.None),
+            Act.Emotes => (KeyCode.E, KeyCode.None),
             Act.MenuUp => (KeyCode.UpArrow, KeyCode.W),
             Act.MenuDown => (KeyCode.DownArrow, KeyCode.S),
             Act.MenuLeft => (KeyCode.LeftArrow, KeyCode.A),
@@ -152,7 +158,17 @@ namespace Ratms.UI
         /// <summary>Llamar cada frame mientras el menú esté abierto.</summary>
         public static void BlockGameplayThisFrame() => blockedUntilFrame = Time.frameCount + 1;
 
-        private static bool Gated(Act a) => Blocked && !IsMenu(a) && a != Act.Arsenal && !(a >= Act.Slot1 && a <= Act.Slot10);
+        private static bool Gated(Act a) => (Blocked && !IsMenu(a) && a != Act.Arsenal && !(a >= Act.Slot1 && a <= Act.Slot10))
+                                            || (AllBlocked && !IsMenu(a));
+
+        /// <summary>
+        ///  0.37: true mientras se escribe en el chat o está abierto el menú de
+        ///  emotes: NINGUNA tecla de juego responde (ni el arsenal ni las armas
+        ///  favoritas 1-0, que con <see cref="Blocked"/> sí funcionan).
+        /// </summary>
+        public static bool AllBlocked => Time.frameCount <= allBlockedUntilFrame;
+        private static int allBlockedUntilFrame = -1;
+        public static void BlockAllThisFrame() { allBlockedUntilFrame = Time.frameCount + 1; blockedUntilFrame = Time.frameCount + 1; }
 
         public static bool Held(Act a)
         {

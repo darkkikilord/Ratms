@@ -57,6 +57,18 @@ namespace Ratms.Testing
                     phraseFiles++;
                 }
             }
+            // 0.40: un ejemplo de cada TIPO de voz (misma rata, misma frase)
+            int typeFiles = 0;
+            for (int vt = 1; vt < RatLook.Voices; vt++)
+            {
+                var l = RatLook.Random(new System.Random(5), (int)RatLook.BodyType.Flaca);
+                l.voice = (RatLook.VoiceType)vt;
+                var data = RatVoice.RenderText(l.Pack(), "¡Hola! Soy tu rata y así hablo.");
+                if (data.Any(float.IsNaN) || data.Max(Mathf.Abs) < 0.2f) { bad++; Log($"⚠ voz rara: {l.voice}"); }
+                WriteWav(Path.Combine(dir, $"tipo_{l.voice}.wav"), data, 22050);
+                typeFiles++;
+            }
+            Check($"Tipos de voz → {typeFiles} guardados (tipo_*.wav)", typeFiles == RatLook.Voices - 1, "Tipos de voz rotos");
             // 0.39: canciones del baile (una por estilo) y sonidos gore
             int tunes = 0;
             for (int st = 0; st < DanceTunes.Styles; st++)

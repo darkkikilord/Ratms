@@ -41,11 +41,26 @@
         public bool pegLeg;      // pata de palo
         public bool goldTooth;
         public byte variant;     // posición de calvas, manchas de sangre...
+        /// <summary>0.40: tipo de VOZ (0 = automática según el aspecto). Ver <see cref="VoiceType"/>.</summary>
+        public VoiceType voice;
+
+        /// <summary>0.40 — tipos de voz para hablar el chat y las frases (<see cref="Ratms.Networking.RatVoice"/>).</summary>
+        public enum VoiceType : byte { Auto, Normal, Ardilla, Ogro, Robot, Abuela, Susurro, Demonio, Tenor, Pito, Borracha }
+        public const int Voices = 11;
+
+        public static string VoiceName(VoiceType v) => v switch
+        {
+            VoiceType.Normal => "voz normal", VoiceType.Ardilla => "voz de ardilla", VoiceType.Ogro => "voz de ogro",
+            VoiceType.Robot => "voz de robot", VoiceType.Abuela => "voz de abuela", VoiceType.Susurro => "voz susurrante",
+            VoiceType.Demonio => "voz demoníaca", VoiceType.Tenor => "voz de tenor", VoiceType.Pito => "voz de pito",
+            VoiceType.Borracha => "voz de borracha", _ => "voz al azar",
+        };
 
         // ------------------------------------------------------------
         //  Empaquetado (bits): body 4 · fur 4 · tail 3 · ear 3 · eye 3 ·
         //  hat 5 · mouth 3 · mark 3 · acc 3 · brazo 1 · pata 1 · oro 1 ·
-        //  variante 8 = 42 bits. El bit 63 a 1 marca "código nuevo" (0 = sin aspecto).
+        //  variante 8 = 42 bits · 0.40: voz 4 (bits 42-45; 0 = automática, así los
+        //  códigos guardados antes siguen valiendo). El bit 63 a 1 marca "código nuevo".
         // ------------------------------------------------------------
         private const ulong NewFlag = 1UL << 63;
 
@@ -56,6 +71,7 @@
             Put((uint)body, 4); Put((uint)fur, 4); Put((uint)tail, 3); Put((uint)ear, 3); Put((uint)eye, 3);
             Put((uint)hat, 5); Put((uint)mouth, 3); Put((uint)mark, 3); Put((uint)acc, 3);
             Put(oneArm ? 1u : 0u, 1); Put(pegLeg ? 1u : 0u, 1); Put(goldTooth ? 1u : 0u, 1); Put(variant, 8);
+            Put((uint)voice, 4);
             return c | NewFlag;
         }
 
@@ -79,6 +95,7 @@
                 pegLeg = Get(1) == 1,
                 goldTooth = Get(1) == 1,
                 variant = (byte)Get(8),
+                voice = (VoiceType)(Get(4) % Voices),
             };
         }
 

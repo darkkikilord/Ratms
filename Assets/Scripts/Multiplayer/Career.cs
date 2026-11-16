@@ -89,7 +89,7 @@ namespace Ratms.Networking
             new() { id = "multikill", name = "Masacre", desc = "3 bajas enemigas en un mismo turno.", progress = d => d.bestTurnKills, goal = 3, hat = RatLook.HatType.Fez },
             new() { id = "damage", name = "Demoledor", desc = "5000 de daño en total.", progress = d => d.damage, goal = 5000 },
             new() { id = "taunt", name = "Bocazas", desc = "Provoca 50 veces (tecla P).", progress = d => d.taunts, goal = 50 },
-            new() { id = "explorer", name = "Explorador", desc = "Juega en las 6 formas de mapa.", progress = d => Bits(d.shapesPlayed), goal = 6, hat = RatLook.HatType.Minero },
+            new() { id = "explorer", name = "Explorador", desc = "Juega en 6 formas de mapa distintas.", progress = d => Bits(d.shapesPlayed), goal = 6, hat = RatLook.HatType.Minero },
             new() { id = "modes", name = "Todoterreno", desc = "Gana en 4 modos de juego distintos.", progress = d => Bits(d.modesWon), goal = 4 },
             new() { id = "gif", name = "Director de cine", desc = "Guarda una repetición en GIF (G).", progress = d => d.gifs, goal = 1 },
             new() { id = "survivor", name = "Carne de cañón", desc = "Pierde 100 ratas en combate.", progress = d => d.deaths, goal = 100 },

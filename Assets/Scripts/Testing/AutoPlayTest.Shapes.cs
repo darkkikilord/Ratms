@@ -105,8 +105,11 @@ namespace Ratms.Testing
             var a = Make("PruebaDinamitaEnterrada", inside, Vector2.zero);
             var b = Make("PruebaDinamitaRapida", inside + Vector2.down * 0.3f, Vector2.down * 6f);
             yield return new WaitForSeconds(1.5f);
-            bool aOk = a.transform.position.y > inside.y - 0.2f && !DestructibleTerrain.IsSolidAtWorld(a.GetComponent<Collider2D>().bounds.center);
-            bool bOk = b.transform.position.y > inside.y - 1f && !DestructibleTerrain.IsSolidAtWorld(b.GetComponent<Collider2D>().bounds.center);
+            // "Atravesar el mapa" = acabar en el agua del fondo. Rodar cuesta abajo es normal.
+            var water = FindFirstObjectByType<WaterDeathZone>();
+            float waterY = (water != null ? water.SurfaceY : -999f) + 0.3f;
+            bool aOk = a.transform.position.y > waterY && !DestructibleTerrain.IsSolidAtWorld(a.GetComponent<Collider2D>().bounds.center);
+            bool bOk = b.transform.position.y > waterY && !DestructibleTerrain.IsSolidAtWorld(b.GetComponent<Collider2D>().bounds.center);
             Check($"Guardián del terreno → enterrada sale: {aOk} · rápida no atraviesa: {bOk} · rescates {TerrainGuard.Rescues - before}",
                   aOk && bOk, "Guardián: un objeto metido en la tierra sigue atravesando el mapa");
             Object.Destroy(a);

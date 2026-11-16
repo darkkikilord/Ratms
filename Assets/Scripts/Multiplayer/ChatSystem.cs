@@ -326,9 +326,8 @@ namespace Ratms.Networking
             if (em.anim == RatAppearance.EmoteAnim.Dance)
             {
                 // 0.39: ¡canción! (electrónica, pop, k-pop, rap o reggaetón, al azar)
-                DanceTunes.Play(seed);
-                string[] names = { "(electrónica)", "(pop)", "(k-pop)", "(rap)", "(reggaetón)" };
-                SpeechBubbles.Say(rat.transform, Loc.T(em.bubble) + "  " + names[(int)DanceTunes.StyleOf(seed)], DanceTunes.Seconds);
+                DanceTunes.Play(seed, rat.LookCode.Value);   // y canta los coros con SU voz
+                SpeechBubbles.Say(rat.transform, Loc.T(em.bubble) + "  " + Loc.T(DanceTunes.StyleName(DanceTunes.StyleOf(seed))), DanceTunes.Seconds);
             }
             else if (em.voice != null) RatVoice.SayText(rat, 0, Loc.T(em.voice));
             else if (em.fx == EmoteFx.Kind.Gas)

@@ -119,11 +119,20 @@ namespace Ratms.Networking
         // ------------------------------------------------------------
         /// <summary>Opciones del selector: las formas (0-5) y "Al azar" (6).</summary>
         public const int MapShapeChoices = Ratms.World.WormsTerrainShape.ShapeCount + 1;
-        /// <summary>Forma elegida (0-5) o 6 = al azar. PlayerPrefs "rule_shape".</summary>
+        /// <summary>Forma elegida (0-11) o 12 = al azar. PlayerPrefs "rule_shape2".</summary>
         public static int MapShapeSetting
         {
-            get => Mathf.Clamp(PlayerPrefs.GetInt("rule_shape", 0), 0, MapShapeChoices - 1);
-            set => PlayerPrefs.SetInt("rule_shape", Mathf.Clamp(value, 0, MapShapeChoices - 1));
+            get
+            {
+                // 0.40: hay 12 formas; antes el 6 era "al azar" (rule_shape) → se pasa a rule_shape2.
+                if (!PlayerPrefs.HasKey("rule_shape2"))
+                {
+                    int old = PlayerPrefs.GetInt("rule_shape", 0);
+                    PlayerPrefs.SetInt("rule_shape2", old == 6 ? MapShapeChoices - 1 : old);
+                }
+                return Mathf.Clamp(PlayerPrefs.GetInt("rule_shape2", 0), 0, MapShapeChoices - 1);
+            }
+            set => PlayerPrefs.SetInt("rule_shape2", Mathf.Clamp(value, 0, MapShapeChoices - 1));
         }
         /// <summary>Para las pruebas: fuerza la forma sin tocar las preferencias.</summary>
         public static Ratms.World.MapShape? OverrideMapShape;
@@ -140,7 +149,9 @@ namespace Ratms.Networking
 
         public static string MapShapeName(int setting) => setting switch
         {
-            1 => "Archipiélago", 2 => "Montaña", 3 => "Cañón", 4 => "Cavernas", 5 => "Cielo", 6 => "Al azar", _ => "Isla",
+            1 => "Archipiélago", 2 => "Montaña", 3 => "Cañón", 4 => "Cavernas", 5 => "Cielo",
+            6 => "Queso", 7 => "Trincheras", 8 => "Torres", 9 => "Puente", 10 => "Laberinto", 11 => "Volcán",
+            12 => "Al azar", _ => "Isla",
         };
         public static string MapShapeDescription(int setting) => setting switch
         {
@@ -149,7 +160,13 @@ namespace Ratms.Networking
             3 => "Dos mesetas altas y un valle con agua en medio.",
             4 => "Casi todo tierra: galerías, cuevas y chimeneas.",
             5 => "Solo islas flotantes sobre el mar.",
-            6 => "Una forma distinta en cada partida.",
+            6 => "Una cuña de queso gigante llena de agujeros.",
+            7 => "Llanura con zanjas, sacos terreros y búnkeres.",
+            8 => "Pilares altísimos sobre el mar. Vértigo.",
+            9 => "Dos acantilados y un arco fino sobre el abismo.",
+            10 => "Una mole con un laberinto de galerías dentro.",
+            11 => "Un volcán con cráter, chimenea y túneles.",
+            12 => "Una forma distinta en cada partida.",
             _ => "La isla de siempre: colinas, túneles e islotes.",
         };
 

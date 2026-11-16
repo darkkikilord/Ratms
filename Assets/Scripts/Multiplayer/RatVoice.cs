@@ -76,6 +76,27 @@ namespace Ratms.Networking
             public float vibRate;    // Hz
             public float syllable;   // segundos por sílaba
             public float buzz;       // 0 = pulso (pito), 1 = sierra (zumbido)
+            // 0.40: efectos del TIPO de voz
+            public RatLook.VoiceType type;
+            public bool whisper;     // sin tono: solo aire (susurro)
+            public float ring;       // modulación en anillo en Hz (robot), 0 = no
+            public int crush;        // niveles de cuantización (robot), 0 = no
+            public float sub;        // octava grave añadida (demonio)
+            public float drive;      // saturación (ogro, demonio)
+            public float wobble;     // el tono se tambalea (borracha)
+            public float nasal;      // tercer formante agudo (pito)
+            public float monotone;   // 1 = sin entonación (robot)
+        }
+
+        /// <summary>El tipo de voz real (si es "automática", sale del aspecto: casi siempre normal).</summary>
+        public static RatLook.VoiceType TypeOf(ulong lookCode)
+        {
+            var look = RatLook.Unpack(lookCode);
+            if (look.voice != RatLook.VoiceType.Auto) return look.voice;
+            int h = (int)((lookCode * 2654435761UL) >> 7) & 0xFF;
+            // 45 % normal; el resto repartido entre los tipos raros
+            if (h < 115) return RatLook.VoiceType.Normal;
+            return (RatLook.VoiceType)(2 + (h % (RatLook.Voices - 2)));
         }
 
         /// <summary>La voz de un aspecto. Determinista: el mismo código suena igual en todos los PCs.</summary>
@@ -92,7 +113,7 @@ namespace Ratms.Networking
                 RatLook.BodyType.Gigante => 118f, _ => 210f,
             };
             float throat = Mathf.Lerp(0.82f, 1.25f, Mathf.InverseLerp(110f, 340f, f0)) * (0.92f + R() * 0.16f);
-            return new Profile
+            var p = new Profile
             {
                 f0 = f0 * (0.86f + R() * 0.28f),
                 throat = throat,
@@ -103,6 +124,21 @@ namespace Ratms.Networking
                 syllable = 0.065f + R() * 0.045f,
                 buzz = R(),
             };
+            // 0.40: TIPO de voz encima del aspecto
+            p.type = TypeOf(lookCode);
+            switch (p.type)
+            {
+                case RatLook.VoiceType.Ardilla: p.f0 *= 1.85f; p.throat *= 1.35f; p.syllable *= 0.7f; break;
+                case RatLook.VoiceType.Ogro: p.f0 *= 0.58f; p.throat *= 0.78f; p.rasp = 0.35f; p.drive = 2.5f; p.syllable *= 1.25f; break;
+                case RatLook.VoiceType.Robot: p.ring = 70f; p.crush = 7; p.monotone = 1f; p.vibDepth = 0f; p.buzz = 0f; break;
+                case RatLook.VoiceType.Abuela: p.f0 *= 1.2f; p.vibDepth = 0.075f; p.vibRate = 5.2f; p.rasp = 0.28f; p.throat *= 1.08f; p.syllable *= 1.15f; break;
+                case RatLook.VoiceType.Susurro: p.whisper = true; p.syllable *= 1.1f; break;
+                case RatLook.VoiceType.Demonio: p.f0 *= 0.5f; p.throat *= 0.72f; p.sub = 0.8f; p.drive = 4f; p.rasp = 0.3f; break;
+                case RatLook.VoiceType.Tenor: p.vibDepth = 0.05f; p.vibRate = 6f; p.syllable *= 1.6f; p.rasp = 0f; p.buzz = 0.35f; break;
+                case RatLook.VoiceType.Pito: p.f0 *= 1.35f; p.nasal = 0.9f; p.throat *= 1.25f; break;
+                case RatLook.VoiceType.Borracha: p.wobble = 0.14f; p.syllable *= 1.35f; p.rasp += 0.1f; break;
+            }
+            return p;
         }
 
         // ------------------------------------------------------------
@@ -405,7 +441,7 @@ namespace Ratms.Networking
 
             float phase = 0f, vibPh = (float)rng.NextDouble() * 6.28f;
             // Estado de los dos resonadores (formantes) — continuo entre sílabas.
-            float y1a = 0, y2a = 0, y1b = 0, y2b = 0;
+            float y1a = 0, y2a = 0, y1b = 0, y2b = 0, y1c = 0, y2c = 0, subPh = 0f;
             int pos = (int)(0.01f * Rate);
             uint noise = (uint)rng.Next() | 1u;
             float Noise() { noise ^= noise << 13; noise ^= noise >> 17; noise ^= noise << 5; return (noise / (float)uint.MaxValue) * 2f - 1f; }
@@ -422,12 +458,17 @@ namespace Ratms.Networking
                     // Tono con entonación + vibrato (más vibrato en los gritos largos).
                     float vib = 1f + p.vibDepth * vibMul * Mathf.Sin(vibPh);
                     vibPh += 6.2832f * p.vibRate / Rate;
-                    float f = p.f0 * Mathf.Lerp(sy.p0, sy.p1, t) * vib;
+                    float contour = Mathf.Lerp(Mathf.Lerp(sy.p0, sy.p1, t), 1f, p.monotone);
+                    // 0.40: borracha → el tono se tambalea despacio
+                    float wob = p.wobble > 0f ? 1f + p.wobble * Mathf.Sin(pos * 6.2832f * 1.3f / Rate) * Mathf.Sin(pos * 6.2832f * 0.37f / Rate) : 1f;
+                    float f = p.f0 * contour * vib * wob;
                     phase += f / Rate; if (phase >= 1f) phase -= 1f;
+                    subPh += f * 0.5f / Rate; if (subPh >= 1f) subPh -= 1f;
                     // Fuente: mezcla de diente de sierra y pulso estrecho, más aire.
                     float saw = 2f * phase - 1f;
                     float pulse = phase < 0.18f ? 1f : -0.22f;
-                    float src = Mathf.Lerp(pulse, saw, p.buzz) + Noise() * p.rasp;
+                    float src = p.whisper ? Noise() * 0.9f : Mathf.Lerp(pulse, saw, p.buzz) + Noise() * p.rasp;
+                    if (p.sub > 0f && !p.whisper) src += (subPh < 0.5f ? 1f : -1f) * p.sub * 0.6f;   // demonio: octava grave
                     // Consonante: ráfaga de ruido al principio de la sílaba.
                     if (i < consN)
                     {
@@ -436,9 +477,14 @@ namespace Ratms.Networking
                     }
                     // Formantes de la vocal (desliza de v0 a v1).
                     Vector2 fm = Vector2.Lerp(Vowels[sy.v0], Vowels[sy.v1], t) * p.throat;
-                    float a = Resonate(src, fm.x, 90f, ref y1a, ref y2a);
-                    float b = Resonate(src, fm.y, 140f, ref y1b, ref y2b);
-                    buf[pos] = (a * 1.0f + b * 0.55f + src * 0.04f) * env;
+                    float a = Resonate(src, fm.x, p.whisper ? 160f : 90f, ref y1a, ref y2a);
+                    float b = Resonate(src, fm.y, p.whisper ? 220f : 140f, ref y1b, ref y2b);
+                    float o = a * 1.0f + b * 0.55f + src * 0.04f;
+                    if (p.nasal > 0f) o += Resonate(src, 2900f * p.throat, 120f, ref y1c, ref y2c) * p.nasal;   // pito: nasal
+                    if (p.drive > 0f) o = (float)System.Math.Tanh(o * p.drive) / Mathf.Min(1f, p.drive * 0.5f);
+                    if (p.ring > 0f) o *= 0.35f + 0.65f * Mathf.Sin(pos * 6.2832f * p.ring / Rate);   // robot: anillo
+                    if (p.crush > 0) o = Mathf.Round(o * p.crush) / p.crush;                          // y "bits" gordos
+                    buf[pos] = o * env;
                 }
                 pos += (int)((gap + sy.pause) * Rate);
             }

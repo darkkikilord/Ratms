@@ -27,9 +27,10 @@ namespace Ratms.UI
             5 => RatLook.MouthName(l.mouth),
             6 => RatLook.EarName(l.ear),
             7 => RatLook.MarkName(l.mark),
+            9 => RatLook.VoiceName(l.voice),
             _ => RatLook.AccName(l.acc),
         };
-        private const int Parts = 9;
+        private const int Parts = 10;   // 0.40: + voz
 
         private static GUIStyle partStyle;
 
@@ -54,6 +55,7 @@ namespace Ratms.UI
                 case 5: l.mouth = (RatLook.MouthType)Wrap((int)l.mouth, dir, RatLook.Mouths); break;
                 case 6: l.ear = (RatLook.EarType)Wrap((int)l.ear, dir, RatLook.Ears); break;
                 case 7: l.mark = (RatLook.MarkType)Wrap((int)l.mark, dir, RatLook.Marks); break;
+                case 9: l.voice = (RatLook.VoiceType)Wrap((int)l.voice, dir, RatLook.Voices); break;
                 default: l.acc = (RatLook.AccessoryType)Wrap((int)l.acc, dir, RatLook.Accessories); break;
             }
             return l;
@@ -129,7 +131,10 @@ namespace Ratms.UI
                         if (hit)
                         {
                             int dir = Event.current.button == 1 ? -1 : 1;
-                            TeamProfile.SetLook(i, Cycle(l, p, dir).Pack());
+                            var nl = Cycle(l, p, dir);
+                            TeamProfile.SetLook(i, nl.Pack());
+                            // 0.40: al cambiar la voz, la rata se presenta para que la oigas
+                            if (p == 9) Ratms.Networking.RatVoice.SayText(null, nl.Pack(), Loc.T("¡Hola! Soy tu rata y así hablo."));
                         }
                     }
                 }

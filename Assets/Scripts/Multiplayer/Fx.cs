@@ -661,6 +661,7 @@ namespace Ratms.Networking
 
                 if (p.collides && p.age > 0.03f && DestructibleTerrain.IsSolidAtWorld(p.pos))
                 {
+                    if ((p.stains || p.sticks) && !p.resting) Sfx.Plop(p.vel.magnitude);   // 0.39: ¡plip!
                     if (p.stains)
                         DestructibleTerrain.StainAtWorld(p.pos, new Color32((byte)(p.c0.r * 255), (byte)(p.c0.g * 255), (byte)(p.c0.b * 255), 255),
                                                          p.stainPx, 0.85f);

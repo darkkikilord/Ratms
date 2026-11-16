@@ -221,7 +221,8 @@ namespace Ratms.Networking
             Vector2 b = BodyCenter;
             Vector2 at = zone == ZoneLegs ? b + Vector2.down * 0.2f : zone == ZoneHead ? b + Vector2.up * 0.25f : b;
             Fx.LimbOff(at, zone);
-            Sfx.Play(Sfx.Id.Splat, 0.9f);
+            Sfx.Play(Sfx.Id.Splat, 0.6f);
+            Sfx.PlayPitched(Sfx.Id.Squelch, 0.8f, Random.Range(1f, 1.3f));   // 0.39: ¡chof!
             RatVoice.Say(this, RatVoice.Kind.Hurt);   // 0.33: su propia voz
             if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.15f, 0.25f);
             string t = zone == ZoneLegs ? (LegsLost >= 2 ? "¡MIS PATAS!" : "¡MI PATA!")
@@ -476,7 +477,7 @@ namespace Ratms.Networking
                 Sfx.Play(Sfx.Id.Ouch, 0.25f, 0.15f);   // golpe sordo; el quejido es la voz de la rata
                 RatVoice.Say(this, amount >= 25 ? RatVoice.Kind.Hurt : RatVoice.Kind.Ouch);
                 if (laughs && Random.value < 0.35f)
-                    WorldDamagePopup.SpawnImpact(BodyCenter + Vector2.up * 0.9f, Pick(HurtQuips), new Color(1f, 0.75f, 0.6f));
+                    WorldDamagePopup.SpawnImpact(BodyCenter + Vector2.up * 0.9f, RatLines.Mix(HurtQuips, RatLines.MemeHurt), new Color(1f, 0.75f, 0.6f));
             }
 
             // RISA: la rata que tiene el turno se ríe de su víctima (siempre si
@@ -486,7 +487,7 @@ namespace Ratms.Networking
             {
                 var ah = attacker.GetComponent<NetworkHealth>();
                 Vector2 at = (ah != null ? ah.BodyCenter : (Vector2)attacker.transform.position) + Vector2.up * 0.95f;
-                WorldDamagePopup.SpawnImpact(at, Pick(Laughs), new Color(1f, 0.9f, 0.35f));
+                WorldDamagePopup.SpawnImpact(at, RatLines.Mix(Laughs, RatLines.MemeLaughs), new Color(1f, 0.9f, 0.35f));
                 RatVoice.Say(attacker, RatVoice.Kind.Laugh, lethal ? 1f : 0.8f);   // 0.33: se ríe con SU voz
             }
         }
@@ -499,6 +500,7 @@ namespace Ratms.Networking
         private static readonly string[] Laughs =
         {
             "¡JA, JA, JA!", "¡JIJIJIJI!", "¡Chúpate esa!", "¡Toma ya!", "¡Al hoyo!", "¡Ñiec, ñiec!", "¡JE, JE!",
+            "¡Qué gustazo!", "¡Toma, guarra!", "¡Revienta, cabrona!",
         };
         private static readonly string[] DeathQuips =
         {
@@ -542,7 +544,7 @@ namespace Ratms.Networking
                 // Las vecinas acaban PRINGADAS de la que ha reventado.
                 RatAppearance.SplatterAround(b, 3f, gameObject, 2);
                 if (CameraFollow.Instance != null) CameraFollow.Instance.Shake(0.25f, 0.35f);
-                Sfx.Play(Sfx.Id.Splat);
+                Sfx.GoreDeath();   // 0.39: reventón + squelch + lluvia de gotas (¡qué gustazo!)
                 var mvD = GetComponent<NetworkPlayerMovement>();
                 Fx.Gravestone(b, mvD != null ? mvD.RatName.Value.ToString() : null, (int)(NetworkObjectId % 3));
                 // 0.34: rótulo de la repetición ("¡X revienta a Y!")
@@ -553,7 +555,7 @@ namespace Ratms.Networking
                     : Ratms.UI.Loc.F("¡{0} revienta!", victimName));
                 SlowMotion.Trigger(b);   // 0.27: ¡cámara lenta!
                 if (PlayerPrefs.GetInt("opt_laughs", 1) == 1)
-                    WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.3f, Pick(DeathQuips), new Color(0.95f, 0.25f, 0.2f));
+                    WorldDamagePopup.SpawnImpact(b + Vector2.up * 1.3f, RatLines.Mix(DeathQuips, RatLines.MemeDeath), new Color(0.95f, 0.25f, 0.2f));
             }
             Sfx.Play(Sfx.Id.Squeak, 0.35f);
             RatVoice.Say(this, RatVoice.Kind.Death);   // 0.33: su último grito

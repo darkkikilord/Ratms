@@ -438,7 +438,7 @@ namespace Ratms.UI
         public static event Action OnVolumesChanged;
 
         /// <summary>Altura que ocupa <see cref="OptionsBlock"/> (para dimensionar la ventana).</summary>
-        public const float OptionsBlockHeight = 13 * 52f + 16f;   // idioma, 4 volúmenes, 5 sí/no, controles, pantalla y resolución (+ separaciones)
+        public const float OptionsBlockHeight = 14 * 52f + 16f;   // 0.39: + "Frases de memes y política"   // idioma, 4 volúmenes, 5 sí/no, controles, pantalla y resolución (+ separaciones)
 
         /// <summary>Dibuja el bloque de opciones en <paramref name="area"/>. Devuelve la altura usada.</summary>
         public static float OptionsBlock(Rect area)
@@ -463,6 +463,12 @@ namespace Ratms.UI
             const float tw = 380f;   // etiquetas largas ("Risas y frases de las ratas")
             GoreOn = Toggle(new Rect(area.x, y, area.width, h), "Sangre y vísceras", GoreOn, tw); y += gap;
             LaughsOn = Toggle(new Rect(area.x, y, area.width, h), "Risas y frases de las ratas", LaughsOn, tw); y += gap;
+            {
+                // 0.39: memes y sátira política (Trump, Venezuela, España...) — se pueden apagar
+                bool memes = PlayerPrefs.GetInt("opt_memes", 1) == 1;
+                bool now = Toggle(new Rect(area.x, y, area.width, h), "Frases de memes y política", memes, tw); y += gap;
+                if (now != memes) PlayerPrefs.SetInt("opt_memes", now ? 1 : 0);
+            }
             ShakeOn = Toggle(new Rect(area.x, y, area.width, h), "Temblor de cámara", ShakeOn, tw); y += gap;
             {
                 bool slow = PlayerPrefs.GetInt("opt_slowmo", 1) == 1;

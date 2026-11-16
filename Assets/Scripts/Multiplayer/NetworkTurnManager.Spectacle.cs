@@ -24,7 +24,7 @@ namespace Ratms.Networking
         {
             var rat = CurrentRat;
             if (rat == null || rat.NetworkObjectId != ratId || rat.OwnerClientId != rpc.Receive.SenderClientId) return;
-            SayClientRpc(ratId, Random.Range(0, RatLines.Taunts.Length), true);
+            SayClientRpc(ratId, RatLines.Pick(turnStart: false), true);
         }
 
         /// <summary>Una rata dice algo (código: &lt;100 burla, ≥100 frase de turno).</summary>
@@ -33,10 +33,11 @@ namespace Ratms.Networking
         {
             var nm = NetworkManager.Singleton;
             if (nm == null || nm.SpawnManager == null || !nm.SpawnManager.SpawnedObjects.TryGetValue(ratId, out var no)) return;
-            // 0.33: cada rata con SU voz (RatVoice: tono, garganta, aspereza... según su aspecto).
-            RatVoice.Say(no, RatVoice.Kind.Talk, 0.95f);
+            // 0.39: la rata PRONUNCIA la frase en ratuno con su voz (como el chat).
+            string text = Ratms.UI.Loc.T(RatLines.Get(code));
+            RatVoice.SayText(no, 0, text, 0.95f);
             if (PlayerPrefs.GetInt("opt_laughs", 1) == 1)
-                SpeechBubbles.Say(no.transform, Ratms.UI.Loc.T(code >= 100 ? RatLines.TurnStart[(code - 100) % RatLines.TurnStart.Length] : RatLines.Taunts[code % RatLines.Taunts.Length]));
+                SpeechBubbles.Say(no.transform, text, Mathf.Clamp(1.6f + text.Length * 0.05f, 2.6f, 5f));
             if (hop && no.IsOwner)
             {
                 var rb = no.GetComponent<Rigidbody2D>();
@@ -57,7 +58,7 @@ namespace Ratms.Networking
                 if (w != null) AnnounceClientRpc(w, new Color(0.7f, 0.85f, 1f));
             }
             if (CurrentRatId.Value != ulong.MaxValue && Random.value < 0.3f)
-                SayClientRpc(CurrentRatId.Value, 100 + Random.Range(0, RatLines.TurnStart.Length), false);
+                SayClientRpc(CurrentRatId.Value, RatLines.Pick(turnStart: true), false);
         }
 
         /// <summary>(Solo PRUEBAS, servidor) fuerza un rayo de tormenta ahora.</summary>

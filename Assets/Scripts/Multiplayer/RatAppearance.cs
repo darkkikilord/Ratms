@@ -128,7 +128,7 @@ namespace Ratms.Networking
         public void Backflip() => flipStart = Time.time;
 
         /// <summary>0.37: gestos de los emotes (<see cref="ChatSystem.Emotes"/>).</summary>
-        public enum EmoteAnim { Cheer, Laugh, Dance, Wave, Cry, Angry, Fart }
+        public enum EmoteAnim { Cheer, Laugh, Dance, Wave, Cry, Angry, Fart, Dab, Smug, Facepalm, Cap }
         private EmoteAnim emoteAnim;
         private float emoteStart = -10f;
         private const float EmoteSeconds = 2.2f;
@@ -138,7 +138,7 @@ namespace Ratms.Networking
         {
             emoteAnim = a;
             emoteStart = Time.time;
-            if (a == EmoteAnim.Cheer || a == EmoteAnim.Wave || a == EmoteAnim.Dance) stretchVel += 3.6f;   // saltito
+            if (a == EmoteAnim.Cheer || a == EmoteAnim.Wave || a == EmoteAnim.Dance || a == EmoteAnim.Cap) stretchVel += 3.6f;   // saltito
             if (a == EmoteAnim.Fart) stretchVel -= 3f;                                                     // se encoge
         }
 
@@ -149,8 +149,9 @@ namespace Ratms.Networking
         private void ApplyEmote()
         {
             float t = Time.time - emoteStart;
-            if (t < 0f || t > EmoteSeconds || sr == null) return;
-            float fade = Mathf.Clamp01((EmoteSeconds - t) / 0.3f);
+            float len = emoteAnim == EmoteAnim.Dance ? DanceTunes.Seconds : EmoteSeconds;   // 0.39: baila toda la canción
+            if (t < 0f || t > len || sr == null) return;
+            float fade = Mathf.Clamp01((len - t) / 0.3f);
             float dir = movement.FacingRight ? 1f : -1f;
             var tr = sr.transform;
             Vector3 pos = tr.position, scale = tr.localScale;
@@ -183,6 +184,28 @@ namespace Ratms.Networking
                     pos.x += Mathf.Sin(t * 70f) * 0.03f * fade;
                     sr.color = Color.Lerp(sr.color, new Color(1f, 0.45f, 0.4f), 0.6f * fade * (0.6f + 0.4f * Mathf.Sin(t * 20f)));
                     scale *= 1f + 0.05f * fade;
+                    break;
+                case EmoteAnim.Dab:     // ¡DAB! se lanza de lado de golpe, aguanta la pose y vuelve
+                {
+                    float inT = Mathf.Clamp01((t - 0.05f) / 0.12f);
+                    float outT = Mathf.Clamp01((t - 1.5f) / 0.25f);
+                    float pose = inT * (1f - outT);
+                    rot = 34f * dir * pose;
+                    pos.x += 0.06f * dir * pose;
+                    scale.y *= 1f - 0.06f * pose;
+                    break;
+                }
+                case EmoteAnim.Smug:    // chulería: echada hacia atrás, balanceándose tranquila
+                    rot = -9f * dir * fade + Mathf.Sin(t * 3f) * 2f;
+                    scale.y *= 1f + 0.03f * Mathf.Sin(t * 3f) * fade;
+                    break;
+                case EmoteAnim.Facepalm: // mano a la cara: cabizbaja y suspirando
+                    rot = 12f * dir * fade;
+                    scale.y *= 1f - (0.05f + 0.02f * Mathf.Sin(t * 4f)) * fade;
+                    break;
+                case EmoteAnim.Cap:     // se pone la gorra y saca pecho
+                    scale.y *= 1f + 0.06f * fade;
+                    rot = -4f * dir * fade;
                     break;
                 case EmoteAnim.Fart:    // aprieta... y suelta
                     float k = t < 0.35f ? t / 0.35f : Mathf.Clamp01(1f - (t - 0.35f) * 3f);

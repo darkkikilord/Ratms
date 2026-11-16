@@ -13,9 +13,14 @@ namespace Ratms.Networking
     /// </summary>
     public class EmoteFx : MonoBehaviour
     {
-        public enum Kind { Stars, Sparks, Notes, Tears, Steam, Hearts, Gas }
+        public enum Kind { Stars, Sparks, Notes, Tears, Steam, Hearts, Gas, Wave, Palm, Cap, Dab }
 
-        private struct P { public SpriteRenderer sr; public Vector2 vel; public float born, life, spin, grav, size; }
+        private struct P
+        {
+            public SpriteRenderer sr; public Vector2 vel; public float born, life, spin, grav, size;
+            // 0.39: partículas que van PEGADAS a la rata (mano, gorra): siguen su cuerpo
+            public Transform follow; public Vector2 offset; public float wave;
+        }
         private static EmoteFx instance;
         private readonly List<P> ps = new();
         private static readonly Dictionary<Kind, Sprite> sprites = new();
@@ -31,6 +36,12 @@ namespace Ratms.Networking
             [Kind.Steam] = new[] { "..GGG...", ".GWWWG..", "GWWWWWG.", "GWWWWWWG", "GWWWWWWG", ".GWWWWG.", "..GGGG..", "........" },
             [Kind.Hearts] = new[] { ".RR.RR..", "RPRRRRR.", "RPRRRRR.", "RRRRRRR.", ".RRRRR..", "..RRR...", "...R....", "........" },
             [Kind.Gas] = new[] { "..OOO...", ".OVVVO..", "OVVVVVO.", "OVVOVVVO", "OVVVVVVO", ".OVVVVO.", "..OOOO..", "........" },
+            // 0.39: mano (pata rosa con dedos) — sirve para el saludo chulo y la mano en la cara
+            [Kind.Wave] = new[] { ".P.P.P..", ".P.P.P..", ".PPPPP.P", ".PPPPPPP", ".PPPPPP.", "..PPPP..", "..PPP...", "..PPP..." },
+            [Kind.Palm] = new[] { ".P.P.P..", ".P.P.P..", ".PPPPP.P", ".PPPPPPP", ".PPPPPP.", "..PPPP..", "..PPP...", "..PPP..." },
+            // Gorra roja con la "M" blanca (Make Ratms Great Again)
+            [Kind.Cap] = new[] { "........", "..RRRR..", ".RWRRWR.", "RRWWWWRR", "RRWRRWRR", "RRRRRRRR", "KKKKKKKK", "......KK" },
+            [Kind.Dab] = new[] { "Y......Y", ".Y....Y.", "..Y..Y..", "...YY...", "...YY...", "..Y..Y..", ".Y....Y.", "Y......Y" },
         };
 
         private static Color32 Col(char c) => c switch
@@ -41,7 +52,7 @@ namespace Ratms.Networking
             'B' => new Color32(90, 170, 255, 255),
             'G' => new Color32(150, 150, 150, 255),
             'R' => new Color32(220, 40, 70, 255),
-            'P' => new Color32(255, 150, 180, 255),
+            'P' => new Color32(255, 160, 185, 255),
             'O' => new Color32(70, 120, 40, 255),
             'V' => new Color32(140, 200, 70, 255),
             _ => new Color32(0, 0, 0, 0),
@@ -83,8 +94,30 @@ namespace Ratms.Networking
         {
             var body = rat.GetComponentInChildren<SpriteRenderer>();
             int layer = body != null ? body.sortingLayerID : 0, order = body != null ? body.sortingOrder + 20 : 50;
-            int n = k switch { Kind.Hearts => 7, Kind.Notes => 8, Kind.Tears => 10, Kind.Steam => 8, Kind.Gas => 9, _ => 12 };
-            float span = k == Kind.Stars || k == Kind.Sparks ? 0.25f : 1.5f;
+            // 0.39: mano y gorra: UNA pieza pegada a la rata durante el gesto
+            if (k == Kind.Wave || k == Kind.Palm || k == Kind.Cap)
+            {
+                bool right = rat.FacingRight;
+                Vector2 off = k switch
+                {
+                    Kind.Wave => new Vector2(right ? 0.55f : -0.55f, 0.75f),   // al lado de la cabeza, saludando
+                    Kind.Palm => new Vector2(right ? 0.28f : -0.28f, 0.42f),   // tapando la cara
+                    _ => new Vector2(right ? 0.16f : -0.16f, 0.5f),            // en la cabeza
+                };
+                var go1 = new GameObject("emote_pegado");
+                var sr1 = go1.AddComponent<SpriteRenderer>();
+                sr1.sprite = Spr(k);
+                sr1.flipX = !right;
+                sr1.sortingLayerID = layer;
+                sr1.sortingOrder = order;
+                float sz = k == Kind.Cap ? 1.35f : 1.5f;
+                go1.transform.localScale = Vector3.one * sz;
+                ps.Add(new P { sr = sr1, born = Time.time, life = 2.2f, size = sz, follow = rat.transform, offset = off, wave = k == Kind.Wave ? 1f : 0f });
+                if (k != Kind.Cap) yield break;
+                k = Kind.Stars;   // y la gorra viene con estrellitas
+            }
+            int n = k switch { Kind.Hearts => 7, Kind.Notes => 16, Kind.Tears => 10, Kind.Steam => 8, Kind.Gas => 9, Kind.Dab => 6, _ => 12 };
+            float span = k == Kind.Stars || k == Kind.Sparks || k == Kind.Dab ? 0.25f : k == Kind.Notes ? DanceTunes.Seconds - 0.5f : 1.5f;
             for (int i = 0; i < n; i++)
             {
                 if (rat == null) yield break;
@@ -97,6 +130,7 @@ namespace Ratms.Networking
                 {
                     case Kind.Stars:
                     case Kind.Sparks:
+                    case Kind.Dab:
                     {
                         float a = Random.Range(20f, 160f) * Mathf.Deg2Rad;
                         at = c + Vector2.up * 0.3f;
@@ -154,8 +188,20 @@ namespace Ratms.Networking
                 if (t >= 1f) { Destroy(p.sr.gameObject); ps.RemoveAt(i); continue; }
                 p.vel += Vector2.down * p.grav * dt;
                 var tr = p.sr.transform;
-                tr.position += (Vector3)(p.vel * dt);
-                tr.Rotate(0f, 0f, p.spin * dt);
+                if (p.follow != null)
+                {
+                    // Pegada a la rata (su cuerpo: el pivote del prefab está bajo el suelo)
+                    var hp = p.follow.GetComponent<NetworkHealth>();
+                    Vector2 body = hp != null ? hp.BodyCenter : (Vector2)p.follow.position;
+                    tr.position = new Vector3(body.x + p.offset.x, body.y + p.offset.y, -3f);
+                    // Saludo chulo: la mano va y viene, sin prisa
+                    tr.rotation = Quaternion.Euler(0f, 0f, p.wave > 0f ? Mathf.Sin((Time.time - p.born) * 9f) * 22f : 0f);
+                }
+                else
+                {
+                    tr.position += (Vector3)(p.vel * dt);
+                    tr.Rotate(0f, 0f, p.spin * dt);
+                }
                 // "pop" al nacer y se apaga al final
                 float pop = t < 0.15f ? Mathf.Lerp(0.3f, 1.15f, t / 0.15f) : Mathf.Lerp(1.15f, 1f, Mathf.Clamp01((t - 0.15f) * 4f));
                 tr.localScale = Vector3.one * p.size * pop;

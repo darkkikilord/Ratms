@@ -21,7 +21,9 @@ namespace Ratms.Networking
         public enum Id { Explosion, BigExplosion, Shot, Whack, Swish, Launch, Throw, Splash, Teleport, Rope, Jump, TurnStart, Tick, Victory, Squeak, Laugh, Splat, Ouch, Flame, Burn, MachineGun, Plane, Whistle,
                          Choir, Beep, Twang, SniperShot, Coo, Dig,
                          // 0.27
-                         Voice, Thunder, Rain }
+                         Voice, Thunder, Rain,
+                         // 0.39: gore jugoso
+                         GoreBurst, Squelch, Plip }
 
         private const int Rate = 44100;
         private static Sfx instance;
@@ -139,6 +141,10 @@ namespace Ratms.Networking
                 Id.Voice => Chain(new[] { 900f, 1180f, 760f, 1040f, 860f, 1260f }, 0.07f, 0.03f, 0.32f),
                 Id.Thunder => Mix(Noise(1.6f, 1.6f, 0.9f, lowpass: 0.06f), Noise(0.25f, 10f, 0.6f, lowpass: 0.35f)),
                 Id.Rain => Noise(2.0f, 0.2f, 0.12f, lowpass: 0.5f),
+                // 0.39: REVENTÓN (golpe grave + chapoteo), SQUELCH viscoso y PLIP de gota
+                Id.GoreBurst => Mix(Mix(Sine(0.45f, 95f, 32f, 0.95f), Noise(0.5f, 7f, 0.75f, lowpass: 0.1f)), Delay(Squelch(0.42f, 1.0f), 0.04f)),
+                Id.Squelch => Squelch(0.38f, 0.85f),
+                Id.Plip => Plip(),
                 _ => null,
             };
             if (d == null) return null;
@@ -153,6 +159,90 @@ namespace Ratms.Networking
         // ============================================================
         private static System.Random rng = new System.Random(1234);
         private static float Rnd() => (float)(rng.NextDouble() * 2.0 - 1.0);
+
+        /// <summary>
+        ///  0.39 — SQUELCH: el "chof" viscoso de carne y sangre. Ruido por un
+        ///  RESONADOR que baja de tono (como un líquido espeso que se aplasta)
+        ///  con burbujeo (la amplitud tiembla a 25-40 Hz) y cola húmeda.
+        /// </summary>
+        private static float[] Squelch(float seconds, float gain)
+        {
+            int n = (int)(seconds * Rate);
+            var d = new float[n];
+            float y1 = 0f, y2 = 0f, lp = 0f;
+            float bub = 28f + (float)rng.NextDouble() * 12f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float k = t / seconds;
+                float f = Mathf.Lerp(1500f, 220f, Mathf.Sqrt(k));          // baja de tono
+                float r = 0.985f;
+                float b1 = 2f * r * Mathf.Cos(2f * Mathf.PI * f / Rate), b2 = r * r;
+                lp += (Rnd() - lp) * 0.5f;
+                float y = (1f - r) * lp * 6f + b1 * y1 - b2 * y2;
+                y2 = y1; y1 = y;
+                float bubble = 0.55f + 0.45f * Mathf.Sin(2f * Mathf.PI * bub * t + Mathf.Sin(t * 60f));
+                float env = Mathf.Min(1f, t * 300f) * Mathf.Exp(-t * 7f);
+                d[i] = (float)System.Math.Tanh(y * 3f) * bubble * env * gain;
+            }
+            return d;
+        }
+
+        /// <summary>0.39 — PLIP: gota espesa que cae (golpecito grave + "plic" que baja de tono).</summary>
+        private static float[] Plip()
+        {
+            int n = (int)(0.09f * Rate);
+            var d = new float[n];
+            float ph = 0f, lp = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                float t = i / (float)Rate;
+                float f = 1100f * Mathf.Exp(-t * 38f) + 160f;
+                ph += f / Rate;
+                lp += (Rnd() - lp) * 0.25f;
+                d[i] = (Mathf.Sin(ph * 2f * Mathf.PI) * 0.7f + lp * 0.6f * Mathf.Exp(-t * 90f)) * Mathf.Exp(-t * 32f) * 0.55f;
+            }
+            return d;
+        }
+
+        /// <summary>
+        ///  0.39 — REVENTAR UNA RATA: la secuencia jugosa entera. Reventón, squelch
+        ///  y una lluvia de gotas cayendo durante un segundo (cada una con su tono).
+        ///  Con la sangre apagada (opt_gore 0) suena el chof de siempre.
+        /// </summary>
+        public static void GoreDeath()
+        {
+            if (Application.isBatchMode) return;
+            if (PlayerPrefs.GetInt("opt_gore", 1) == 0) { Play(Id.Splat); return; }
+            PlayPitched(Id.GoreBurst, 1f, Random.Range(0.9f, 1.08f));
+            I.StartCoroutine(I.GoreTail());
+        }
+
+        private System.Collections.IEnumerator GoreTail()
+        {
+            yield return new WaitForSeconds(0.07f);
+            PlayPitched(Id.Squelch, 0.9f, Random.Range(0.85f, 1.1f));
+            yield return new WaitForSeconds(0.12f);
+            PlayPitched(Id.Squelch, 0.55f, Random.Range(1.2f, 1.5f));
+            for (int i = 0; i < 9; i++)
+            {
+                yield return new WaitForSeconds(Random.Range(0.05f, 0.14f));
+                PlayPitched(Id.Plip, Random.Range(0.35f, 0.7f), Random.Range(0.75f, 1.45f));
+            }
+        }
+
+        private static float plipBudget = 18f, plipBudgetAt;
+        /// <summary>0.39: una gota o víscera golpea el suelo (lo llama Fx). Con tope por segundo.</summary>
+        public static void Plop(float speed)
+        {
+            if (Application.isBatchMode || speed < 2.5f) return;
+            float now = Time.unscaledTime;
+            plipBudget = Mathf.Min(18f, plipBudget + (now - plipBudgetAt) * 18f);
+            plipBudgetAt = now;
+            if (plipBudget < 1f) return;
+            plipBudget -= 1f;
+            PlayPitched(Id.Plip, Mathf.Clamp(speed / 14f, 0.12f, 0.55f), Random.Range(0.7f, 1.5f));
+        }
 
         /// <summary>Explosión: ruido grave filtrado + golpe sinusoidal, caída exponencial.</summary>
         private static float[] Boom(float seconds, float thumpHz, float gain)

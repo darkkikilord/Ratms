@@ -48,7 +48,8 @@ namespace Ratms.Testing
                 yield return new WaitForSeconds(1.2f);   // el servidor pide 1,2 s entre emotes
             }
             int n = ChatSystem.EmotesPlayed - played;
-            Check($"Emotes → {n} de {ChatSystem.Emotes.Length} hechos", n == ChatSystem.Emotes.Length, "Emotes: alguno no se hace");
+            Check($"Emotes → {n} de {ChatSystem.Emotes.Length} hechos · canciones de baile sonadas: {DanceTunes.Played}",
+                  n == ChatSystem.Emotes.Length && DanceTunes.Played >= 1, "Emotes: alguno no se hace o el baile no suena");
             Finish(null);
         }
     }

@@ -118,7 +118,9 @@ namespace Ratms.Networking
             if (funnyPhraseText != null)
             {
                 string[] pool = isDraw ? drawPhrases : winnerPhrases;
-                if (pool != null && pool.Length > 0)
+                if (!isDraw && RatLines.MemesOn && Random.value < 0.4f)   // 0.39
+                    funnyPhraseText.text = Ratms.UI.Loc.T(RatLines.MemeVictory[Random.Range(0, RatLines.MemeVictory.Length)]);
+                else if (pool != null && pool.Length > 0)
                     funnyPhraseText.text = Ratms.UI.Loc.T(pool[Random.Range(0, pool.Length)]);
                 else
                     funnyPhraseText.text = Ratms.UI.Loc.T(isDraw ? "Empate" : "¡Victoria!");

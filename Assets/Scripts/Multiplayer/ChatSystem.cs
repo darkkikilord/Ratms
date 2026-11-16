@@ -65,7 +65,16 @@ namespace Ratms.Networking
             new() { name = "Enfado", bubble = "¡GRRRR!", voice = "¡GRAAAAH!", fx = EmoteFx.Kind.Steam, anim = RatAppearance.EmoteAnim.Angry },
             new() { name = "Amor", bubble = "¡Te quiero, rata!", voice = "¡Te quiero, rata!", fx = EmoteFx.Kind.Hearts, anim = RatAppearance.EmoteAnim.Cheer },
             new() { name = "Pedorreta", bubble = "¡PRRRRT!", voice = null, fx = EmoteFx.Kind.Gas, anim = RatAppearance.EmoteAnim.Fart },
+            // 0.39: memes
+            new() { name = "Dab", bubble = "¡DAB!", voice = "¡Dab!", fx = EmoteFx.Kind.Dab, anim = RatAppearance.EmoteAnim.Dab },
+            new() { name = "Manita chula", bubble = "Chao, chao~", voice = "chao, chao…", fx = EmoteFx.Kind.Wave, anim = RatAppearance.EmoteAnim.Smug },
+            new() { name = "Madre mía", bubble = "Madre mía…", voice = "madre mía…", fx = EmoteFx.Kind.Palm, anim = RatAppearance.EmoteAnim.Facepalm },
+            new() { name = "Gorra MRGA", bubble = "¡Make Ratms Great Again!", voice = "¡Make Ratms great again!", fx = EmoteFx.Kind.Cap, anim = RatAppearance.EmoteAnim.Cap },
         };
+
+        /// <summary>Teclas del menú de emotes: 1-9, 0, - y =.</summary>
+        private static KeyCode EmoteKey(int i) => i < 9 ? KeyCode.Alpha1 + i : i == 9 ? KeyCode.Alpha0 : i == 10 ? KeyCode.Minus : KeyCode.Equals;
+        private static string EmoteKeyLabel(int i) => i < 9 ? (i + 1).ToString() : i == 9 ? "0" : i == 10 ? "-" : "=";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Create()
@@ -129,7 +138,7 @@ namespace Ratms.Networking
             cmm.RegisterNamedMessageHandler("ratms_typing", OnTypingToServer);
             cmm.RegisterNamedMessageHandler("ratms_typing_all", (_, r) => ReadTyping(r));
             cmm.RegisterNamedMessageHandler("ratms_emote", OnEmoteToServer);
-            cmm.RegisterNamedMessageHandler("ratms_emote_all", (_, r) => { r.ReadValueSafe(out ulong rat); r.ReadValueSafe(out byte e); PlayEmote(rat, e); });
+            cmm.RegisterNamedMessageHandler("ratms_emote_all", (_, r) => { r.ReadValueSafe(out ulong rat); r.ReadValueSafe(out byte e); r.ReadValueSafe(out int seed); PlayEmote(rat, e, seed); });
         }
 
         private static void SendToServer(string msg, FastBufferWriter w)
@@ -294,17 +303,18 @@ namespace Ratms.Networking
         {
             if (e >= Emotes.Length || !OwnsRat(sender, ratId) || RatById(ratId) == null) return;
             if (!RateOk(sender + 1000UL, 1.2f)) return;   // clave distinta del chat
+            int seed = Random.Range(0, 100000);   // la misma canción/variante en todos los PCs
             using var w = new FastBufferWriter(32, Allocator.Temp);
-            w.WriteValueSafe(ratId); w.WriteValueSafe(e);
+            w.WriteValueSafe(ratId); w.WriteValueSafe(e); w.WriteValueSafe(seed);
             SendToOthers("ratms_emote_all", w);
-            PlayEmote(ratId, e);
+            PlayEmote(ratId, e, seed);
         }
 
         /// <summary>Para las pruebas: emotes vistos.</summary>
         public static int EmotesPlayed;
 
         /// <summary>(Todos los PCs) La rata hace el gesto.</summary>
-        private static void PlayEmote(ulong ratId, byte e)
+        private static void PlayEmote(ulong ratId, byte e, int seed)
         {
             var rat = RatById(ratId);
             if (rat == null || e >= Emotes.Length) return;
@@ -313,7 +323,14 @@ namespace Ratms.Networking
             if (look != null) look.PlayEmote(em.anim);
             EmoteFx.Play(rat, em.fx);
             SpeechBubbles.Say(rat.transform, Loc.T(em.bubble), 2.4f);
-            if (em.voice != null) RatVoice.SayText(rat, 0, Loc.T(em.voice));
+            if (em.anim == RatAppearance.EmoteAnim.Dance)
+            {
+                // 0.39: ¡canción! (electrónica, pop, k-pop, rap o reggaetón, al azar)
+                DanceTunes.Play(seed);
+                string[] names = { "(electrónica)", "(pop)", "(k-pop)", "(rap)", "(reggaetón)" };
+                SpeechBubbles.Say(rat.transform, Loc.T(em.bubble) + "  " + names[(int)DanceTunes.StyleOf(seed)], DanceTunes.Seconds);
+            }
+            else if (em.voice != null) RatVoice.SayText(rat, 0, Loc.T(em.voice));
             else if (em.fx == EmoteFx.Kind.Gas)
             {
                 Sfx.PlayPitched(Sfx.Id.Splat, 0.7f, 0.45f);   // ¡prrrt!
@@ -356,7 +373,7 @@ namespace Ratms.Networking
             if (emoteMenu)
             {
                 for (int i = 0; i < Emotes.Length; i++)
-                    if (Input.GetKeyDown(KeyCode.Alpha1 + i) || Input.GetKeyDown(KeyCode.Keypad1 + i)) { emoteMenu = false; SendEmote(i); }
+                    if (Input.GetKeyDown(EmoteKey(i)) || (i < 9 && Input.GetKeyDown(KeyCode.Keypad1 + i))) { emoteMenu = false; SendEmote(i); }
                 return;
             }
             if (other) return;
@@ -493,7 +510,8 @@ namespace Ratms.Networking
             if (e.type == EventType.KeyDown && (e.keyCode == KeyCode.Escape || e.keyCode == Controls.Key(Controls.Act.Emotes, 0))) { e.Use(); emoteMenu = false; return; }
             const int cols = 4;
             float cw = 210f, ch = 120f, gap = 12f;
-            float w = cols * cw + (cols - 1) * gap + 40f, h = 2 * ch + gap + 116f;
+            int rowsN = (Emotes.Length + cols - 1) / cols;
+            float w = cols * cw + (cols - 1) * gap + 40f, h = rowsN * ch + (rowsN - 1) * gap + 116f;
             var r = new Rect((vw - w) * 0.5f, vh - h - 150f, w, h);
             TrenchGUI.Panel(r);
             TrenchGUI.Title(new Rect(r.x, r.y + 10f, r.width, 44f), "EMOTES");
@@ -512,13 +530,13 @@ namespace Ratms.Networking
                 TrenchGUI.Label(new Rect(cell.x, cell.y + 70f, cell.width, 32f), Emotes[i].name);
                 TrenchGUI.LabelStyle.alignment = al;
                 GUI.color = new Color(1f, 0.85f, 0.4f);
-                TrenchGUI.Small(new Rect(cell.x + 8f, cell.y + 4f, 30f, 26f), (i + 1).ToString());
+                TrenchGUI.Small(new Rect(cell.x + 8f, cell.y + 4f, 30f, 26f), EmoteKeyLabel(i));
                 GUI.color = c;
                 if (hover && e.type == EventType.MouseDown && e.button == 0) { e.Use(); emoteMenu = false; SendEmote(i); return; }
             }
             var c2 = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, 0.6f);
-            TrenchGUI.Small(new Rect(r.x + 20f, r.yMax - 30f, r.width - 40f, 26f), "1-8 o clic: elegir  ·  ESC: cerrar");
+            TrenchGUI.Small(new Rect(r.x + 20f, r.yMax - 34f, r.width - 40f, 26f), "1-0, - o = (o clic): elegir  ·  ESC: cerrar");
             GUI.color = c2;
         }
 

@@ -234,17 +234,100 @@ namespace Ratms.Networking
             "¡Ven aquí si tienes bigotes!", "¡Tu madre era un hámster!", "¡Huele a queso rancio!", "¡Te voy a dejar sin cola!",
             "¡Ni con mira láser me das!", "¡Cobarde de alcantarilla!", "¡Soy la reina de la cloaca!", "¡A llorar al desagüe!",
             "¡Ratonzuelo de laboratorio!", "¡Esta trinchera es mía!", "¡Ñiec, ñiec, ñiec!", "¡Apuntas como un topo!",
+            // 0.39: juego adulto, sin cortarse
+            "¡Me cago en tu queso!", "¡Hijo de rata!", "¡Te reviento el hocico!", "¡Ven aquí, sarnosa de mierda!",
+            "¡Te voy a hacer paté!", "¡Vas a acabar en una hamburguesa!", "¡Te arranco la cola y me hago un llavero!",
+            "¡Tu familia es de laboratorio y lo sabes!",
         };
         public static readonly string[] TurnStart =
         {
             "¡A por ellos!", "¡Por el queso!", "Esto va a doler...", "¡Al ataque!", "¿Quién quiere guerra?",
             "Huele a victoria", "Ni un paso atrás", "¡Que tiemble la cloaca!", "Mamá, ¡mírame!", "Vamos allá...",
         };
+        // ------------------------------------------------------------
+        //  0.39 — FRASES DE MEMES Y POLÍTICA (sátira para todos por igual).
+        //  Se pueden apagar en Opciones ("Frases de memes y política", opt_memes):
+        //  quien las tenga apagadas ve una frase normal en su lugar.
+        // ------------------------------------------------------------
+        public static bool MemesOn => PlayerPrefs.GetInt("opt_memes", 1) == 1;
+
+        public static readonly string[] MemeTaunts =
+        {
+            // Trump
+            "¡Nadie sabe más de dinamita que yo, créeme!", "¡Fake news! Esa explosión no ha pasado.",
+            "Vamos a construir un muro de sacos terreros… ¡y lo van a pagar los Azules!", "Make Ratms Great Again.",
+            "Tremendo misil. El mejor misil. Todos lo dicen.", "Tú estás despedida, rata.",
+            // Venezuela
+            "¡Exprópiese! Esta colina es del pueblo ratuno.", "Me lo ha dicho un pajarito: vas a palmar.",
+            // España
+            "Manual de resistencia, capítulo uno: esquivar bazucas.", "Me tomo cinco días de reflexión… y vuelvo con dinamita.",
+            "Es el queso el que elige a la rata, y la rata la que elige al queso.", "Somos sentimientos y tenemos ratas.",
+            "Esto lo arreglamos con una comisión de investigación.", "¡Viva el vino!",
+            // Memes de internet
+            "Skill issue.", "Tienes un aura de menos mil.", "Te falta calle, rata.", "Ok, boomer.",
+            "Y lo sabes.", "Esto es Esparta… digo, Ratms.", "Literalmente yo cuando dinamita.",
+            // más bestias
+            "Te dura menos la vida que un gobierno en Italia.", "Más falsa que una promesa electoral.",
+            "Eres más inútil que el Senado.", "Esta dinamita la pagas tú con tus impuestos, payasa.",
+            "Te voy a dar más palos que a un piñata en campaña electoral.", "Tu puntería da más pena que el precio del alquiler.",
+        };
+
+        public static readonly string[] MemeTurnStart =
+        {
+            "Aquí he venido a hablar de mi bazuca.", "Primer decreto: dinamita para todos.",
+            "Tranquilos, que esto lo arreglo yo en dos tuits.", "¿Sabe usted con quién está hablando?",
+            "Lo que diga el CIS.", "Hoy no toca… ¡bueno, sí toca!", "Modo sigma: activado.",
+            "Es mi turno y voy a hacer las cosas… pero bien.", "Esto es un rescate, pero de ratas.",
+        };
+
+        public static readonly string[] MemeHurt =
+        {
+            "¡Esto es lawfare!", "¡Bulo! ¡Bulo!", "Emotional damage.", "¡Me han hackeado la cola!", "¡Esto no estaba en el programa!",
+        };
+
+        public static readonly string[] MemeLaughs =
+        {
+            "¡Siuuu!", "Gg ez.", "Get rekt.", "¡Mayoría absoluta!", "Ratatouille, pero de verdad.", "¡Sin pruebas, pero sin dudas!",
+            "¡Qué gustazo da reventarte!", "¡Mmm, qué crujiente!", "¡Ñam, carne picada!", "¡Eso ha sonado a gloria!",
+        };
+
+        public static readonly string[] MemeDeath =
+        {
+            "F en el chat.", "Dimito.", "Era un montaje.", "Esto es culpa del gobierno.",
+            "Hecha puré.", "Al tupper.", "Ahora es abono.", "Pa' hamburguesas.", "Esparcida por toda la trinchera.",
+            "Me voy, pero volveré… en la próxima legislatura.", "Se fue a por tabaco.", "Game over, rata.",
+        };
+
+        public static readonly string[] MemeVictory =
+        {
+            "¡Make Ratms Great Again!", "¡Mayoría absoluta!", "¡Viva el vino y vivan las ratas!",
+            "Ganamos. Los demás, al Senado.", "¡Exprópiese la victoria!", "Skill issue de los demás.",
+        };
+
+        /// <summary>
+        ///  Texto de un código de frase (lo elige el servidor, todos ven el mismo):
+        ///  &lt;100 burla, 100-199 inicio de turno, 200-299 burla meme, ≥300 inicio meme.
+        ///  Si este PC tiene los memes apagados, sale una frase normal.
+        /// </summary>
         public static string Get(int code)
         {
+            if (code >= 300) return MemesOn ? MemeTurnStart[(code - 300) % MemeTurnStart.Length] : TurnStart[(code - 300) % TurnStart.Length];
+            if (code >= 200) return MemesOn ? MemeTaunts[(code - 200) % MemeTaunts.Length] : Taunts[(code - 200) % Taunts.Length];
             var arr = code >= 100 ? TurnStart : Taunts;
             return arr[(code % 100) % arr.Length];
         }
+
+        /// <summary>(Servidor) Código al azar: burla o inicio de turno, a veces meme.</summary>
+        public static int Pick(bool turnStart)
+        {
+            bool meme = MemesOn && Random.value < 0.4f;
+            if (turnStart) return meme ? 300 + Random.Range(0, MemeTurnStart.Length) : 100 + Random.Range(0, TurnStart.Length);
+            return meme ? 200 + Random.Range(0, MemeTaunts.Length) : Random.Range(0, Taunts.Length);
+        }
+
+        /// <summary>Elige de la lista normal o, a veces, de la de memes (si están encendidos en este PC).</summary>
+        public static string Mix(string[] normal, string[] meme, float memeChance = 0.35f) =>
+            MemesOn && Random.value < memeChance ? meme[Random.Range(0, meme.Length)] : normal[Random.Range(0, normal.Length)];
     }
 
     // =====================================================================

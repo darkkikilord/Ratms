@@ -57,6 +57,24 @@ namespace Ratms.Testing
                     phraseFiles++;
                 }
             }
+            // 0.39: canciones del baile (una por estilo) y sonidos gore
+            int tunes = 0;
+            for (int st = 0; st < DanceTunes.Styles; st++)
+            {
+                var data = DanceTunes.Render(st);   // semilla = estilo
+                float pk = data.Max(Mathf.Abs);
+                if (pk < 0.3f || data.Any(float.IsNaN)) { bad++; Log($"⚠ canción rara: {DanceTunes.StyleOf(st)} pico {pk:F2}"); }
+                WriteWav(Path.Combine(dir, $"baile_{DanceTunes.StyleOf(st)}.wav"), data, 22050);
+                tunes++;
+            }
+            foreach (var id in new[] { Sfx.Id.GoreBurst, Sfx.Id.Squelch, Sfx.Id.Plip })
+            {
+                var clip = Sfx.Clip(id);
+                var data = new float[clip.samples];
+                clip.GetData(data, 0);
+                WriteWav(Path.Combine(dir, $"gore_{id}.wav"), data, clip.frequency);
+            }
+            Check($"Canciones de baile → {tunes} estilos guardados (baile_*.wav) y 3 sonidos gore (gore_*.wav)", tunes == DanceTunes.Styles, "Canciones de baile rotas");
             int sylHola = RatVoice.SyllablesOf("hola"), sylLong = RatVoice.SyllablesOf("Esa dinamita era para ti, sarnoso.");
             Check($"Voz del chat → {phraseFiles} frases guardadas · \"hola\" = {sylHola} sílabas · frase larga = {sylLong}",
                   sylHola == 2 && sylLong >= 10, "Voz del chat: las sílabas no salen del texto");

@@ -28,6 +28,14 @@ namespace Ratms.Networking
     {
         private const int Rate = 22050;
         private static Music instance;
+        private static float duckUntil, duckLevel = 1f, duckNow = 1f;
+
+        /// <summary>0.39: baja la música a <paramref name="level"/> durante unos segundos (canción del baile).</summary>
+        public static void Duck(float seconds, float level)
+        {
+            duckUntil = Time.unscaledTime + seconds;
+            duckLevel = level;
+        }
 
         // ------------------------------------------------------------
         //  CATÁLOGO
@@ -194,6 +202,10 @@ namespace Ratms.Networking
             if (pending < 0 && current >= 0 && !a.isPlaying && fade >= 1f) RequestNext();
 
             float target = PlayerPrefs.GetFloat("opt_master", 0.8f) * PlayerPrefs.GetFloat("opt_music", 0.8f) * 0.32f;
+            // 0.39: mientras suena la canción de un baile, la música se aparta
+            float want = Time.unscaledTime < duckUntil ? duckLevel : 1f;
+            duckNow = Mathf.MoveTowards(duckNow, want, Time.unscaledDeltaTime * (want < duckNow ? 6f : 1.2f));
+            target *= duckNow;
             fade = Mathf.MoveTowards(fade, 1f, Time.unscaledDeltaTime / FadeSeconds);
             a.volume = target * fade;
             b.volume = target * (1f - fade);

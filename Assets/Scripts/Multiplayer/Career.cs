@@ -99,6 +99,15 @@ namespace Ratms.Networking
 
         public static bool IsUnlocked(string id) => Stats.unlocked.Contains(id);
 
+        /// <summary>0.38: logros conseguidos en esta sesión con su hora (para el cartel de victoria).</summary>
+        private static readonly List<(Achievement a, float time)> recentUnlocks = new();
+        public static List<Achievement> UnlockedSince(float time)
+        {
+            var list = new List<Achievement>();
+            foreach (var r in recentUnlocks) if (r.time >= time) list.Add(r.a);
+            return list;
+        }
+
         /// <summary>¿Este sombrero aún no se puede elegir en "Mi equipo"?</summary>
         public static bool IsHatLocked(RatLook.HatType hat)
         {
@@ -122,6 +131,7 @@ namespace Ratms.Networking
             {
                 if (data.unlocked.Contains(a.id) || a.progress(data) < a.goal) continue;
                 data.unlocked.Add(a.id);
+                recentUnlocks.Add((a, Time.unscaledTime));
                 changed = true;
                 CareerToasts.Show(a);
                 Debug.Log($"[Carrera] ¡Logro! {a.name}");

@@ -529,6 +529,10 @@ namespace Ratms.UI
             ("Saludo", "Wave"), ("¡Eh, hola!", "Hey, hello!"), ("Llorar", "Cry"), ("Snif… snif…", "Sniff… sniff…"), ("snif… snif… ay…", "sniff… sniff… oh…"),
             ("Enfado", "Angry"), ("¡GRRRR!", "GRRRR!"), ("¡GRAAAAH!", "GRAAAAH!"),
             ("Amor", "Love"), ("¡Te quiero, rata!", "Love you, rat!"), ("Pedorreta", "Raspberry"), ("¡PRRRRT!", "PFFFFT!"),
+            // 0.38: cartel de victoria
+            ("¡LOS VENCEDORES!", "THE WINNERS!"), ("Descansen en paz", "Rest in peace"), ("Logros nuevos:", "New achievements:"),
+            ("Carnicero", "Butcher"), ("Saco de boxeo", "Punching bag"), ("Mejor golpe", "Best hit"),
+            ("{0} bajas", "{0} kills"), ("{0} de daño recibido", "{0} damage taken"), ("{0} propias", "{0} own goals"), ("{0} de daño", "{0} damage"),
             // 0.36: partida rápida
             ("PARTIDA RÁPIDA", "QUICK MATCH"), ("Buscando partida...", "Looking for a match..."),
             ("No hay partidas abiertas: creando una...", "No open matches: creating one..."),
